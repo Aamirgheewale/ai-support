@@ -3,6 +3,8 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const archiver = require('archiver');
+const { stringify } = require('csv-stringify');
 
 const app = express();
 app.use(cors());
@@ -972,6 +974,377 @@ app.get('/admin/assignments', requireAdminAuth, async (req, res) => {
   } catch (err) {
     console.error('Error listing assignments:', err);
     res.status(500).json({ error: err?.message || 'Failed to list assignments' });
+  }
+});
+
+// ============================================================================
+// EXPORT FUNCTIONALITY
+// ============================================================================
+
+// Simple in-memory rate limiter (TODO: Replace with Redis/Upstash for production)
+const exportRateLimiter = new Map(); // token -> { count, resetTime }
+const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
+const RATE_LIMIT_MAX = 5; // max 5 exports per minute
+
+function checkRateLimit(token) {
+  const now = Date.now();
+  const limit = exportRateLimiter.get(token);
+  
+  if (!limit || now > limit.resetTime) {
+    exportRateLimiter.set(token, { count: 1, resetTime: now + RATE_LIMIT_WINDOW });
+    return true;
+  }
+  
+  if (limit.count >= RATE_LIMIT_MAX) {
+    return false;
+  }
+  
+  limit.count++;
+  return true;
+}
+
+// Audit logging helper
+function logExportAction(adminId, sessionIds, format) {
+  const timestamp = new Date().toISOString();
+  console.log(`📤 [EXPORT] Admin: ${adminId}, Sessions: ${sessionIds.join(', ')}, Format: ${format}, Time: ${timestamp}`);
+  // TODO: Store in Appwrite `exports` collection for audit trail
+  // Example: await awDatabases.createDocument(APPWRITE_DATABASE_ID, 'exports', 'unique()', {
+  //   adminId, sessionIds: JSON.stringify(sessionIds), format, timestamp
+  // });
+}
+
+// Helper: Stream messages from Appwrite with pagination
+async function* streamMessages(sessionId) {
+  const limit = 100; // Appwrite pagination limit
+  let offset = 0;
+  let hasMore = true;
+  
+  while (hasMore) {
+    let result;
+    try {
+      if (Query) {
+        result = await awDatabases.listDocuments(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_MESSAGES_COLLECTION_ID,
+          [Query.equal('sessionId', sessionId), Query.orderAsc('createdAt')],
+          limit,
+          offset
+        );
+      } else {
+        // Fallback: fetch all and filter
+        const allResult = await awDatabases.listDocuments(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_MESSAGES_COLLECTION_ID,
+          undefined,
+          10000
+        );
+        const filtered = allResult.documents
+          .filter(doc => doc.sessionId === sessionId)
+          .sort((a, b) => {
+            const timeA = new Date(a.createdAt || a.$createdAt || 0).getTime();
+            const timeB = new Date(b.createdAt || b.$createdAt || 0).getTime();
+            return timeA - timeB;
+          });
+        result = { documents: filtered.slice(offset, offset + limit), total: filtered.length };
+        hasMore = offset + limit < result.total;
+      }
+    } catch (err) {
+      console.error(`Error fetching messages (offset ${offset}):`, err);
+      break;
+    }
+    
+    for (const msg of result.documents) {
+      yield msg;
+    }
+    
+    offset += result.documents.length;
+    hasMore = result.documents.length === limit && offset < result.total;
+  }
+}
+
+// Helper: Escape CSV field
+function escapeCsvField(field) {
+  if (field === null || field === undefined) return '';
+  const str = String(field);
+  if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+// GET /admin/sessions/:sessionId/export - Export single session conversation
+app.get('/admin/sessions/:sessionId/export', requireAdminAuth, async (req, res) => {
+  const { sessionId } = req.params;
+  const format = (req.query.format || 'json').toLowerCase();
+  const authHeader = req.headers.authorization;
+  const adminToken = authHeader ? authHeader.substring(7) : 'unknown';
+  
+  // Rate limiting
+  if (!checkRateLimit(adminToken)) {
+    return res.status(429).json({ error: 'Rate limit exceeded. Maximum 5 exports per minute.' });
+  }
+  
+  if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_MESSAGES_COLLECTION_ID) {
+    return res.status(500).json({ error: 'Appwrite not configured' });
+  }
+  
+  if (format !== 'json' && format !== 'csv') {
+    return res.status(400).json({ error: 'Invalid format. Use "json" or "csv"' });
+  }
+  
+  try {
+    // Verify session exists
+    try {
+      await awDatabases.getDocument(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_SESSIONS_COLLECTION_ID,
+        sessionId
+      );
+    } catch (err) {
+      if (err.code === 404) {
+        return res.status(404).json({ error: `Session ${sessionId} not found` });
+      }
+      throw err;
+    }
+    
+    // Count total messages for size check
+    let totalMessages = 0;
+    try {
+      if (Query) {
+        const countResult = await awDatabases.listDocuments(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_MESSAGES_COLLECTION_ID,
+          [Query.equal('sessionId', sessionId)],
+          1
+        );
+        totalMessages = countResult.total;
+      } else {
+        // Fallback: estimate from full fetch
+        const allResult = await awDatabases.listDocuments(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_MESSAGES_COLLECTION_ID,
+          undefined,
+          10000
+        );
+        totalMessages = allResult.documents.filter(doc => doc.sessionId === sessionId).length;
+      }
+    } catch (err) {
+      console.warn('Could not count messages:', err);
+    }
+    
+    // Check size limit (100k messages per session)
+    if (totalMessages > 100000) {
+      return res.status(413).json({ 
+        error: `Export too large (${totalMessages} messages). Please use bulk export with background job for large datasets.` 
+      });
+    }
+    
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    const filename = `aichat_session-${sessionId}_${timestamp}.${format}`;
+    
+    // Set headers
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    
+    if (format === 'json') {
+      res.setHeader('Content-Type', 'application/json');
+      
+      // Stream JSON array
+      res.write('[');
+      let first = true;
+      
+      for await (const msg of streamMessages(sessionId)) {
+        if (!first) res.write(',');
+        first = false;
+        
+        const jsonMsg = {
+          createdAt: msg.createdAt || msg.$createdAt || new Date().toISOString(),
+          sender: msg.sender || 'unknown',
+          text: msg.text || '',
+          confidence: msg.confidence || null,
+          metadata: msg.metadata || null
+        };
+        res.write(JSON.stringify(jsonMsg));
+      }
+      
+      res.write(']');
+      res.end();
+      
+    } else if (format === 'csv') {
+      res.setHeader('Content-Type', 'text/csv');
+      
+      // CSV header
+      res.write('createdAt,sender,text,confidence,metadata\n');
+      
+      // Stream CSV rows directly
+      for await (const msg of streamMessages(sessionId)) {
+        const createdAt = escapeCsvField(msg.createdAt || msg.$createdAt || new Date().toISOString());
+        const sender = escapeCsvField(msg.sender || 'unknown');
+        const text = escapeCsvField(msg.text || '');
+        const confidence = escapeCsvField(msg.confidence || '');
+        const metadataStr = msg.metadata ? 
+          escapeCsvField(typeof msg.metadata === 'string' ? msg.metadata : JSON.stringify(msg.metadata)) : 
+          '';
+        
+        res.write(`${createdAt},${sender},${text},${confidence},${metadataStr}\n`);
+      }
+      
+      res.end();
+    }
+    
+    // Audit log
+    logExportAction(adminToken, [sessionId], format);
+    console.log(`✅ Exported session ${sessionId} as ${format} (${totalMessages} messages)`);
+    
+  } catch (err) {
+    console.error(`Error exporting session ${sessionId}:`, err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: err?.message || 'Failed to export session' });
+    }
+  }
+});
+
+// POST /admin/sessions/export - Bulk export multiple sessions
+app.post('/admin/sessions/export', requireAdminAuth, async (req, res) => {
+  const { sessionIds, format } = req.body;
+  const authHeader = req.headers.authorization;
+  const adminToken = authHeader ? authHeader.substring(7) : 'unknown';
+  
+  // Rate limiting
+  if (!checkRateLimit(adminToken)) {
+    return res.status(429).json({ error: 'Rate limit exceeded. Maximum 5 exports per minute.' });
+  }
+  
+  if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_MESSAGES_COLLECTION_ID) {
+    return res.status(500).json({ error: 'Appwrite not configured' });
+  }
+  
+  if (!Array.isArray(sessionIds) || sessionIds.length === 0) {
+    return res.status(400).json({ error: 'sessionIds array required' });
+  }
+  
+  if (sessionIds.length > 50) {
+    return res.status(400).json({ error: 'Maximum 50 sessions per bulk export' });
+  }
+  
+  const exportFormat = (format || 'json').toLowerCase();
+  if (exportFormat !== 'json' && exportFormat !== 'csv') {
+    return res.status(400).json({ error: 'Invalid format. Use "json" or "csv"' });
+  }
+  
+  try {
+    // Count total messages across all sessions
+    let totalMessages = 0;
+    const sessionMessageCounts = {};
+    
+    for (const sessionId of sessionIds) {
+      try {
+        if (Query) {
+          const countResult = await awDatabases.listDocuments(
+            APPWRITE_DATABASE_ID,
+            APPWRITE_MESSAGES_COLLECTION_ID,
+            [Query.equal('sessionId', sessionId)],
+            1
+          );
+          sessionMessageCounts[sessionId] = countResult.total;
+          totalMessages += countResult.total;
+        } else {
+          // Fallback
+          const allResult = await awDatabases.listDocuments(
+            APPWRITE_DATABASE_ID,
+            APPWRITE_MESSAGES_COLLECTION_ID,
+            undefined,
+            10000
+          );
+          const count = allResult.documents.filter(doc => doc.sessionId === sessionId).length;
+          sessionMessageCounts[sessionId] = count;
+          totalMessages += count;
+        }
+      } catch (err) {
+        console.warn(`Could not count messages for session ${sessionId}:`, err);
+        sessionMessageCounts[sessionId] = 0;
+      }
+    }
+    
+    // Check size limit (100k messages total)
+    if (totalMessages > 100000) {
+      return res.status(413).json({ 
+        error: `Export too large (${totalMessages} total messages across ${sessionIds.length} sessions). Please use background job for large bulk exports.` 
+      });
+    }
+    
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    
+    if (exportFormat === 'json') {
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', `attachment; filename="bulk_export_${timestamp}.json"`);
+      
+      // Stream NDJSON (newline-delimited JSON) for large exports
+      const sessions = {};
+      
+      for (const sessionId of sessionIds) {
+        const messages = [];
+        for await (const msg of streamMessages(sessionId)) {
+          messages.push({
+            createdAt: msg.createdAt || msg.$createdAt || new Date().toISOString(),
+            sender: msg.sender || 'unknown',
+            text: msg.text || '',
+            confidence: msg.confidence || null,
+            metadata: msg.metadata || null
+          });
+        }
+        sessions[sessionId] = messages;
+      }
+      
+      res.json({ sessions });
+      
+    } else if (exportFormat === 'csv') {
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Disposition', `attachment; filename="bulk_export_${timestamp}.zip"`);
+      
+      const archive = archiver('zip', { zlib: { level: 9 } });
+      
+      archive.on('error', (err) => {
+        console.error('Archive error:', err);
+        if (!res.headersSent) {
+          res.status(500).json({ error: 'Failed to create archive' });
+        }
+      });
+      
+      archive.pipe(res);
+      
+      // Add CSV file for each session
+      for (const sessionId of sessionIds) {
+        const csvFilename = `session-${sessionId}.csv`;
+        let csvData = 'createdAt,sender,text,confidence,metadata\n';
+        
+        // Stream messages to CSV string
+        for await (const msg of streamMessages(sessionId)) {
+          const createdAt = escapeCsvField(msg.createdAt || msg.$createdAt || new Date().toISOString());
+          const sender = escapeCsvField(msg.sender || 'unknown');
+          const text = escapeCsvField(msg.text || '');
+          const confidence = escapeCsvField(msg.confidence || '');
+          const metadataStr = msg.metadata ? 
+            escapeCsvField(typeof msg.metadata === 'string' ? msg.metadata : JSON.stringify(msg.metadata)) : 
+            '';
+          
+          csvData += `${createdAt},${sender},${text},${confidence},${metadataStr}\n`;
+        }
+        
+        archive.append(csvData, { name: csvFilename });
+      }
+      
+      archive.finalize();
+    }
+    
+    // Audit log
+    logExportAction(adminToken, sessionIds, exportFormat);
+    console.log(`✅ Bulk exported ${sessionIds.length} sessions as ${exportFormat} (${totalMessages} total messages)`);
+    
+  } catch (err) {
+    console.error('Error in bulk export:', err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: err?.message || 'Failed to export sessions' });
+    }
   }
 });
 

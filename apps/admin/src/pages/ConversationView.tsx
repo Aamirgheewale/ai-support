@@ -22,6 +22,20 @@ export default function ConversationView() {
   const [socket, setSocket] = useState<any>(null)
   const [sessionStatus, setSessionStatus] = useState<string>('')
   const [assignedAgentId, setAssignedAgentId] = useState<string>('')
+  const [exporting, setExporting] = useState(false)
+  const [showExportMenu, setShowExportMenu] = useState(false)
+
+  // Close export menu when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      const target = event.target as HTMLElement
+      if (showExportMenu && !target.closest('[data-export-menu]')) {
+        setShowExportMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showExportMenu])
 
   // Load session info and messages when sessionId changes
   useEffect(() => {
@@ -244,6 +258,55 @@ export default function ConversationView() {
     }
   }
 
+  // Helper: Download file from blob
+  function downloadFile(blob: Blob, filename: string) {
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    window.URL.revokeObjectURL(url)
+    document.body.removeChild(a)
+  }
+
+  // Export conversation
+  async function exportConversation(format: 'json' | 'csv') {
+    if (!sessionId) return
+    
+    setExporting(true)
+    setShowExportMenu(false)
+    
+    try {
+      const res = await fetch(`${API_BASE}/admin/sessions/${sessionId}/export?format=${format}`, {
+        headers: {
+          'Authorization': `Bearer ${ADMIN_SECRET}`
+        }
+      })
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ error: res.statusText }))
+        alert(`Export failed: ${errorData.error || res.statusText}`)
+        return
+      }
+
+      const contentDisposition = res.headers.get('content-disposition')
+      const filename = contentDisposition 
+        ? contentDisposition.split('filename=')[1]?.replace(/"/g, '') || `export_${sessionId}.${format}`
+        : `aichat_session-${sessionId}_${new Date().toISOString().slice(0, 10)}.${format}`
+
+      const blob = await res.blob()
+      downloadFile(blob, filename)
+      
+      console.log(`✅ Exported session ${sessionId} as ${format}`)
+    } catch (err) {
+      console.error('Export error:', err)
+      alert(`Export failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    } finally {
+      setExporting(false)
+    }
+  }
+
   async function closeConversation() {
     if (!sessionId) return
     
@@ -303,7 +366,7 @@ export default function ConversationView() {
           </button>
           <h1 style={{ display: 'inline', marginLeft: '10px' }}>Session: {sessionId}</h1>
         </div>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
           {sessionStatus && (
             <span style={{
               padding: '6px 12px',
@@ -315,6 +378,76 @@ export default function ConversationView() {
               {sessionStatus}
             </span>
           )}
+          <div style={{ position: 'relative', display: 'inline-block' }} data-export-menu>
+            <button
+              onClick={() => setShowExportMenu(!showExportMenu)}
+              disabled={exporting}
+              style={{
+                padding: '8px 16px',
+                background: exporting ? '#ccc' : '#667eea',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: exporting ? 'not-allowed' : 'pointer',
+                fontSize: '13px'
+              }}
+            >
+              {exporting ? 'Exporting...' : 'Export'}
+            </button>
+            {showExportMenu && (
+              <div
+                data-export-menu
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  right: 0,
+                  background: 'white',
+                  border: '1px solid #ddd',
+                  borderRadius: '4px',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                  zIndex: 1000,
+                  minWidth: '120px',
+                  marginTop: '4px'
+                }}
+              >
+                <button
+                  onClick={() => exportConversation('json')}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    padding: '8px 12px',
+                    textAlign: 'left',
+                    background: 'white',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontSize: '13px'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = '#f8f9fa'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+                >
+                  Export JSON
+                </button>
+                <button
+                  onClick={() => exportConversation('csv')}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    padding: '8px 12px',
+                    textAlign: 'left',
+                    background: 'white',
+                    border: 'none',
+                    borderTop: '1px solid #eee',
+                    cursor: 'pointer',
+                    fontSize: '13px'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = '#f8f9fa'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+                >
+                  Export CSV
+                </button>
+              </div>
+            )}
+          </div>
           <input
             type="text"
             placeholder="Agent ID"

@@ -19,6 +19,10 @@ export default function SessionsList() {
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('')
   const [search, setSearch] = useState('')
+  const [selectedSessions, setSelectedSessions] = useState<Set<string>>(new Set())
+  const [exporting, setExporting] = useState<string | null>(null)
+  const [bulkExporting, setBulkExporting] = useState(false)
+  const [showBulkModal, setShowBulkModal] = useState(false)
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -79,17 +83,130 @@ export default function SessionsList() {
     }
   }
 
+  // Helper: Download file from blob
+  function downloadFile(blob: Blob, filename: string) {
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    window.URL.revokeObjectURL(url)
+    document.body.removeChild(a)
+  }
+
+  // Export single session
+  async function exportSession(sessionId: string, format: 'json' | 'csv', e: React.MouseEvent) {
+    e.stopPropagation() // Prevent row click
+    setExporting(sessionId)
+    
+    try {
+      const res = await fetch(`${API_BASE}/admin/sessions/${sessionId}/export?format=${format}`, {
+        headers: {
+          'Authorization': `Bearer ${ADMIN_SECRET}`
+        }
+      })
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ error: res.statusText }))
+        alert(`Export failed: ${errorData.error || res.statusText}`)
+        return
+      }
+
+      const contentDisposition = res.headers.get('content-disposition')
+      const filename = contentDisposition 
+        ? contentDisposition.split('filename=')[1]?.replace(/"/g, '') || `export_${sessionId}.${format}`
+        : `aichat_session-${sessionId}_${new Date().toISOString().slice(0, 10)}.${format}`
+
+      const blob = await res.blob()
+      downloadFile(blob, filename)
+      
+      console.log(`✅ Exported session ${sessionId} as ${format}`)
+    } catch (err) {
+      console.error('Export error:', err)
+      alert(`Export failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    } finally {
+      setExporting(null)
+    }
+  }
+
+  // Bulk export
+  async function handleBulkExport(format: 'json' | 'csv') {
+    if (selectedSessions.size === 0) {
+      alert('Please select at least one session')
+      return
+    }
+
+    setBulkExporting(true)
+    setShowBulkModal(false)
+
+    try {
+      const res = await fetch(`${API_BASE}/admin/sessions/export`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${ADMIN_SECRET}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          sessionIds: Array.from(selectedSessions),
+          format
+        })
+      })
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ error: res.statusText }))
+        alert(`Bulk export failed: ${errorData.error || res.statusText}`)
+        return
+      }
+
+      const contentDisposition = res.headers.get('content-disposition')
+      const filename = contentDisposition 
+        ? contentDisposition.split('filename=')[1]?.replace(/"/g, '') || `bulk_export.${format === 'csv' ? 'zip' : 'json'}`
+        : `bulk_export_${new Date().toISOString().slice(0, 10)}.${format === 'csv' ? 'zip' : 'json'}`
+
+      const blob = await res.blob()
+      downloadFile(blob, filename)
+      
+      console.log(`✅ Bulk exported ${selectedSessions.size} sessions as ${format}`)
+      setSelectedSessions(new Set())
+    } catch (err) {
+      console.error('Bulk export error:', err)
+      alert(`Bulk export failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    } finally {
+      setBulkExporting(false)
+    }
+  }
+
+  function toggleSessionSelection(sessionId: string, e: React.MouseEvent) {
+    e.stopPropagation()
+    const newSelected = new Set(selectedSessions)
+    if (newSelected.has(sessionId)) {
+      newSelected.delete(sessionId)
+    } else {
+      newSelected.add(sessionId)
+    }
+    setSelectedSessions(newSelected)
+  }
+
+  function toggleSelectAll() {
+    if (selectedSessions.size === sessions.length) {
+      setSelectedSessions(new Set())
+    } else {
+      setSelectedSessions(new Set(sessions.map(s => s.sessionId)))
+    }
+  }
+
   return (
     <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
       <h1>AI Support Admin - Sessions</h1>
       
-      <div style={{ marginTop: '20px', display: 'flex', gap: '10px', marginBottom: '20px' }}>
+      <div style={{ marginTop: '20px', display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap', alignItems: 'center' }}>
         <input
           type="text"
           placeholder="Search session ID..."
           value={search}
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
-          style={{ padding: '8px', flex: 1, border: '1px solid #ddd', borderRadius: '4px' }}
+          style={{ padding: '8px', flex: 1, minWidth: '200px', border: '1px solid #ddd', borderRadius: '4px' }}
         />
         <select
           value={statusFilter}
@@ -101,6 +218,22 @@ export default function SessionsList() {
           <option value="agent_assigned">Agent Assigned</option>
           <option value="closed">Closed</option>
         </select>
+        {selectedSessions.size > 0 && (
+          <button 
+            onClick={() => setShowBulkModal(true)} 
+            disabled={bulkExporting}
+            style={{ 
+              padding: '8px 16px', 
+              background: bulkExporting ? '#ccc' : '#28a745', 
+              color: 'white', 
+              border: 'none', 
+              borderRadius: '4px', 
+              cursor: bulkExporting ? 'not-allowed' : 'pointer' 
+            }}
+          >
+            {bulkExporting ? 'Exporting...' : `Bulk Export (${selectedSessions.size})`}
+          </button>
+        )}
         <button onClick={loadSessions} style={{ padding: '8px 16px', background: '#667eea', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
           Refresh
         </button>
@@ -112,11 +245,20 @@ export default function SessionsList() {
         <table style={{ width: '100%', background: 'white', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: '#f8f9fa', borderBottom: '2px solid #ddd' }}>
+              <th style={{ padding: '12px', textAlign: 'left', width: '40px' }}>
+                <input
+                  type="checkbox"
+                  checked={selectedSessions.size === sessions.length && sessions.length > 0}
+                  onChange={toggleSelectAll}
+                  style={{ cursor: 'pointer' }}
+                />
+              </th>
               <th style={{ padding: '12px', textAlign: 'left' }}>Session ID</th>
               <th style={{ padding: '12px', textAlign: 'left' }}>Status</th>
               <th style={{ padding: '12px', textAlign: 'left' }}>Agent ID</th>
               <th style={{ padding: '12px', textAlign: 'left' }}>Last Seen</th>
               <th style={{ padding: '12px', textAlign: 'left' }}>Start Time</th>
+              <th style={{ padding: '12px', textAlign: 'left', width: '120px' }}>Export</th>
             </tr>
           </thead>
           <tbody>
@@ -128,6 +270,15 @@ export default function SessionsList() {
                 onMouseEnter={(e: React.MouseEvent<HTMLTableRowElement>) => e.currentTarget.style.background = '#f8f9fa'}
                 onMouseLeave={(e: React.MouseEvent<HTMLTableRowElement>) => e.currentTarget.style.background = 'white'}
               >
+                <td style={{ padding: '12px' }} onClick={(e) => toggleSessionSelection(session.sessionId, e)}>
+                  <input
+                    type="checkbox"
+                    checked={selectedSessions.has(session.sessionId)}
+                    onChange={() => {}}
+                    onClick={(e) => toggleSessionSelection(session.sessionId, e)}
+                    style={{ cursor: 'pointer' }}
+                  />
+                </td>
                 <td style={{ padding: '12px', fontFamily: 'monospace', fontSize: '12px' }}>{session.sessionId}</td>
                 <td style={{ padding: '12px' }}>
                   <span style={{
@@ -153,6 +304,91 @@ export default function SessionsList() {
                 </td>
                 <td style={{ padding: '12px', fontSize: '13px' }}>
                   {session.startTime ? new Date(session.startTime).toLocaleString() : session.$createdAt ? new Date(session.$createdAt).toLocaleString() : '-'}
+                </td>
+                <td style={{ padding: '12px' }} onClick={(e) => e.stopPropagation()}>
+                  <div style={{ position: 'relative', display: 'inline-block' }}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        const menu = document.getElementById(`export-menu-${session.sessionId}`)
+                        if (menu) {
+                          menu.style.display = menu.style.display === 'block' ? 'none' : 'block'
+                        }
+                      }}
+                      disabled={exporting === session.sessionId}
+                      style={{
+                        padding: '6px 12px',
+                        background: exporting === session.sessionId ? '#ccc' : '#667eea',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: exporting === session.sessionId ? 'not-allowed' : 'pointer',
+                        fontSize: '12px'
+                      }}
+                    >
+                      {exporting === session.sessionId ? '...' : 'Export'}
+                    </button>
+                    <div
+                      id={`export-menu-${session.sessionId}`}
+                      style={{
+                        display: 'none',
+                        position: 'absolute',
+                        top: '100%',
+                        left: 0,
+                        background: 'white',
+                        border: '1px solid #ddd',
+                        borderRadius: '4px',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                        zIndex: 1000,
+                        minWidth: '120px',
+                        marginTop: '4px'
+                      }}
+                    >
+                      <button
+                        onClick={(e) => {
+                          exportSession(session.sessionId, 'json', e)
+                          const menu = document.getElementById(`export-menu-${session.sessionId}`)
+                          if (menu) menu.style.display = 'none'
+                        }}
+                        style={{
+                          display: 'block',
+                          width: '100%',
+                          padding: '8px 12px',
+                          textAlign: 'left',
+                          background: 'white',
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontSize: '13px'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = '#f8f9fa'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+                      >
+                        Export JSON
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          exportSession(session.sessionId, 'csv', e)
+                          const menu = document.getElementById(`export-menu-${session.sessionId}`)
+                          if (menu) menu.style.display = 'none'
+                        }}
+                        style={{
+                          display: 'block',
+                          width: '100%',
+                          padding: '8px 12px',
+                          textAlign: 'left',
+                          background: 'white',
+                          border: 'none',
+                          borderTop: '1px solid #eee',
+                          cursor: 'pointer',
+                          fontSize: '13px'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = '#f8f9fa'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+                      >
+                        Export CSV
+                      </button>
+                    </div>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -182,6 +418,87 @@ export default function SessionsList() {
         <div style={{ marginTop: '10px', padding: '10px', background: '#f8f9fa', borderRadius: '4px', fontSize: '14px', color: '#666' }}>
           Showing {sessions.length} session{sessions.length !== 1 ? 's' : ''}
           {statusFilter && ` with status: ${statusFilter}`}
+          {selectedSessions.size > 0 && ` • ${selectedSessions.size} selected`}
+        </div>
+      )}
+
+      {/* Bulk Export Modal */}
+      {showBulkModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10000
+          }}
+          onClick={() => setShowBulkModal(false)}
+        >
+          <div
+            style={{
+              background: 'white',
+              padding: '24px',
+              borderRadius: '8px',
+              maxWidth: '400px',
+              width: '90%'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={{ marginTop: 0 }}>Bulk Export</h2>
+            <p>Export {selectedSessions.size} selected session{selectedSessions.size !== 1 ? 's' : ''} as:</p>
+            <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+              <button
+                onClick={() => handleBulkExport('json')}
+                disabled={bulkExporting}
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  background: bulkExporting ? '#ccc' : '#667eea',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: bulkExporting ? 'not-allowed' : 'pointer'
+                }}
+              >
+                JSON
+              </button>
+              <button
+                onClick={() => handleBulkExport('csv')}
+                disabled={bulkExporting}
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  background: bulkExporting ? '#ccc' : '#28a745',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: bulkExporting ? 'not-allowed' : 'pointer'
+                }}
+              >
+                CSV (ZIP)
+              </button>
+            </div>
+            <button
+              onClick={() => setShowBulkModal(false)}
+              style={{
+                marginTop: '15px',
+                padding: '8px 16px',
+                background: '#6c757d',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                width: '100%'
+              }}
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
     </div>
