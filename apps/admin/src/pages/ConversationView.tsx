@@ -1,0 +1,397 @@
+import React, { useState, useEffect } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import { io } from 'socket.io-client'
+
+const API_BASE = 'http://localhost:4000'
+const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET || 'dev-secret-change-me'
+
+interface Message {
+  sender: string
+  text: string
+  timestamp: string
+  agentId?: string
+}
+
+export default function ConversationView() {
+  const { sessionId } = useParams<{ sessionId: string }>()
+  const navigate = useNavigate()
+  const [messages, setMessages] = useState<Message[]>([])
+  const [loading, setLoading] = useState(true)
+  const [agentId, setAgentId] = useState('')
+  const [messageText, setMessageText] = useState('')
+  const [socket, setSocket] = useState<any>(null)
+  const [sessionStatus, setSessionStatus] = useState<string>('')
+  const [assignedAgentId, setAssignedAgentId] = useState<string>('')
+
+  // Load session info and messages when sessionId changes
+  useEffect(() => {
+    if (!sessionId) return
+    
+    // Load both session info and messages
+    loadSessionInfo()
+    loadMessages()
+    
+    // Connect to socket for real-time updates
+    const sock = io('http://localhost:4000')
+    
+    sock.on('connect', () => {
+      console.log('✅ Socket connected')
+      // Auto-connect as agent if session has assigned agent
+      if (assignedAgentId) {
+        setAgentId(assignedAgentId)
+        sock.emit('agent_connect', { agentId: assignedAgentId })
+        console.log(`👤 Auto-connected as agent: ${assignedAgentId}`)
+      } else if (agentId) {
+        sock.emit('agent_connect', { agentId })
+        console.log(`👤 Connected as agent: ${agentId}`)
+      }
+    })
+    
+    // Listen for user messages forwarded to agent
+    sock.on('user_message_for_agent', (data: any) => {
+      console.log('📨 Received user_message_for_agent:', data)
+      if (data.sessionId === sessionId) {
+        setMessages(prev => {
+          // Check if message already exists to avoid duplicates
+          const exists = prev.some(m => m.text === data.text && m.sender === 'user' && Math.abs(new Date(m.timestamp).getTime() - (data.ts || Date.now())) < 1000)
+          if (exists) {
+            console.log('   ⚠️  Duplicate message, skipping')
+            return prev
+          }
+          console.log('   ✅ Adding user message to UI')
+          return [...prev, { 
+            sender: 'user', 
+            text: data.text, 
+            timestamp: new Date(data.ts || Date.now()).toISOString() 
+          }]
+        })
+      } else {
+        console.log(`   ⚠️  Message for different session: ${data.sessionId} (current: ${sessionId})`)
+      }
+    })
+    
+    // Listen for agent's own messages
+    sock.on('agent_message', (data: any) => {
+      if (data.sessionId === sessionId) {
+        setMessages(prev => [...prev, { sender: 'agent', text: data.text, timestamp: new Date().toISOString(), agentId: data.agentId }])
+      }
+    })
+    
+    // Listen for assignment notifications
+    sock.on('assignment', (data: any) => {
+      console.log('📨 Assignment notification:', data)
+    })
+    
+    setSocket(sock)
+    
+    setSocket(sock)
+    
+    return () => {
+      sock.disconnect()
+    }
+  }, [sessionId, assignedAgentId])
+  
+  // Separate effect to reconnect when agentId changes
+  useEffect(() => {
+    if (socket && socket.connected && agentId) {
+      socket.emit('agent_connect', { agentId })
+      console.log(`👤 Reconnected as agent: ${agentId}`)
+    }
+  }, [agentId, socket])
+  
+  // Load session info to get assigned agent
+  async function loadSessionInfo() {
+    if (!sessionId) return
+    
+    try {
+      const res = await fetch(`${API_BASE}/admin/sessions`, {
+        headers: {
+          'Authorization': `Bearer ${ADMIN_SECRET}`
+        }
+      })
+      const data = await res.json()
+      const session = (data.sessions || []).find((s: any) => s.sessionId === sessionId)
+      
+      if (session) {
+        setSessionStatus(session.status || '')
+        
+        // Extract assignedAgent from session
+        let agent = session.assignedAgent || null
+        if (!agent && session.userMeta) {
+          try {
+            const userMeta = typeof session.userMeta === 'string' ? JSON.parse(session.userMeta) : session.userMeta
+            if (userMeta?.assignedAgent) {
+              agent = userMeta.assignedAgent
+            }
+          } catch (e) {
+            // Ignore parse errors
+          }
+        }
+        
+        if (agent) {
+          setAssignedAgentId(agent)
+          setAgentId(agent) // Auto-fill agent ID field
+          console.log(`✅ Found assigned agent: ${agent}`)
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load session info:', err)
+    }
+  }
+
+  async function loadMessages() {
+    if (!sessionId) return
+    setLoading(true)
+    try {
+      console.log(`📨 Loading messages for session: ${sessionId}`)
+      const res = await fetch(`${API_BASE}/admin/sessions/${sessionId}/messages`, {
+        headers: {
+          'Authorization': `Bearer ${ADMIN_SECRET}`
+        }
+      })
+      
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}))
+        throw new Error(`Failed to load messages: ${res.status} ${errorData.error || res.statusText}`)
+      }
+      
+      const data = await res.json()
+      console.log(`📨 Received ${data.messages?.length || 0} message(s) from backend`)
+      
+      // Transform Appwrite messages to UI format - includes user, bot, and agent messages
+      const transformedMessages = (data.messages || []).map((msg: any) => {
+        // Parse metadata if it's a string
+        let metadata = {}
+        if (msg.metadata) {
+          try {
+            metadata = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata
+          } catch (e) {
+            // Ignore parse errors
+          }
+        }
+        
+        return {
+          sender: msg.sender || 'unknown',
+          text: msg.text || '',
+          timestamp: msg.createdAt || msg.timestamp || msg.$createdAt || new Date().toISOString(),
+          agentId: metadata.agentId || undefined
+        }
+      })
+      
+      console.log(`📊 Transformed ${transformedMessages.length} message(s)`)
+      console.log(`📊 Message senders:`, [...new Set(transformedMessages.map((m: Message) => m.sender))])
+      
+      setMessages(transformedMessages)
+    } catch (err) {
+      console.error('❌ Failed to load messages:', err)
+      alert('Failed to load messages: ' + (err instanceof Error ? err.message : 'Unknown error'))
+      setMessages([]) // Set empty array on error
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function assignToMe() {
+    if (!sessionId || !agentId) {
+      alert('Please enter an agent ID')
+      return
+    }
+    
+    try {
+      // Ensure socket is connected and registered as agent
+      if (!socket) {
+        alert('Socket not connected. Please wait...')
+        return
+      }
+      
+      if (!socket.connected) {
+        alert('Socket not connected. Please refresh the page.')
+        return
+      }
+      
+      // Connect as agent FIRST (this registers the socket in agentSockets map)
+      console.log(`👤 Connecting as agent: ${agentId}`)
+      socket.emit('agent_connect', { agentId })
+      
+      // Wait a bit for connection to register
+      await new Promise(resolve => setTimeout(resolve, 100))
+      
+      // Assign session via API
+      const res = await fetch(`${API_BASE}/admin/sessions/${sessionId}/assign`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${ADMIN_SECRET}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ agentId })
+      })
+      const data = await res.json()
+      if (data.success) {
+        console.log('✅ Session assigned via API')
+        
+        // Also emit takeover event
+        socket.emit('agent_takeover', { sessionId, agentId })
+        console.log('✅ Emitted agent_takeover event')
+        
+        // Reload messages to get latest
+        loadMessages()
+      } else {
+        alert('Failed to assign session: ' + (data.error || 'Unknown error'))
+      }
+    } catch (err) {
+      console.error('Failed to assign session:', err)
+      alert('Failed to assign session: ' + (err instanceof Error ? err.message : 'Unknown error'))
+    }
+  }
+
+  async function closeConversation() {
+    if (!sessionId) return
+    
+    if (!confirm('Are you sure you want to close this conversation? This will prevent further messages from being sent.')) {
+      return
+    }
+    
+    try {
+      const res = await fetch(`${API_BASE}/admin/sessions/${sessionId}/close`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${ADMIN_SECRET}`,
+          'Content-Type': 'application/json'
+        }
+      })
+      const data = await res.json()
+      if (data.success) {
+        setSessionStatus('closed')
+        console.log('✅ Conversation closed successfully')
+        // Reload session info to refresh status
+        await loadSessionInfo()
+        // Show success message
+        alert('Conversation closed successfully. The session will now appear in the "Closed" filter.')
+      } else {
+        alert('Failed to close conversation: ' + (data.error || 'Unknown error'))
+      }
+    } catch (err) {
+      console.error('Failed to close conversation:', err)
+      alert('Failed to close conversation: ' + (err instanceof Error ? err.message : 'Unknown error'))
+    }
+  }
+
+  function sendMessage() {
+    if (!sessionId || !messageText.trim() || !agentId) {
+      alert('Please enter agent ID and message')
+      return
+    }
+    
+    if (sessionStatus === 'closed') {
+      alert('This conversation is closed. Cannot send messages.')
+      return
+    }
+    
+    if (socket) {
+      socket.emit('agent_message', { sessionId, text: messageText.trim(), agentId })
+      setMessages(prev => [...prev, { sender: 'agent', text: messageText.trim(), timestamp: new Date().toISOString(), agentId }])
+      setMessageText('')
+    }
+  }
+
+  return (
+    <div style={{ padding: '20px', maxWidth: '1000px', margin: '0 auto' }}>
+      <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <button onClick={() => navigate('/')} style={{ padding: '8px 16px', marginRight: '10px', background: '#6c757d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+            ← Back
+          </button>
+          <h1 style={{ display: 'inline', marginLeft: '10px' }}>Session: {sessionId}</h1>
+        </div>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          {sessionStatus && (
+            <span style={{
+              padding: '6px 12px',
+              borderRadius: '4px',
+              fontSize: '13px',
+              background: sessionStatus === 'active' ? '#d4edda' : sessionStatus === 'agent_assigned' ? '#d1ecf1' : sessionStatus === 'closed' ? '#f8d7da' : '#e2e3e5',
+              color: sessionStatus === 'active' ? '#155724' : sessionStatus === 'agent_assigned' ? '#0c5460' : sessionStatus === 'closed' ? '#721c24' : '#383d41'
+            }}>
+              {sessionStatus}
+            </span>
+          )}
+          <input
+            type="text"
+            placeholder="Agent ID"
+            value={agentId}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAgentId(e.target.value)}
+            style={{ padding: '8px', border: '1px solid #ddd', borderRadius: '4px', width: '120px' }}
+          />
+          {assignedAgentId && assignedAgentId === agentId ? (
+            <>
+              <button onClick={closeConversation} style={{ padding: '8px 16px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+                Close Conversation
+              </button>
+              <span style={{ fontSize: '13px', color: '#28a745', fontWeight: '500' }}>✓ Assigned</span>
+            </>
+          ) : (
+            <button onClick={assignToMe} style={{ padding: '8px 16px', background: '#28a745', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+              Assign to Me
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div style={{ background: 'white', borderRadius: '8px', padding: '20px', marginBottom: '20px', minHeight: '400px', maxHeight: '600px', overflow: 'auto' }}>
+        {loading ? (
+          <div>Loading messages...</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {messages.map((msg, i) => (
+              <div
+                key={i}
+                style={{
+                  padding: '10px 14px',
+                  borderRadius: '8px',
+                  background: msg.sender === 'user' ? '#667eea' : msg.sender === 'agent' ? '#28a745' : msg.sender === 'bot' ? '#6c757d' : '#f8f9fa',
+                  color: msg.sender === 'user' ? 'white' : msg.sender === 'bot' ? 'white' : '#333',
+                  alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start',
+                  maxWidth: '70%'
+                }}
+              >
+                <div style={{ fontSize: '12px', opacity: 0.8, marginBottom: '4px', fontWeight: '500' }}>
+                  {msg.sender === 'bot' ? '🤖 Bot' : msg.sender === 'agent' ? `👤 Agent${msg.agentId ? ` (${msg.agentId})` : ''}` : '👤 User'}
+                </div>
+                <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{msg.text}</div>
+                <div style={{ fontSize: '11px', opacity: 0.7, marginTop: '4px' }}>
+                  {new Date(msg.timestamp).toLocaleString()}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', gap: '10px' }}>
+        <input
+          type="text"
+          placeholder="Type your message..."
+          value={messageText}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMessageText(e.target.value)}
+          onKeyPress={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === 'Enter' && sendMessage()}
+          style={{ flex: 1, padding: '10px', border: '1px solid #ddd', borderRadius: '4px' }}
+        />
+        <button
+          onClick={sendMessage}
+          disabled={!agentId || !messageText.trim()}
+          style={{
+            padding: '10px 20px',
+            background: agentId && messageText.trim() ? '#28a745' : '#ccc',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: agentId && messageText.trim() ? 'pointer' : 'not-allowed'
+          }}
+        >
+          Send
+        </button>
+      </div>
+    </div>
+  )
+}
+
