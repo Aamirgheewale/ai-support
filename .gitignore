@@ -137,7 +137,8 @@ dist-ssr/
 # Appwrite local files
 appwrite.json
 
-# Keep all README.md files (explicitly allow)
+# Ignore all markdown files except README.md
+*.md
 !README.md
 !**/README.md
 !readme.md
