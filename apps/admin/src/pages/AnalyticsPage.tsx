@@ -1,0 +1,350 @@
+import React, { useState, useEffect } from 'react';
+import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Brush } from 'recharts';
+import KpiCard from '../components/analytics/KpiCard';
+import TimeSeriesChart from '../components/analytics/TimeSeriesChart';
+import HistogramChart from '../components/analytics/HistogramChart';
+import ResponseTimeChart from '../components/analytics/ResponseTimeChart';
+
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
+const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET || 'dev-secret-change-me';
+
+interface OverviewMetrics {
+  totalSessions: number;
+  totalMessages: number;
+  avgMessagesPerSession: number;
+  avgResponseTimeMs: number;
+  humanTakeoverRate: number;
+  aiFallbackCount: number;
+  sessionStatuses?: {
+    active: number;
+    agent_assigned: number;
+    closed: number;
+    needs_human: number;
+  };
+  period: { from: string; to: string };
+  cached?: boolean;
+}
+
+interface TimeSeriesData {
+  date: string;
+  messages: number;
+  sessionsStarted: number;
+}
+
+interface ConfidenceHistogram {
+  histogram: Array<{ bin: number; min: string; max: string; count: number }>;
+  totalMessages: number;
+}
+
+interface ResponseTimes {
+  percentiles: Record<number, number>;
+  distribution: Array<{ range: string; count: number }>;
+  totalResponses: number;
+  avgResponseTime: number;
+}
+
+const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
+
+export default function AnalyticsPage() {
+  const [loading, setLoading] = useState(true);
+  const [fromDate, setFromDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 7);
+    return d.toISOString().split('T')[0];
+  });
+  const [toDate, setToDate] = useState(() => {
+    return new Date().toISOString().split('T')[0];
+  });
+  const [interval, setInterval] = useState<'day' | 'week' | 'month'>('day');
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  
+  const [overview, setOverview] = useState<OverviewMetrics | null>(null);
+  const [timeSeries, setTimeSeries] = useState<TimeSeriesData[]>([]);
+  const [confidenceHistogram, setConfidenceHistogram] = useState<ConfidenceHistogram | null>(null);
+  const [responseTimes, setResponseTimes] = useState<ResponseTimes | null>(null);
+  const [sessionStatuses, setSessionStatuses] = useState<Array<{ name: string; value: number }>>([]);
+  
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchMetrics = async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const headers = {
+        'Authorization': `Bearer ${ADMIN_SECRET}`,
+        'Content-Type': 'application/json'
+      };
+      
+      // Fetch all metrics in parallel
+      const [overviewRes, timeSeriesRes, histogramRes, responseTimesRes] = await Promise.all([
+        fetch(`${API_BASE}/admin/metrics/overview?from=${fromDate}&to=${toDate}`, { headers }),
+        fetch(`${API_BASE}/admin/metrics/messages-over-time?from=${fromDate}&to=${toDate}&interval=${interval}`, { headers }),
+        fetch(`${API_BASE}/admin/metrics/confidence-histogram?from=${fromDate}&to=${toDate}&bins=10`, { headers }),
+        fetch(`${API_BASE}/admin/metrics/response-times?from=${fromDate}&to=${toDate}&percentiles=50,90,99`, { headers })
+      ]);
+      
+      if (!overviewRes.ok || !timeSeriesRes.ok || !histogramRes.ok || !responseTimesRes.ok) {
+        throw new Error('Failed to fetch metrics');
+      }
+      
+      const [overviewData, timeSeriesData, histogramData, responseTimesData] = await Promise.all([
+        overviewRes.json(),
+        timeSeriesRes.json(),
+        histogramRes.json(),
+        responseTimesRes.json()
+      ]);
+      
+      setOverview(overviewData);
+      setTimeSeries(timeSeriesData.timeseries || []);
+      setConfidenceHistogram(histogramData);
+      setResponseTimes(responseTimesData);
+      
+      // Use actual session statuses from backend
+      if (overviewData.sessionStatuses) {
+        const statuses = [
+          { name: 'Active', value: overviewData.sessionStatuses.active || 0 },
+          { name: 'Agent Assigned', value: overviewData.sessionStatuses.agent_assigned || 0 },
+          { name: 'Closed', value: overviewData.sessionStatuses.closed || 0 },
+          { name: 'Needs Human', value: overviewData.sessionStatuses.needs_human || 0 }
+        ];
+        // Filter out zero values to prevent overlapping labels
+        setSessionStatuses(statuses.filter(s => s.value > 0));
+      } else if (overviewData.totalSessions > 0) {
+        // Fallback to old calculation if backend doesn't provide statuses
+        const active = overviewData.totalSessions - overviewData.aiFallbackCount - (overviewData.totalSessions * overviewData.humanTakeoverRate / 100);
+        const statuses = [
+          { name: 'Active', value: Math.max(0, Math.round(active)) },
+          { name: 'Needs Human', value: overviewData.aiFallbackCount },
+          { name: 'Agent Assigned', value: Math.round(overviewData.totalSessions * overviewData.humanTakeoverRate / 100) }
+        ];
+        setSessionStatuses(statuses.filter(s => s.value > 0));
+      } else {
+        setSessionStatuses([]);
+      }
+      
+      setLastUpdated(new Date());
+    } catch (err: any) {
+      console.error('Error fetching metrics:', err);
+      setError(err?.message || 'Failed to load metrics');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchMetrics();
+  }, [fromDate, toDate, interval]);
+
+  const handleExportCSV = async () => {
+    try {
+      const response = await fetch(
+        `${API_BASE}/admin/metrics/messages-over-time?from=${fromDate}&to=${toDate}&interval=${interval}&format=csv`,
+        {
+          headers: { 'Authorization': `Bearer ${ADMIN_SECRET}` }
+        }
+      );
+      
+      if (!response.ok) throw new Error('Export failed');
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `messages-over-time-${fromDate}-to-${toDate}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err: any) {
+      alert('Failed to export CSV: ' + (err?.message || 'Unknown error'));
+    }
+  };
+
+  if (loading && !overview) {
+    return (
+      <div className="p-6">
+        <div className="animate-pulse space-y-4">
+          <div className="h-8 bg-gray-200 rounded w-1/4"></div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="h-24 bg-gray-200 rounded"></div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 max-w-7xl mx-auto">
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold mb-4">Analytics Dashboard</h1>
+        
+        <div className="flex flex-wrap items-center gap-4 mb-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">From Date</label>
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="border rounded px-3 py-2"
+            />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium mb-1">To Date</label>
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="border rounded px-3 py-2"
+            />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium mb-1">Interval</label>
+            <select
+              value={interval}
+              onChange={(e) => setInterval(e.target.value as 'day' | 'week' | 'month')}
+              className="border rounded px-3 py-2"
+            >
+              <option value="day">Day</option>
+              <option value="week">Week</option>
+              <option value="month">Month</option>
+            </select>
+          </div>
+          
+          <div className="flex items-end gap-2">
+            <button
+              onClick={fetchMetrics}
+              className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+            >
+              Refresh
+            </button>
+            <button
+              onClick={handleExportCSV}
+              className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+            >
+              Download CSV
+            </button>
+          </div>
+          
+          {lastUpdated && (
+            <div className="text-sm text-gray-500">
+              Last updated: {lastUpdated.toLocaleTimeString()}
+              {overview?.cached && ' (cached)'}
+            </div>
+          )}
+        </div>
+        
+        {error && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+            {error}
+          </div>
+        )}
+      </div>
+
+      {/* KPI Cards */}
+      {overview && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <KpiCard title="Total Sessions" value={overview.totalSessions} />
+          <KpiCard title="Total Messages" value={overview.totalMessages} />
+          <KpiCard 
+            title="Avg Response Time" 
+            value={`${overview.avgResponseTimeMs}ms`}
+          />
+          <KpiCard 
+            title="Human Takeover Rate" 
+            value={`${overview.humanTakeoverRate}%`}
+          />
+          <KpiCard 
+            title="AI Fallback Count" 
+            value={overview.aiFallbackCount}
+          />
+          <KpiCard 
+            title="Avg Messages/Session" 
+            value={overview.avgMessagesPerSession.toFixed(2)}
+          />
+        </div>
+      )}
+
+      {/* Charts */}
+      <div className="space-y-6">
+        {/* Messages Over Time */}
+        {timeSeries.length > 0 && (
+          <div className="bg-white p-4 rounded-lg shadow">
+            <h2 className="text-xl font-semibold mb-4">Messages Over Time</h2>
+            <TimeSeriesChart data={timeSeries} />
+          </div>
+        )}
+
+        {/* Confidence Histogram */}
+        {confidenceHistogram && confidenceHistogram.histogram.length > 0 && (
+          <div className="bg-white p-4 rounded-lg shadow">
+            <h2 className="text-xl font-semibold mb-4">
+              AI Confidence Distribution ({confidenceHistogram.totalMessages} bot messages)
+            </h2>
+            <HistogramChart data={confidenceHistogram.histogram} />
+          </div>
+        )}
+
+        {/* Response Times */}
+        {responseTimes && responseTimes.distribution.length > 0 && (
+          <div className="bg-white p-4 rounded-lg shadow">
+            <h2 className="text-xl font-semibold mb-4">
+              Response Time Distribution ({responseTimes.totalResponses} responses)
+            </h2>
+            <ResponseTimeChart data={responseTimes} />
+          </div>
+        )}
+
+        {/* Session Statuses */}
+        {sessionStatuses.length > 0 && (
+          <div className="bg-white p-4 rounded-lg shadow">
+            <h2 className="text-xl font-semibold mb-4">Session Statuses</h2>
+            <ResponsiveContainer width="100%" height={350}>
+              <PieChart>
+                <Pie
+                  data={sessionStatuses}
+                  cx="50%"
+                  cy="50%"
+                  labelLine={true}
+                  label={({ name, percent, value }) => {
+                    // Only show label if segment is significant (> 5%) or if it's the only segment
+                    if (percent > 0.05 || sessionStatuses.length === 1) {
+                      return `${name}: ${value} (${(percent * 100).toFixed(1)}%)`;
+                    }
+                    return '';
+                  }}
+                  outerRadius={100}
+                  innerRadius={30}
+                  fill="#8884d8"
+                  dataKey="value"
+                  paddingAngle={2}
+                >
+                  {sessionStatuses.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip 
+                  formatter={(value: number, name: string) => [`${value} sessions`, name]}
+                  contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb' }}
+                />
+                <Legend 
+                  verticalAlign="bottom" 
+                  height={36}
+                  formatter={(value: string, entry: any) => {
+                    const data = sessionStatuses.find(s => s.name === value);
+                    return `${value} (${data?.value || 0})`;
+                  }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+

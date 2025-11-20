@@ -1401,6 +1401,805 @@ app.get('/session/:sessionId/theme', async (req, res) => {
   }
 });
 
+// ============================================================================
+// Analytics & Metrics Endpoints
+// ============================================================================
+
+// Simple in-memory cache for metrics (TTL: 60s)
+// TODO: Replace with Redis/Prometheus for production multi-instance deployments
+const metricsCache = new Map();
+const CACHE_TTL_MS = 60000; // 60 seconds
+
+function getCacheKey(endpoint, params) {
+  return `${endpoint}:${JSON.stringify(params)}`;
+}
+
+function getCached(key) {
+  const cached = metricsCache.get(key);
+  if (!cached) return null;
+  if (Date.now() - cached.timestamp > CACHE_TTL_MS) {
+    metricsCache.delete(key);
+    return null;
+  }
+  return cached.data;
+}
+
+function setCache(key, data) {
+  metricsCache.set(key, { data, timestamp: Date.now() });
+}
+
+// Helper: Parse and validate date range
+function parseDateRange(req) {
+  const now = new Date();
+  const defaultFrom = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); // 7 days ago
+  defaultFrom.setHours(0, 0, 0, 0); // Start of day
+  const defaultTo = new Date(now);
+  defaultTo.setHours(23, 59, 59, 999); // End of day
+  
+  let from = defaultFrom;
+  let to = defaultTo;
+  
+  if (req.query.from) {
+    const parsedFrom = new Date(req.query.from);
+    if (!isNaN(parsedFrom.getTime())) {
+      parsedFrom.setHours(0, 0, 0, 0); // Start of day
+      from = parsedFrom;
+    }
+  }
+  
+  if (req.query.to) {
+    const parsedTo = new Date(req.query.to);
+    if (!isNaN(parsedTo.getTime())) {
+      parsedTo.setHours(23, 59, 59, 999); // End of day
+      to = parsedTo;
+    }
+  }
+  
+  // Ensure from <= to
+  if (from > to) {
+    [from, to] = [to, from];
+  }
+  
+  return { from, to };
+}
+
+// Helper: Stream all documents from Appwrite with pagination
+async function streamAllDocuments(databaseId, collectionId, queries = [], limitPerPage = 100) {
+  if (!awDatabases || !databaseId || !collectionId) {
+    return [];
+  }
+  
+  const allDocuments = [];
+  let offset = 0;
+  let hasMore = true;
+  
+  while (hasMore) {
+    try {
+      const result = await awDatabases.listDocuments(
+        databaseId,
+        collectionId,
+        queries,
+        limitPerPage,
+        offset
+      );
+      
+      allDocuments.push(...result.documents);
+      offset += result.documents.length;
+      hasMore = result.documents.length === limitPerPage && offset < result.total;
+    } catch (err) {
+      // If query fails (e.g., attribute not found), throw error to trigger fallback
+      if (err?.code === 400 || err?.message?.includes('Attribute not found') || err?.message?.includes('Invalid query')) {
+        throw err; // Re-throw to trigger fallback in calling code
+      }
+      console.warn(`⚠️  Error streaming documents (offset ${offset}):`, err?.message);
+      break;
+    }
+  }
+  
+  return allDocuments;
+}
+
+// GET /admin/metrics/overview
+app.get('/admin/metrics/overview', requireAdminAuth, async (req, res) => {
+  const authHeader = req.headers.authorization;
+  const adminToken = authHeader ? authHeader.substring(7) : 'unknown';
+  const { from, to } = parseDateRange(req);
+  const cacheKey = getCacheKey('/admin/metrics/overview', { from: from.toISOString(), to: to.toISOString() });
+  
+  console.log(`📊 Metrics overview requested by admin (${from.toISOString()} to ${to.toISOString()})`);
+  
+  // Check cache
+  const cached = getCached(cacheKey);
+  if (cached) {
+    console.log(`📊 Overview metrics served from cache (${cached.totalSessions} sessions, ${cached.totalMessages} messages)`);
+    return res.json({ ...cached, cached: true });
+  }
+  
+  if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_SESSIONS_COLLECTION_ID || !APPWRITE_MESSAGES_COLLECTION_ID) {
+    return res.status(503).json({ error: 'Appwrite not configured' });
+  }
+  
+  try {
+    const fromISO = from.toISOString();
+    const toISO = to.toISOString();
+    
+    // Query sessions - use $createdAt (Appwrite auto-generated) or lastSeen
+    // Try $createdAt first, if no results, try without date filter
+    let sessions = [];
+    try {
+      const sessionQueries = [
+        Query.greaterThanEqual('$createdAt', fromISO),
+        Query.lessThanEqual('$createdAt', toISO)
+      ];
+      sessions = await streamAllDocuments(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_SESSIONS_COLLECTION_ID,
+        sessionQueries
+      );
+    } catch (err) {
+      // If $createdAt query fails, try lastSeen
+      try {
+        const sessionQueries = [
+          Query.greaterThanEqual('lastSeen', fromISO),
+          Query.lessThanEqual('lastSeen', toISO)
+        ];
+        sessions = await streamAllDocuments(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_SESSIONS_COLLECTION_ID,
+          sessionQueries
+        );
+      } catch (err2) {
+        // If both fail, get all sessions and filter in memory
+        console.warn('⚠️  Date query failed, fetching all sessions:', err2?.message);
+        sessions = await streamAllDocuments(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_SESSIONS_COLLECTION_ID,
+          []
+        );
+        // Filter by date in memory
+        sessions = sessions.filter(s => {
+          const sessionDate = new Date(s.$createdAt || s.createdAt || s.lastSeen || s.startTime || 0);
+          return sessionDate >= from && sessionDate <= to;
+        });
+      }
+    }
+    
+    // Query messages - try $createdAt first (most reliable), then createdAt, then timestamp, then fetch all
+    let messages = [];
+    try {
+      // Try $createdAt first (Appwrite auto-generated field)
+      const messageQueries = [
+        Query.greaterThanEqual('$createdAt', fromISO),
+        Query.lessThanEqual('$createdAt', toISO)
+      ];
+      messages = await streamAllDocuments(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_MESSAGES_COLLECTION_ID,
+        messageQueries
+      );
+      console.log(`✅ Fetched ${messages.length} messages using $createdAt`);
+    } catch (err) {
+      // Try createdAt
+      try {
+        console.log('⚠️  $createdAt query failed, trying createdAt...');
+        const messageQueries = [
+          Query.greaterThanEqual('createdAt', fromISO),
+          Query.lessThanEqual('createdAt', toISO)
+        ];
+        messages = await streamAllDocuments(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_MESSAGES_COLLECTION_ID,
+          messageQueries
+        );
+        console.log(`✅ Fetched ${messages.length} messages using createdAt`);
+      } catch (err2) {
+        // Try timestamp
+        try {
+          console.log('⚠️  createdAt query failed, trying timestamp...');
+          const messageQueries = [
+            Query.greaterThanEqual('timestamp', fromISO),
+            Query.lessThanEqual('timestamp', toISO)
+          ];
+          messages = await streamAllDocuments(
+            APPWRITE_DATABASE_ID,
+            APPWRITE_MESSAGES_COLLECTION_ID,
+            messageQueries
+          );
+          console.log(`✅ Fetched ${messages.length} messages using timestamp`);
+        } catch (err3) {
+          // If all fail, get all messages and filter in memory
+          console.warn('⚠️  All date queries failed, fetching all messages and filtering in memory');
+          messages = await streamAllDocuments(
+            APPWRITE_DATABASE_ID,
+            APPWRITE_MESSAGES_COLLECTION_ID,
+            []
+          );
+          // Filter by date in memory
+          const beforeFilter = messages.length;
+          messages = messages.filter(m => {
+            const msgDate = new Date(m.$createdAt || m.createdAt || m.timestamp || 0);
+            return !isNaN(msgDate.getTime()) && msgDate >= from && msgDate <= to;
+          });
+          console.log(`✅ Filtered ${messages.length} messages from ${beforeFilter} total (in-memory filter)`);
+        }
+      }
+    }
+    
+    const totalSessions = sessions.length;
+    const totalMessages = messages.length;
+    const avgMessagesPerSession = totalSessions > 0 ? (totalMessages / totalSessions).toFixed(2) : 0;
+    
+    // Calculate human takeover rate
+    const sessionsNeedingHuman = sessions.filter(s => s.status === 'needs_human' || s.status === 'agent_assigned').length;
+    const humanTakeoverRate = totalSessions > 0 ? ((sessionsNeedingHuman / totalSessions) * 100).toFixed(2) : 0;
+    
+    // Calculate AI fallback count (sessions marked as needs_human)
+    const aiFallbackCount = sessions.filter(s => s.status === 'needs_human').length;
+    
+    // Calculate average response time (time between user message and bot response)
+    let totalResponseTime = 0;
+    let responseTimeCount = 0;
+    const sessionMessages = {};
+    
+    messages.forEach(msg => {
+      if (!msg.sessionId) return;
+      if (!sessionMessages[msg.sessionId]) {
+        sessionMessages[msg.sessionId] = [];
+      }
+      const msgTimestamp = new Date(msg.timestamp || msg.createdAt || msg.$createdAt || Date.now()).getTime();
+      if (!isNaN(msgTimestamp)) {
+        sessionMessages[msg.sessionId].push({
+          sender: msg.sender,
+          timestamp: msgTimestamp
+        });
+      }
+    });
+    
+    Object.values(sessionMessages).forEach(msgs => {
+      if (msgs.length < 2) return;
+      msgs.sort((a, b) => a.timestamp - b.timestamp);
+      for (let i = 0; i < msgs.length - 1; i++) {
+        if (msgs[i].sender === 'user' && (msgs[i + 1].sender === 'bot' || msgs[i + 1].sender === 'agent')) {
+          const responseTime = msgs[i + 1].timestamp - msgs[i].timestamp;
+          if (responseTime > 0 && responseTime < 300000) { // Max 5 minutes
+            totalResponseTime += responseTime;
+            responseTimeCount++;
+          }
+        }
+      }
+    });
+    
+    const avgResponseTimeMs = responseTimeCount > 0 ? Math.round(totalResponseTime / responseTimeCount) : 0;
+    console.log(`📊 Calculated avg response time: ${avgResponseTimeMs}ms from ${responseTimeCount} responses`);
+    
+    // Calculate actual session status breakdown
+    const statusCounts = {
+      active: 0,
+      agent_assigned: 0,
+      closed: 0,
+      needs_human: 0
+    };
+    
+    sessions.forEach(session => {
+      const status = (session.status || 'active').toLowerCase();
+      if (statusCounts.hasOwnProperty(status)) {
+        statusCounts[status]++;
+      } else {
+        // Handle any other status values
+        statusCounts.active++;
+      }
+    });
+    
+    const result = {
+      totalSessions,
+      totalMessages,
+      avgMessagesPerSession: parseFloat(avgMessagesPerSession),
+      avgResponseTimeMs,
+      humanTakeoverRate: parseFloat(humanTakeoverRate),
+      aiFallbackCount,
+      sessionStatuses: statusCounts, // Add actual status breakdown
+      period: {
+        from: fromISO,
+        to: toISO
+      }
+    };
+    
+    console.log(`📊 Session status breakdown: Active=${statusCounts.active}, Agent Assigned=${statusCounts.agent_assigned}, Closed=${statusCounts.closed}, Needs Human=${statusCounts.needs_human}`);
+    
+    setCache(cacheKey, result);
+    res.json(result);
+  } catch (err) {
+    console.error('❌ Error computing overview metrics:', err);
+    res.status(500).json({ error: err?.message || 'Failed to compute metrics' });
+  }
+});
+
+// GET /admin/metrics/messages-over-time
+app.get('/admin/metrics/messages-over-time', requireAdminAuth, async (req, res) => {
+  const authHeader = req.headers.authorization;
+  const adminToken = authHeader ? authHeader.substring(7) : 'unknown';
+  const { from, to } = parseDateRange(req);
+  const interval = req.query.interval || 'day'; // day, week, month
+  const format = req.query.format || 'json'; // json, csv
+  
+  const cacheKey = getCacheKey('/admin/metrics/messages-over-time', { 
+    from: from.toISOString(), 
+    to: to.toISOString(), 
+    interval 
+  });
+  
+  console.log(`📊 Messages over time requested (${interval}, ${from.toISOString()} to ${to.toISOString()})`);
+  
+  // Check cache
+  if (format === 'json') {
+    const cached = getCached(cacheKey);
+    if (cached) {
+      return res.json({ ...cached, cached: true });
+    }
+  }
+  
+  if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_MESSAGES_COLLECTION_ID || !APPWRITE_SESSIONS_COLLECTION_ID) {
+    return res.status(503).json({ error: 'Appwrite not configured' });
+  }
+  
+  try {
+    const fromISO = from.toISOString();
+    const toISO = to.toISOString();
+    
+    // Get messages - try $createdAt first, then createdAt, then timestamp, then fetch all
+    let messages = [];
+    try {
+      const messageQueries = [
+        Query.greaterThanEqual('$createdAt', fromISO),
+        Query.lessThanEqual('$createdAt', toISO)
+      ];
+      messages = await streamAllDocuments(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_MESSAGES_COLLECTION_ID,
+        messageQueries
+      );
+    } catch (err) {
+      try {
+        const messageQueries = [
+          Query.greaterThanEqual('createdAt', fromISO),
+          Query.lessThanEqual('createdAt', toISO)
+        ];
+        messages = await streamAllDocuments(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_MESSAGES_COLLECTION_ID,
+          messageQueries
+        );
+      } catch (err2) {
+        try {
+          const messageQueries = [
+            Query.greaterThanEqual('timestamp', fromISO),
+            Query.lessThanEqual('timestamp', toISO)
+          ];
+          messages = await streamAllDocuments(
+            APPWRITE_DATABASE_ID,
+            APPWRITE_MESSAGES_COLLECTION_ID,
+            messageQueries
+          );
+        } catch (err3) {
+          messages = await streamAllDocuments(
+            APPWRITE_DATABASE_ID,
+            APPWRITE_MESSAGES_COLLECTION_ID,
+            []
+          );
+          messages = messages.filter(m => {
+            const msgDate = new Date(m.$createdAt || m.createdAt || m.timestamp || 0);
+            return !isNaN(msgDate.getTime()) && msgDate >= from && msgDate <= to;
+          });
+        }
+      }
+    }
+    
+    // Get sessions - try multiple field names
+    let sessions = [];
+    try {
+      const sessionQueries = [
+        Query.greaterThanEqual('$createdAt', fromISO),
+        Query.lessThanEqual('$createdAt', toISO)
+      ];
+      sessions = await streamAllDocuments(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_SESSIONS_COLLECTION_ID,
+        sessionQueries
+      );
+    } catch (err) {
+      try {
+        const sessionQueries = [
+          Query.greaterThanEqual('lastSeen', fromISO),
+          Query.lessThanEqual('lastSeen', toISO)
+        ];
+        sessions = await streamAllDocuments(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_SESSIONS_COLLECTION_ID,
+          sessionQueries
+        );
+      } catch (err2) {
+        sessions = await streamAllDocuments(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_SESSIONS_COLLECTION_ID,
+          []
+        );
+        sessions = sessions.filter(s => {
+          const sessionDate = new Date(s.$createdAt || s.createdAt || s.lastSeen || s.startTime || 0);
+          return sessionDate >= from && sessionDate <= to;
+        });
+      }
+    }
+    
+    // Bucket by date interval
+    const buckets = new Map();
+    const sessionStartDates = new Map();
+    
+    sessions.forEach(session => {
+      const createdAt = new Date(session.createdAt || session.$createdAt);
+      const dateKey = getDateKey(createdAt, interval);
+      sessionStartDates.set(session.sessionId, dateKey);
+    });
+    
+    messages.forEach(msg => {
+      const timestamp = new Date(msg.timestamp || msg.createdAt || msg.$createdAt || Date.now());
+      if (isNaN(timestamp.getTime())) return; // Skip invalid dates
+      const dateKey = getDateKey(timestamp, interval);
+      
+      if (!buckets.has(dateKey)) {
+        buckets.set(dateKey, { date: dateKey, messages: 0, sessionsStarted: 0 });
+      }
+      buckets.get(dateKey).messages++;
+    });
+    
+    // Count sessions started per bucket
+    sessionStartDates.forEach(dateKey => {
+      if (!buckets.has(dateKey)) {
+        buckets.set(dateKey, { date: dateKey, messages: 0, sessionsStarted: 0 });
+      }
+      buckets.get(dateKey).sessionsStarted++;
+    });
+    
+    // Fill gaps and sort
+    const timeseries = fillDateGaps(Array.from(buckets.values()), from, to, interval).sort((a, b) => 
+      a.date.localeCompare(b.date)
+    );
+    
+    if (format === 'csv') {
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename="messages-over-time.csv"');
+      const csvRows = ['date,messages,sessionsStarted'];
+      timeseries.forEach(item => {
+        csvRows.push(`${item.date},${item.messages},${item.sessionsStarted}`);
+      });
+      return res.send(csvRows.join('\n'));
+    }
+    
+    const result = { timeseries, period: { from: fromISO, to: toISO }, interval };
+    setCache(cacheKey, result);
+    res.json(result);
+  } catch (err) {
+    console.error('❌ Error computing messages-over-time:', err);
+    res.status(500).json({ error: err?.message || 'Failed to compute metrics' });
+  }
+});
+
+// Helper: Get date key for bucketing
+function getDateKey(date, interval) {
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  
+  if (interval === 'day') {
+    return `${year}-${month}-${day}`;
+  } else if (interval === 'week') {
+    const weekStart = new Date(d);
+    weekStart.setDate(d.getDate() - d.getDay()); // Sunday
+    return `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
+  } else if (interval === 'month') {
+    return `${year}-${month}`;
+  }
+  return `${year}-${month}-${day}`;
+}
+
+// Helper: Fill date gaps in timeseries
+function fillDateGaps(data, from, to, interval) {
+  const filled = [];
+  const dataMap = new Map(data.map(item => [item.date, item]));
+  
+  const current = new Date(from);
+  const end = new Date(to);
+  
+  while (current <= end) {
+    const key = getDateKey(current, interval);
+    if (dataMap.has(key)) {
+      filled.push(dataMap.get(key));
+    } else {
+      filled.push({ date: key, messages: 0, sessionsStarted: 0 });
+    }
+    
+    if (interval === 'day') {
+      current.setDate(current.getDate() + 1);
+    } else if (interval === 'week') {
+      current.setDate(current.getDate() + 7);
+    } else if (interval === 'month') {
+      current.setMonth(current.getMonth() + 1);
+    } else {
+      current.setDate(current.getDate() + 1);
+    }
+  }
+  
+  return filled;
+}
+
+// GET /admin/metrics/confidence-histogram
+app.get('/admin/metrics/confidence-histogram', requireAdminAuth, async (req, res) => {
+  const { from, to } = parseDateRange(req);
+  const bins = parseInt(req.query.bins) || 10;
+  const cacheKey = getCacheKey('/admin/metrics/confidence-histogram', { 
+    from: from.toISOString(), 
+    to: to.toISOString(), 
+    bins 
+  });
+  
+  console.log(`📊 Confidence histogram requested (${bins} bins)`);
+  
+  const cached = getCached(cacheKey);
+  if (cached) {
+    return res.json({ ...cached, cached: true });
+  }
+  
+  if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_MESSAGES_COLLECTION_ID) {
+    return res.status(503).json({ error: 'Appwrite not configured' });
+  }
+  
+  try {
+    const fromISO = from.toISOString();
+    const toISO = to.toISOString();
+    
+    // Query bot messages - try $createdAt first, then createdAt, then timestamp, then fetch all
+    let messages = [];
+    try {
+      const messageQueries = [
+        Query.greaterThanEqual('$createdAt', fromISO),
+        Query.lessThanEqual('$createdAt', toISO),
+        Query.equal('sender', 'bot')
+      ];
+      messages = await streamAllDocuments(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_MESSAGES_COLLECTION_ID,
+        messageQueries
+      );
+    } catch (err) {
+      try {
+        const messageQueries = [
+          Query.greaterThanEqual('createdAt', fromISO),
+          Query.lessThanEqual('createdAt', toISO),
+          Query.equal('sender', 'bot')
+        ];
+        messages = await streamAllDocuments(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_MESSAGES_COLLECTION_ID,
+          messageQueries
+        );
+      } catch (err2) {
+        try {
+          const messageQueries = [
+            Query.greaterThanEqual('timestamp', fromISO),
+            Query.lessThanEqual('timestamp', toISO),
+            Query.equal('sender', 'bot')
+          ];
+          messages = await streamAllDocuments(
+            APPWRITE_DATABASE_ID,
+            APPWRITE_MESSAGES_COLLECTION_ID,
+            messageQueries
+          );
+        } catch (err3) {
+          messages = await streamAllDocuments(
+            APPWRITE_DATABASE_ID,
+            APPWRITE_MESSAGES_COLLECTION_ID,
+            [Query.equal('sender', 'bot')]
+          );
+          messages = messages.filter(m => {
+            const msgDate = new Date(m.$createdAt || m.createdAt || m.timestamp || 0);
+            return !isNaN(msgDate.getTime()) && msgDate >= from && msgDate <= to;
+          });
+        }
+      }
+    }
+    
+    // Extract confidence scores
+    const confidences = messages
+      .map(msg => {
+        if (msg.confidence !== null && msg.confidence !== undefined) {
+          return parseFloat(msg.confidence);
+        }
+        // Try parsing from metadata
+        if (msg.metadata) {
+          try {
+            const meta = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata;
+            return meta.confidence ? parseFloat(meta.confidence) : null;
+          } catch {
+            return null;
+          }
+        }
+        return null;
+      })
+      .filter(c => c !== null && !isNaN(c) && c >= 0 && c <= 1);
+    
+    // Create histogram buckets
+    const bucketSize = 1 / bins;
+    const histogram = Array(bins).fill(0).map((_, i) => ({
+      bin: i,
+      min: (i * bucketSize).toFixed(2),
+      max: ((i + 1) * bucketSize).toFixed(2),
+      count: 0
+    }));
+    
+    confidences.forEach(conf => {
+      const binIndex = Math.min(Math.floor(conf / bucketSize), bins - 1);
+      histogram[binIndex].count++;
+    });
+    
+    const result = {
+      histogram,
+      totalMessages: confidences.length,
+      period: { from: fromISO, to: toISO }
+    };
+    
+    setCache(cacheKey, result);
+    res.json(result);
+  } catch (err) {
+    console.error('❌ Error computing confidence histogram:', err);
+    res.status(500).json({ error: err?.message || 'Failed to compute metrics' });
+  }
+});
+
+// GET /admin/metrics/response-times
+app.get('/admin/metrics/response-times', requireAdminAuth, async (req, res) => {
+  const { from, to } = parseDateRange(req);
+  const percentilesStr = req.query.percentiles || '50,90,99';
+  const percentiles = percentilesStr.split(',').map(p => parseInt(p.trim())).filter(p => !isNaN(p) && p > 0 && p <= 100);
+  
+  const cacheKey = getCacheKey('/admin/metrics/response-times', { 
+    from: from.toISOString(), 
+    to: to.toISOString(), 
+    percentiles: percentilesStr 
+  });
+  
+  console.log(`📊 Response times requested (percentiles: ${percentiles.join(',')})`);
+  
+  const cached = getCached(cacheKey);
+  if (cached) {
+    return res.json({ ...cached, cached: true });
+  }
+  
+  if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_MESSAGES_COLLECTION_ID) {
+    return res.status(503).json({ error: 'Appwrite not configured' });
+  }
+  
+  try {
+    const fromISO = from.toISOString();
+    const toISO = to.toISOString();
+    
+    // Query messages - try $createdAt first, then createdAt, then timestamp, then fetch all
+    let messages = [];
+    try {
+      const messageQueries = [
+        Query.greaterThanEqual('$createdAt', fromISO),
+        Query.lessThanEqual('$createdAt', toISO)
+      ];
+      messages = await streamAllDocuments(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_MESSAGES_COLLECTION_ID,
+        messageQueries
+      );
+    } catch (err) {
+      try {
+        const messageQueries = [
+          Query.greaterThanEqual('createdAt', fromISO),
+          Query.lessThanEqual('createdAt', toISO)
+        ];
+        messages = await streamAllDocuments(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_MESSAGES_COLLECTION_ID,
+          messageQueries
+        );
+      } catch (err2) {
+        try {
+          const messageQueries = [
+            Query.greaterThanEqual('timestamp', fromISO),
+            Query.lessThanEqual('timestamp', toISO)
+          ];
+          messages = await streamAllDocuments(
+            APPWRITE_DATABASE_ID,
+            APPWRITE_MESSAGES_COLLECTION_ID,
+            messageQueries
+          );
+        } catch (err3) {
+          messages = await streamAllDocuments(
+            APPWRITE_DATABASE_ID,
+            APPWRITE_MESSAGES_COLLECTION_ID,
+            []
+          );
+          messages = messages.filter(m => {
+            const msgDate = new Date(m.$createdAt || m.createdAt || m.timestamp || 0);
+            return !isNaN(msgDate.getTime()) && msgDate >= from && msgDate <= to;
+          });
+        }
+      }
+    }
+    
+    // Group messages by session and compute response times
+    const sessionMessages = {};
+    messages.forEach(msg => {
+      if (!sessionMessages[msg.sessionId]) {
+        sessionMessages[msg.sessionId] = [];
+      }
+      sessionMessages[msg.sessionId].push({
+        sender: msg.sender,
+        timestamp: new Date(msg.timestamp || msg.createdAt || msg.$createdAt).getTime()
+      });
+    });
+    
+    const responseTimes = [];
+    Object.values(sessionMessages).forEach(msgs => {
+      msgs.sort((a, b) => a.timestamp - b.timestamp);
+      for (let i = 0; i < msgs.length - 1; i++) {
+        if (msgs[i].sender === 'user' && (msgs[i + 1].sender === 'bot' || msgs[i + 1].sender === 'agent')) {
+          const responseTime = msgs[i + 1].timestamp - msgs[i].timestamp;
+          if (responseTime > 0 && responseTime < 300000) { // Max 5 minutes
+            responseTimes.push(responseTime);
+          }
+        }
+      }
+    });
+    
+    responseTimes.sort((a, b) => a - b);
+    
+    // Calculate percentiles
+    const percentileValues = {};
+    percentiles.forEach(p => {
+      if (responseTimes.length === 0) {
+        percentileValues[p] = 0;
+      } else {
+        const index = Math.ceil((p / 100) * responseTimes.length) - 1;
+        percentileValues[p] = responseTimes[Math.max(0, index)];
+      }
+    });
+    
+    // Distribution buckets for visualization
+    const maxTime = responseTimes.length > 0 ? Math.max(...responseTimes) : 0;
+    const bucketCount = 20;
+    const bucketSize = maxTime > 0 ? maxTime / bucketCount : 1000;
+    const distribution = Array(bucketCount).fill(0).map((_, i) => ({
+      range: `${Math.round(i * bucketSize)}-${Math.round((i + 1) * bucketSize)}`,
+      count: 0
+    }));
+    
+    responseTimes.forEach(rt => {
+      const bucketIndex = Math.min(Math.floor(rt / bucketSize), bucketCount - 1);
+      distribution[bucketIndex].count++;
+    });
+    
+    const result = {
+      percentiles: percentileValues,
+      distribution,
+      totalResponses: responseTimes.length,
+      avgResponseTime: responseTimes.length > 0 ? Math.round(responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length) : 0,
+      minResponseTime: responseTimes.length > 0 ? responseTimes[0] : 0,
+      maxResponseTime: responseTimes.length > 0 ? responseTimes[responseTimes.length - 1] : 0,
+      period: { from: fromISO, to: toISO }
+    };
+    
+    setCache(cacheKey, result);
+    res.json(result);
+  } catch (err) {
+    console.error('❌ Error computing response times:', err);
+    res.status(500).json({ error: err?.message || 'Failed to compute metrics' });
+  }
+});
+
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {
   console.log(`🚀 Socket.IO API server listening on port ${PORT}`);
