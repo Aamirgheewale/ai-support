@@ -22,6 +22,8 @@ const APPWRITE_API_KEY = process.env.APPWRITE_API_KEY;
 const APPWRITE_DATABASE_ID = process.env.APPWRITE_DATABASE_ID;
 const APPWRITE_SESSIONS_COLLECTION_ID = process.env.APPWRITE_SESSIONS_COLLECTION_ID;
 const APPWRITE_MESSAGES_COLLECTION_ID = process.env.APPWRITE_MESSAGES_COLLECTION_ID;
+const APPWRITE_USERS_COLLECTION_ID = 'users'; // Collection name (not ID)
+const APPWRITE_ROLE_CHANGES_COLLECTION_ID = 'roleChanges'; // Collection name
 
 // Import Query at module level for use in queries
 let Query = null;
@@ -85,19 +87,265 @@ const agentSockets = new Map(); // agentId -> socketId
 // In-memory session assignment cache (for fast lookups)
 const sessionAssignments = new Map(); // sessionId -> { agentId, aiPaused }
 
-// Admin authentication middleware
+// ============================================================================
+// RBAC (Role-Based Access Control) Implementation
+// ============================================================================
+
 const ADMIN_SHARED_SECRET = process.env.ADMIN_SHARED_SECRET || 'dev-secret-change-me';
-function requireAdminAuth(req, res, next) {
+
+// RBAC Helper Functions
+async function getUserById(userId) {
+  if (!awDatabases || !APPWRITE_DATABASE_ID) {
+    console.warn('⚠️  Appwrite not configured, cannot fetch user');
+    return null;
+  }
+  try {
+    if (!Query) {
+      console.warn('⚠️  Query class not available');
+      return null;
+    }
+    const result = await awDatabases.listDocuments(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_USERS_COLLECTION_ID,
+      [Query.equal('userId', userId)],
+      1
+    );
+    return result.documents.length > 0 ? result.documents[0] : null;
+  } catch (err) {
+    console.error('Error fetching user by ID:', err);
+    return null;
+  }
+}
+
+async function getUserByEmail(email) {
+  if (!awDatabases || !APPWRITE_DATABASE_ID) {
+    return null;
+  }
+  try {
+    if (!Query) {
+      return null;
+    }
+    const result = await awDatabases.listDocuments(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_USERS_COLLECTION_ID,
+      [Query.equal('email', email)],
+      1
+    );
+    return result.documents.length > 0 ? result.documents[0] : null;
+  } catch (err) {
+    console.error('Error fetching user by email:', err);
+    return null;
+  }
+}
+
+async function ensureUserRecord(userId, { email, name }) {
+  if (!awDatabases || !APPWRITE_DATABASE_ID) {
+    console.warn('⚠️  Appwrite not configured, cannot ensure user record');
+    return null;
+  }
+  try {
+    const existing = await getUserById(userId);
+    if (existing) {
+      // Update existing user
+      const { ID } = require('node-appwrite');
+      await awDatabases.updateDocument(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_USERS_COLLECTION_ID,
+        existing.$id,
+        {
+          email,
+          name: name || existing.name,
+          updatedAt: new Date().toISOString()
+        }
+      );
+      return { ...existing, email, name: name || existing.name };
+    } else {
+      // Create new user
+      const { ID } = require('node-appwrite');
+      const doc = await awDatabases.createDocument(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_USERS_COLLECTION_ID,
+        ID.unique(),
+        {
+          userId,
+          email,
+          name: name || email,
+          roles: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
+      );
+      return doc;
+    }
+  } catch (err) {
+    console.error('Error ensuring user record:', err);
+    return null;
+  }
+}
+
+async function setUserRoles(userId, rolesArray) {
+  if (!awDatabases || !APPWRITE_DATABASE_ID) {
+    console.warn('⚠️  Appwrite not configured, cannot set user roles');
+    return false;
+  }
+  try {
+    const user = await getUserById(userId);
+    if (!user) {
+      console.warn(`User ${userId} not found`);
+      return false;
+    }
+    
+    const oldRoles = Array.isArray(user.roles) ? [...user.roles] : [];
+    const newRoles = Array.isArray(rolesArray) ? rolesArray : [];
+    
+    const { ID } = require('node-appwrite');
+    await awDatabases.updateDocument(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_USERS_COLLECTION_ID,
+      user.$id,
+      {
+        roles: newRoles,
+        updatedAt: new Date().toISOString()
+      }
+    );
+    
+    // Audit log
+    await logRoleChange(userId, 'system', oldRoles, newRoles);
+    
+    return true;
+  } catch (err) {
+    console.error('Error setting user roles:', err);
+    return false;
+  }
+}
+
+async function isUserInRole(userId, role) {
+  const user = await getUserById(userId);
+  if (!user || !user.roles) {
+    return false;
+  }
+  const roles = Array.isArray(user.roles) ? user.roles : [];
+  return roles.includes(role) || roles.includes('super_admin'); // super_admin has all permissions
+}
+
+async function logRoleChange(userId, changedBy, oldRoles, newRoles) {
+  if (!awDatabases || !APPWRITE_DATABASE_ID) {
+    console.log(`📝 [AUDIT] Role change: ${userId} by ${changedBy}, ${JSON.stringify(oldRoles)} -> ${JSON.stringify(newRoles)}`);
+    return;
+  }
+  try {
+    const { ID } = require('node-appwrite');
+    await awDatabases.createDocument(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_ROLE_CHANGES_COLLECTION_ID,
+      ID.unique(),
+      {
+        userId,
+        changedBy,
+        oldRoles: Array.isArray(oldRoles) ? oldRoles : [],
+        newRoles: Array.isArray(newRoles) ? newRoles : [],
+        createdAt: new Date().toISOString()
+      }
+    );
+  } catch (err) {
+    console.error('Error logging role change:', err);
+    // Fallback to console log
+    console.log(`📝 [AUDIT] Role change: ${userId} by ${changedBy}, ${JSON.stringify(oldRoles)} -> ${JSON.stringify(newRoles)}`);
+  }
+}
+
+// Token authorization helper
+async function authorizeSocketToken(token) {
+  // For dev: if token matches ADMIN_SHARED_SECRET, map to super_admin
+  if (token === ADMIN_SHARED_SECRET) {
+    // Create or get dev super_admin user
+    const devUserId = 'dev-admin';
+    await ensureUserRecord(devUserId, { email: 'dev@admin.local', name: 'Dev Admin' });
+    const user = await getUserById(devUserId);
+    if (user && (!user.roles || user.roles.length === 0)) {
+      await setUserRoles(devUserId, ['super_admin']);
+    }
+    return { userId: devUserId, email: 'dev@admin.local' };
+  }
+  
+  // TODO: For production, validate Appwrite session token here
+  // const { Account } = require('node-appwrite');
+  // const account = new Account(awClient);
+  // const session = await account.getSession('current');
+  // return { userId: session.userId, email: session.email };
+  
+  return null;
+}
+
+// Authentication middleware
+async function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Missing or invalid authorization header' });
   }
+  
   const token = authHeader.substring(7);
-  if (token !== ADMIN_SHARED_SECRET) {
-    return res.status(403).json({ error: 'Invalid admin token' });
+  
+  // For dev: map ADMIN_SHARED_SECRET to super_admin
+  if (token === ADMIN_SHARED_SECRET) {
+    const devUserId = 'dev-admin';
+    await ensureUserRecord(devUserId, { email: 'dev@admin.local', name: 'Dev Admin' });
+    const user = await getUserById(devUserId);
+    if (user && (!user.roles || user.roles.length === 0)) {
+      await setUserRoles(devUserId, ['super_admin']);
+    }
+    req.user = { userId: devUserId, email: 'dev@admin.local' };
+    return next();
   }
-  next();
+  
+  // TODO: For production, validate Appwrite session token
+  // const authResult = await authorizeSocketToken(token);
+  // if (!authResult) {
+  //   return res.status(401).json({ error: 'Invalid token' });
+  // }
+  // req.user = authResult;
+  // return next();
+  
+  // For now, reject unknown tokens
+  return res.status(401).json({ error: 'Invalid token' });
 }
+
+// Role-based authorization middleware factory
+function requireRole(allowedRoles) {
+  const roles = Array.isArray(allowedRoles) ? allowedRoles : [allowedRoles];
+  return async (req, res, next) => {
+    if (!req.user || !req.user.userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    
+    const userId = req.user.userId;
+    let hasRole = false;
+    
+    for (const role of roles) {
+      if (await isUserInRole(userId, role)) {
+        hasRole = true;
+        break;
+      }
+    }
+    
+    if (!hasRole) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+    
+    next();
+  };
+}
+
+// Legacy admin auth (now uses RBAC)
+function requireAdminAuth(req, res, next) {
+  requireAuth(req, res, () => {
+    requireRole(['admin', 'super_admin'])(req, res, next);
+  });
+}
+
+// ============================================================================
+// END OF RBAC IMPLEMENTATION
+// ============================================================================
 
 // Appwrite helper: Ensure session exists
 async function ensureSessionInAppwrite(sessionId, userMeta = {}) {
@@ -679,24 +927,99 @@ Always be polite, patient, and solution-oriented. If you cannot resolve an issue
   });
 
   // Agent connect handler
+  // Agent authentication and connection
+  socket.on('agent_auth', async (data) => {
+    const { token, agentId } = data || {};
+    if (!token) {
+      socket.emit('auth_error', { error: 'Token required' });
+      setTimeout(() => socket.disconnect(), 1000);
+      return;
+    }
+    
+    try {
+      const authResult = await authorizeSocketToken(token);
+      if (!authResult || !authResult.userId) {
+        socket.emit('auth_error', { error: 'Invalid token' });
+        setTimeout(() => socket.disconnect(), 1000);
+        return;
+      }
+      
+      const userId = authResult.userId;
+      const hasAgentRole = await isUserInRole(userId, 'agent');
+      
+      if (!hasAgentRole) {
+        socket.emit('auth_error', { error: 'Insufficient permissions: agent role required' });
+        setTimeout(() => socket.disconnect(), 1000);
+        return;
+      }
+      
+      // Use provided agentId or userId as agentId
+      const finalAgentId = agentId || userId;
+      agentSockets.set(finalAgentId, socket.id);
+      socket.join(`agents:${finalAgentId}`);
+      socket.data.authenticated = true;
+      socket.data.userId = userId;
+      socket.data.agentId = finalAgentId;
+      
+      console.log(`👤 Agent authenticated and connected: ${finalAgentId} (user: ${userId}, socket: ${socket.id})`);
+      socket.emit('agent_connected', { agentId: finalAgentId, userId });
+    } catch (err) {
+      console.error('Error authenticating agent:', err);
+      socket.emit('auth_error', { error: 'Authentication failed' });
+      setTimeout(() => socket.disconnect(), 1000);
+    }
+  });
+  
+  // Legacy agent_connect (for backward compatibility, but requires auth first)
   socket.on('agent_connect', async (data) => {
-    const { agentId } = data || {};
-    if (!agentId) {
+    const { agentId, token } = data || {};
+    
+    // If token provided, use agent_auth flow
+    if (token) {
+      socket.emit('agent_auth', { token, agentId });
+      return;
+    }
+    
+    // Otherwise, check if already authenticated
+    if (!socket.data.authenticated) {
+      socket.emit('error', { error: 'Authentication required. Send agent_auth event first.' });
+      return;
+    }
+    
+    const finalAgentId = agentId || socket.data.agentId || socket.data.userId;
+    if (!finalAgentId) {
       socket.emit('error', { error: 'agentId required' });
       return;
     }
     
-    agentSockets.set(agentId, socket.id);
-    socket.join(`agents:${agentId}`);
-    console.log(`👤 Agent connected: ${agentId} (socket: ${socket.id})`);
-    socket.emit('agent_connected', { agentId });
+    agentSockets.set(finalAgentId, socket.id);
+    socket.join(`agents:${finalAgentId}`);
+    console.log(`👤 Agent connected: ${finalAgentId} (socket: ${socket.id})`);
+    socket.emit('agent_connected', { agentId: finalAgentId });
   });
 
-  // Agent takeover handler
+  // Agent takeover handler (requires agent role)
   socket.on('agent_takeover', async (data) => {
     const { sessionId, agentId } = data || {};
     if (!sessionId || !agentId) {
       socket.emit('error', { error: 'sessionId and agentId required' });
+      return;
+    }
+    
+    // Check authentication
+    if (!socket.data.authenticated) {
+      socket.emit('error', { error: 'Authentication required' });
+      return;
+    }
+    
+    // Verify agent has permission
+    const userId = socket.data.userId;
+    const hasPermission = await isUserInRole(userId, 'agent') || 
+                          await isUserInRole(userId, 'admin') || 
+                          await isUserInRole(userId, 'super_admin');
+    
+    if (!hasPermission) {
+      socket.emit('error', { error: 'Insufficient permissions: agent role required' });
       return;
     }
     
@@ -721,6 +1044,23 @@ Always be polite, patient, and solution-oriented. If you cannot resolve an issue
     const { sessionId, text, agentId } = data || {};
     if (!sessionId || !text || !agentId) {
       socket.emit('error', { error: 'sessionId, text, and agentId required' });
+      return;
+    }
+    
+    // Check authentication
+    if (!socket.data.authenticated) {
+      socket.emit('error', { error: 'Authentication required' });
+      return;
+    }
+    
+    // Verify agent has permission
+    const userId = socket.data.userId;
+    const hasPermission = await isUserInRole(userId, 'agent') || 
+                          await isUserInRole(userId, 'admin') || 
+                          await isUserInRole(userId, 'super_admin');
+    
+    if (!hasPermission) {
+      socket.emit('error', { error: 'Insufficient permissions: agent role required' });
       return;
     }
     
@@ -2183,6 +2523,194 @@ app.post('/admin/metrics/aggregate-request', requireAdminAuth, async (req, res) 
 // ============================================================================
 // END OF ANALYTICS & METRICS ENDPOINTS
 // All metrics endpoints are defined above (starting around line 1531)
+// ============================================================================
+
+// ============================================================================
+// RBAC USER MANAGEMENT ENDPOINTS
+// ============================================================================
+
+// GET /me - Get current user profile and roles
+app.get('/me', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const user = await getUserById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    res.json({
+      userId: user.userId,
+      email: user.email,
+      name: user.name,
+      roles: Array.isArray(user.roles) ? user.roles : []
+    });
+  } catch (err) {
+    console.error('Error fetching user profile:', err);
+    res.status(500).json({ error: err?.message || 'Failed to fetch profile' });
+  }
+});
+
+// GET /admin/users - List all users (super_admin only)
+app.get('/admin/users', requireAuth, requireRole(['super_admin']), async (req, res) => {
+  try {
+    if (!awDatabases || !APPWRITE_DATABASE_ID) {
+      return res.status(503).json({ error: 'Appwrite not configured' });
+    }
+    
+    const limit = parseInt(req.query.limit) || 50;
+    const offset = parseInt(req.query.offset) || 0;
+    
+    const result = await awDatabases.listDocuments(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_USERS_COLLECTION_ID,
+      [],
+      limit,
+      offset
+    );
+    
+    const users = result.documents.map(doc => ({
+      userId: doc.userId,
+      email: doc.email,
+      name: doc.name,
+      roles: Array.isArray(doc.roles) ? doc.roles : [],
+      createdAt: doc.createdAt || doc.$createdAt,
+      updatedAt: doc.updatedAt || doc.$updatedAt
+    }));
+    
+    res.json({
+      users,
+      total: result.total,
+      limit,
+      offset
+    });
+  } catch (err) {
+    console.error('Error listing users:', err);
+    res.status(500).json({ error: err?.message || 'Failed to list users' });
+  }
+});
+
+// POST /admin/users - Create user (super_admin only)
+app.post('/admin/users', requireAuth, requireRole(['super_admin']), async (req, res) => {
+  try {
+    if (!awDatabases || !APPWRITE_DATABASE_ID) {
+      return res.status(503).json({ error: 'Appwrite not configured' });
+    }
+    
+    const { email, name, roles } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'email is required' });
+    }
+    
+    // Check if user already exists
+    const existing = await getUserByEmail(email);
+    if (existing) {
+      return res.status(409).json({ error: 'User with this email already exists' });
+    }
+    
+    // Generate userId from email or use provided
+    const userId = req.body.userId || email.split('@')[0] + '_' + Date.now();
+    
+    const user = await ensureUserRecord(userId, { email, name: name || email });
+    if (!user) {
+      return res.status(500).json({ error: 'Failed to create user' });
+    }
+    
+    // Set roles if provided
+    if (roles && Array.isArray(roles)) {
+      await setUserRoles(userId, roles);
+      const updatedUser = await getUserById(userId);
+      res.json({
+        userId: updatedUser.userId,
+        email: updatedUser.email,
+        name: updatedUser.name,
+        roles: Array.isArray(updatedUser.roles) ? updatedUser.roles : []
+      });
+    } else {
+      res.json({
+        userId: user.userId,
+        email: user.email,
+        name: user.name,
+        roles: Array.isArray(user.roles) ? user.roles : []
+      });
+    }
+  } catch (err) {
+    console.error('Error creating user:', err);
+    res.status(500).json({ error: err?.message || 'Failed to create user' });
+  }
+});
+
+// PUT /admin/users/:userId/roles - Update user roles (super_admin only)
+app.put('/admin/users/:userId/roles', requireAuth, requireRole(['super_admin']), async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { roles } = req.body;
+    
+    if (!roles || !Array.isArray(roles)) {
+      return res.status(400).json({ error: 'roles array is required' });
+    }
+    
+    // Validate roles
+    const validRoles = ['super_admin', 'admin', 'agent', 'viewer'];
+    for (const role of roles) {
+      if (!validRoles.includes(role)) {
+        return res.status(400).json({ error: `Invalid role: ${role}` });
+      }
+    }
+    
+    const changedBy = req.user.userId;
+    const user = await getUserById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const oldRoles = Array.isArray(user.roles) ? [...user.roles] : [];
+    const success = await setUserRoles(userId, roles);
+    
+    if (!success) {
+      return res.status(500).json({ error: 'Failed to update roles' });
+    }
+    
+    // Log audit
+    await logRoleChange(userId, changedBy, oldRoles, roles);
+    
+    res.json({
+      userId,
+      roles,
+      message: 'Roles updated successfully'
+    });
+  } catch (err) {
+    console.error('Error updating user roles:', err);
+    res.status(500).json({ error: err?.message || 'Failed to update roles' });
+  }
+});
+
+// DELETE /admin/users/:userId - Delete user (super_admin only)
+app.delete('/admin/users/:userId', requireAuth, requireRole(['super_admin']), async (req, res) => {
+  try {
+    if (!awDatabases || !APPWRITE_DATABASE_ID) {
+      return res.status(503).json({ error: 'Appwrite not configured' });
+    }
+    
+    const { userId } = req.params;
+    const user = await getUserById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    await awDatabases.deleteDocument(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_USERS_COLLECTION_ID,
+      user.$id
+    );
+    
+    res.json({ message: 'User deleted successfully' });
+  } catch (err) {
+    console.error('Error deleting user:', err);
+    res.status(500).json({ error: err?.message || 'Failed to delete user' });
+  }
+});
+
+// ============================================================================
+// END OF RBAC USER MANAGEMENT ENDPOINTS
 // ============================================================================
 
 const PORT = process.env.PORT || 4000;

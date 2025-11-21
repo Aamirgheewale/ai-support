@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { io } from 'socket.io-client'
+import { useAuth } from '../hooks/useAuth'
 
 const API_BASE = 'http://localhost:4000'
 const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET || 'dev-secret-change-me'
@@ -15,6 +16,7 @@ interface Message {
 export default function ConversationView() {
   const { sessionId } = useParams<{ sessionId: string }>()
   const navigate = useNavigate()
+  const { hasAnyRole } = useAuth()
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(true)
   const [agentId, setAgentId] = useState('')
@@ -378,94 +380,100 @@ export default function ConversationView() {
               {sessionStatus}
             </span>
           )}
-          <div style={{ position: 'relative', display: 'inline-block' }} data-export-menu>
-            <button
-              onClick={() => setShowExportMenu(!showExportMenu)}
-              disabled={exporting}
-              style={{
-                padding: '8px 16px',
-                background: exporting ? '#ccc' : '#667eea',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: exporting ? 'not-allowed' : 'pointer',
-                fontSize: '13px'
-              }}
-            >
-              {exporting ? 'Exporting...' : 'Export'}
-            </button>
-            {showExportMenu && (
-              <div
-                data-export-menu
+          {hasAnyRole(['admin', 'super_admin']) && (
+            <div style={{ position: 'relative', display: 'inline-block' }} data-export-menu>
+              <button
+                onClick={() => setShowExportMenu(!showExportMenu)}
+                disabled={exporting}
                 style={{
-                  position: 'absolute',
-                  top: '100%',
-                  right: 0,
-                  background: 'white',
-                  border: '1px solid #ddd',
+                  padding: '8px 16px',
+                  background: exporting ? '#ccc' : '#667eea',
+                  color: 'white',
+                  border: 'none',
                   borderRadius: '4px',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                  zIndex: 1000,
-                  minWidth: '120px',
-                  marginTop: '4px'
+                  cursor: exporting ? 'not-allowed' : 'pointer',
+                  fontSize: '13px'
                 }}
               >
-                <button
-                  onClick={() => exportConversation('json')}
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    padding: '8px 12px',
-                    textAlign: 'left',
-                    background: 'white',
-                    border: 'none',
-                    cursor: 'pointer',
-                    fontSize: '13px'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = '#f8f9fa'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
-                >
-                  Export JSON
-                </button>
-                <button
-                  onClick={() => exportConversation('csv')}
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    padding: '8px 12px',
-                    textAlign: 'left',
-                    background: 'white',
-                    border: 'none',
-                    borderTop: '1px solid #eee',
-                    cursor: 'pointer',
-                    fontSize: '13px'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = '#f8f9fa'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
-                >
-                  Export CSV
-                </button>
-              </div>
-            )}
-          </div>
-          <input
-            type="text"
-            placeholder="Agent ID"
-            value={agentId}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAgentId(e.target.value)}
-            style={{ padding: '8px', border: '1px solid #ddd', borderRadius: '4px', width: '120px' }}
-          />
-          {assignedAgentId && assignedAgentId === agentId ? (
-            <>
-              <button onClick={closeConversation} style={{ padding: '8px 16px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-                Close Conversation
+                {exporting ? 'Exporting...' : 'Export'}
               </button>
-              <span style={{ fontSize: '13px', color: '#28a745', fontWeight: '500' }}>✓ Assigned</span>
+              {showExportMenu && (
+                <div
+                  data-export-menu
+                  style={{
+                    position: 'absolute',
+                    top: '100%',
+                    right: 0,
+                    background: 'white',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                    zIndex: 1000,
+                    minWidth: '120px',
+                    marginTop: '4px'
+                  }}
+                >
+                  <button
+                    onClick={() => exportConversation('json')}
+                    style={{
+                      display: 'block',
+                      width: '100%',
+                      padding: '8px 12px',
+                      textAlign: 'left',
+                      background: 'white',
+                      border: 'none',
+                      cursor: 'pointer',
+                      fontSize: '13px'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = '#f8f9fa'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+                  >
+                    Export JSON
+                  </button>
+                  <button
+                    onClick={() => exportConversation('csv')}
+                    style={{
+                      display: 'block',
+                      width: '100%',
+                      padding: '8px 12px',
+                      textAlign: 'left',
+                      background: 'white',
+                      border: 'none',
+                      borderTop: '1px solid #eee',
+                      cursor: 'pointer',
+                      fontSize: '13px'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = '#f8f9fa'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+                  >
+                    Export CSV
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+          {hasAnyRole(['agent', 'admin', 'super_admin']) && (
+            <>
+              <input
+                type="text"
+                placeholder="Agent ID"
+                value={agentId}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAgentId(e.target.value)}
+                style={{ padding: '8px', border: '1px solid #ddd', borderRadius: '4px', width: '120px', marginLeft: '10px' }}
+              />
+              {assignedAgentId && assignedAgentId === agentId ? (
+                <>
+                  <button onClick={closeConversation} style={{ padding: '8px 16px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', marginLeft: '10px' }}>
+                    Close Conversation
+                  </button>
+                  <span style={{ fontSize: '13px', color: '#28a745', fontWeight: '500', marginLeft: '10px' }}>✓ Assigned</span>
+                </>
+              ) : (
+                <button onClick={assignToMe} style={{ padding: '8px 16px', background: '#28a745', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', marginLeft: '10px' }}>
+                  Assign to Me
+                </button>
+              )}
             </>
-          ) : (
-            <button onClick={assignToMe} style={{ padding: '8px 16px', background: '#28a745', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-              Assign to Me
-            </button>
           )}
         </div>
       </div>

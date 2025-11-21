@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../hooks/useAuth'
 
 const API_BASE = 'http://localhost:4000'
 const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET || 'dev-secret-change-me'
@@ -15,6 +16,7 @@ interface Session {
 }
 
 export default function SessionsList() {
+  const { hasAnyRole } = useAuth()
   const [sessions, setSessions] = useState<Session[]>([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('')
@@ -249,9 +251,9 @@ export default function SessionsList() {
           >
             {showFilters ? 'Hide Filters' : 'More Filters'}
           </button>
-          {selectedSessions.size > 0 && (
-            <button 
-              onClick={() => setShowBulkModal(true)} 
+          {selectedSessions.size > 0 && hasAnyRole(['admin', 'super_admin']) && (
+            <button
+              onClick={() => setShowBulkModal(true)}
               disabled={bulkExporting}
               style={{ 
                 padding: '8px 16px', 
@@ -408,28 +410,29 @@ export default function SessionsList() {
                   {session.startTime ? new Date(session.startTime).toLocaleString() : session.$createdAt ? new Date(session.$createdAt).toLocaleString() : '-'}
                 </td>
                 <td style={{ padding: '12px' }} onClick={(e) => e.stopPropagation()}>
-                  <div style={{ position: 'relative', display: 'inline-block' }}>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        const menu = document.getElementById(`export-menu-${session.sessionId}`)
-                        if (menu) {
-                          menu.style.display = menu.style.display === 'block' ? 'none' : 'block'
-                        }
-                      }}
-                      disabled={exporting === session.sessionId}
-                      style={{
-                        padding: '6px 12px',
-                        background: exporting === session.sessionId ? '#ccc' : '#667eea',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '4px',
-                        cursor: exporting === session.sessionId ? 'not-allowed' : 'pointer',
-                        fontSize: '12px'
-                      }}
-                    >
-                      {exporting === session.sessionId ? '...' : 'Export'}
-                    </button>
+                  {hasAnyRole(['admin', 'super_admin']) ? (
+                    <div style={{ position: 'relative', display: 'inline-block' }}>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          const menu = document.getElementById(`export-menu-${session.sessionId}`)
+                          if (menu) {
+                            menu.style.display = menu.style.display === 'block' ? 'none' : 'block'
+                          }
+                        }}
+                        disabled={exporting === session.sessionId}
+                        style={{
+                          padding: '6px 12px',
+                          background: exporting === session.sessionId ? '#ccc' : '#667eea',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: exporting === session.sessionId ? 'not-allowed' : 'pointer',
+                          fontSize: '12px'
+                        }}
+                      >
+                        {exporting === session.sessionId ? '...' : 'Export'}
+                      </button>
                     <div
                       id={`export-menu-${session.sessionId}`}
                       style={{
