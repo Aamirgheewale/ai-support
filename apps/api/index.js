@@ -250,6 +250,16 @@ async function ensureUserRecord(userId, { email, name }) {
       console.warn('⚠️  Users collection not found. Please run migration: node migrate_create_users_collection.js');
       return null;
     }
+    
+    // Check for roles attribute type error
+    if (err.message?.includes('roles') && err.message?.includes('must be a valid string')) {
+      console.error('Error ensuring user record: Invalid document structure: Attribute "roles" has invalid format. Value must be a valid string and no longer than 255 chars');
+      console.error(`❌ Error: The "roles" attribute in users collection is configured as String instead of String Array.`);
+      console.error(`   Please delete the "roles" attribute in Appwrite Console and recreate it as a String Array.`);
+      console.error(`   See MANUAL_ATTRIBUTE_SETUP.md for correct attribute configuration.`);
+      return null;
+    }
+    
     console.error('Error ensuring user record:', err.message || err);
     return null;
   }
@@ -2774,7 +2784,12 @@ app.post('/admin/users', requireAuth, requireRole(['super_admin']), async (req, 
       if (!collectionExists) {
         return res.status(503).json({ error: 'Users collection not found. Please run migration: node migrate_create_users_collection.js' });
       }
-      return res.status(500).json({ error: 'Failed to create user. Collection may be missing required attributes.' });
+      // Check if roles attribute is wrong type (check recent error logs)
+      // The error should have been logged by ensureUserRecord
+      return res.status(500).json({ 
+        error: 'Failed to create user. Collection may be missing required attributes or have incorrect attribute types.',
+        hint: 'Check server logs for details. Common issue: "roles" attribute must be String Array, not String. Run: node check_attribute_types.js'
+      });
     }
     
     // Set roles if provided
