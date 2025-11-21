@@ -36,12 +36,48 @@ export default function EmbedWidget({ initialSessionId }: { initialSessionId?: s
     socket.on('connect', () => {
       console.log('ws connected', socket.id);
       setIsConnected(true);
+      // CRITICAL: Join session room if sessionId exists to receive agent messages
+      if (sessionId) {
+        socket.emit('join_session', { sessionId });
+        console.log(`📱 Widget socket joined session room: ${sessionId}`);
+      }
     });
     socket.on('disconnect', () => setIsConnected(false));
-    socket.on('session_started', ({ sessionId }) => setSessionId(sessionId));
-    socket.on('bot_message', (m: any) => setMessages(prev => [...prev, { sender: 'bot', text: m.text, ts: Date.now() }]));
-    socket.on('agent_message', (m: any) => setMessages(prev => [...prev, { sender: 'agent', text: m.text, ts: Date.now() }]));
+    socket.on('session_started', ({ sessionId: newSessionId }) => {
+      setSessionId(newSessionId);
+      // CRITICAL: Join session room when session starts
+      if (newSessionId) {
+        socket.emit('join_session', { sessionId: newSessionId });
+        console.log(`📱 Widget socket joined session room on start: ${newSessionId}`);
+      }
+    });
+    socket.on('bot_message', (m: any) => {
+      console.log('📨 Widget received bot_message:', m);
+      setMessages(prev => {
+        const exists = prev.some(msg => msg.sender === 'bot' && msg.text === m.text);
+        if (exists) return prev;
+        return [...prev, { sender: 'bot', text: m.text, ts: Date.now() }];
+      });
+    });
+    socket.on('agent_message', (m: any) => {
+      console.log('📨 Widget received agent_message:', m);
+      setMessages(prev => {
+        const exists = prev.some(msg => msg.sender === 'agent' && msg.text === m.text);
+        if (exists) {
+          console.log('   ⚠️  Duplicate agent message, skipping');
+          return prev;
+        }
+        console.log('   ✅ Adding agent message to widget');
+        return [...prev, { sender: 'agent', text: m.text, ts: Date.now() }];
+      });
+    });
     socket.on('agent_joined', (data: any) => {
+      console.log('📨 Widget received agent_joined:', data);
+      // Ensure we're in the session room when agent joins
+      if (sessionId) {
+        socket.emit('join_session', { sessionId });
+        console.log(`📱 Widget socket rejoined session room on agent join: ${sessionId}`);
+      }
       setMessages(prev => [...prev, { sender: 'system', text: `Agent ${data.agentId} joined the conversation`, ts: Date.now() }]);
     });
     socket.on('session_error', (err: any) => {
@@ -56,7 +92,7 @@ export default function EmbedWidget({ initialSessionId }: { initialSessionId?: s
       socket.off('agent_joined');
       socket.off('session_error');
     };
-  }, []);
+  }, [sessionId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

@@ -52,6 +52,11 @@ export default function ConversationView() {
     
     sock.on('connect', () => {
       console.log('✅ Socket connected')
+      // CRITICAL: Join session room to receive real-time updates (user messages, agent messages, bot messages)
+      if (sessionId) {
+        sock.emit('join_session', { sessionId })
+        console.log(`📱 Admin socket joined session room: ${sessionId}`)
+      }
       // Auto-connect as agent if session has assigned agent
       if (assignedAgentId) {
         setAgentId(assignedAgentId)

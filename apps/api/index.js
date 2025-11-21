@@ -1909,19 +1909,39 @@ Always be polite, patient, and solution-oriented. If you cannot resolve an issue
       return;
     }
     
-    // Save message to Appwrite with error handling
+    // Save message to Appwrite with error handling - CRITICAL: Must save before broadcasting
     let saveSuccess = false;
+    let saveError = null;
     try {
+      console.log(`💾 Attempting to save agent message to Appwrite: sessionId=${sessionId}, sender=agent, text="${text.substring(0, 50)}..."`);
       saveSuccess = await saveMessageToAppwrite(sessionId, 'agent', text, { agentId });
       if (!saveSuccess) {
-        console.error(`❌ Failed to save agent message to Appwrite for session ${sessionId}`);
-        // Continue to broadcast even if save fails, so user sees the message
+        console.error(`❌ Failed to save agent message to Appwrite for session ${sessionId} - saveMessageToAppwrite returned false`);
+        saveError = new Error('saveMessageToAppwrite returned false');
       } else {
         console.log(`✅ Agent message saved to Appwrite: ${sessionId} (agent: ${agentId})`);
       }
     } catch (saveErr) {
-      console.error(`❌ Error saving agent message to Appwrite:`, saveErr?.message || saveErr);
+      console.error(`❌ Exception saving agent message to Appwrite:`, saveErr?.message || saveErr);
+      console.error(`   Stack:`, saveErr?.stack);
+      saveError = saveErr;
       // Continue to broadcast even if save fails, so user sees the message
+    }
+    
+    // If save failed, retry once after a short delay
+    if (!saveSuccess && !saveError?.message?.includes('already exists')) {
+      console.log(`🔄 Retrying agent message save after 500ms...`);
+      await new Promise(resolve => setTimeout(resolve, 500));
+      try {
+        saveSuccess = await saveMessageToAppwrite(sessionId, 'agent', text, { agentId });
+        if (saveSuccess) {
+          console.log(`✅ Agent message saved on retry: ${sessionId}`);
+        } else {
+          console.error(`❌ Agent message save failed on retry: ${sessionId}`);
+        }
+      } catch (retryErr) {
+        console.error(`❌ Agent message save retry failed:`, retryErr?.message || retryErr);
+      }
     }
     
     // Emit to session room for user widget and admin panel
