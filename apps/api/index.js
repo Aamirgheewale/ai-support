@@ -322,6 +322,9 @@ async function ensureUserRecord(userId, { email, name }) {
       }
       
       // Create new user
+      // Add a small delay to allow any previous operations to complete and indexes to sync
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
       const { ID } = require('node-appwrite');
       const createData = {
         userId,
@@ -334,6 +337,7 @@ async function ensureUserRecord(userId, { email, name }) {
       try {
         // First try with all fields including datetime
         // Use ID.unique() to generate a unique document ID
+        // IMPORTANT: Always use ID.unique() to avoid document ID conflicts
         const docId = ID.unique();
         const doc = await awDatabases.createDocument(
           APPWRITE_DATABASE_ID,
@@ -345,6 +349,7 @@ async function ensureUserRecord(userId, { email, name }) {
             updatedAt: new Date().toISOString()
           }
         );
+        console.log(`✅ Successfully created user with document ID: ${docId}`);
         return doc;
       } catch (e) {
         // Check if it's a unique constraint violation (email or userId already exists)
@@ -409,6 +414,7 @@ async function ensureUserRecord(userId, { email, name }) {
         if (e.message?.includes('createdAt') || e.message?.includes('updatedAt') || e.message?.includes('Unknown attribute')) {
           try {
             // Use ID.unique() to generate a unique document ID
+            // IMPORTANT: Always use ID.unique() to avoid document ID conflicts
             const docId = ID.unique();
             const doc = await awDatabases.createDocument(
               APPWRITE_DATABASE_ID,
@@ -416,6 +422,7 @@ async function ensureUserRecord(userId, { email, name }) {
               docId,
               createData
             );
+            console.log(`✅ Successfully created user (without datetime) with document ID: ${docId}`);
             return doc;
           } catch (e2) {
             // Check if roles attribute is wrong type
@@ -539,10 +546,15 @@ async function ensureUserRecord(userId, { email, name }) {
         // Ignore final check errors
       }
       
+      // Add delay before final attempt
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
       try {
         const { ID } = require('node-appwrite');
         // Generate a completely unique document ID
+        // IMPORTANT: Always use ID.unique() - if this fails, it's likely a unique constraint on userId/email
         const finalDocId = ID.unique();
+        console.log(`🔄 Final creation attempt with document ID: ${finalDocId}, userId: ${userId}, email: ${email}`);
         const finalDoc = await awDatabases.createDocument(
           APPWRITE_DATABASE_ID,
           APPWRITE_USERS_COLLECTION_ID,
@@ -555,7 +567,7 @@ async function ensureUserRecord(userId, { email, name }) {
             createdAt: new Date().toISOString()
           }
         );
-        console.log(`✅ Successfully created user with final attempt`);
+        console.log(`✅ Successfully created user with final attempt (document ID: ${finalDocId})`);
         return finalDoc;
       } catch (finalErr) {
         // If final attempt fails, it's definitely a unique constraint issue
