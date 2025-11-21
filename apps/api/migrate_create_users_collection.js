@@ -28,20 +28,28 @@ async function createCollections() {
     
     const databases = new Databases(client);
     
-    // Test connection first
+    // Test connection first by trying to list collections
     console.log('🔌 Testing Appwrite connection...');
     try {
-      await databases.listDatabases();
+      // Try to list collections from the database to verify connection
+      await databases.listCollections(APPWRITE_DATABASE_ID, []);
       console.log('✅ Appwrite connection successful\n');
     } catch (connErr) {
-      console.error('❌ Failed to connect to Appwrite:', connErr.message);
-      if (connErr.message?.includes('fetch failed') || connErr.message?.includes('ECONNREFUSED')) {
-        console.error('   This might be a network issue. Check:');
-        console.error('   1. Your internet connection');
-        console.error('   2. APPWRITE_ENDPOINT is correct:', APPWRITE_ENDPOINT);
-        console.error('   3. Firewall/proxy settings');
+      // If collection listing fails, it might be because database is empty or doesn't exist
+      // Try a simpler test - just verify we can make an API call
+      if (connErr.code === 404) {
+        console.log('⚠️  Database might be empty, but connection works. Proceeding...\n');
+      } else {
+        console.error('❌ Failed to connect to Appwrite:', connErr.message);
+        if (connErr.message?.includes('fetch failed') || connErr.message?.includes('ECONNREFUSED')) {
+          console.error('   This might be a network issue. Check:');
+          console.error('   1. Your internet connection');
+          console.error('   2. APPWRITE_ENDPOINT is correct:', APPWRITE_ENDPOINT);
+          console.error('   3. Firewall/proxy settings');
+          console.error('   4. APPWRITE_DATABASE_ID is correct:', APPWRITE_DATABASE_ID);
+        }
+        throw connErr;
       }
-      throw connErr;
     }
     
     console.log('📦 Creating collections...\n');
