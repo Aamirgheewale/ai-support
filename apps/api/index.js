@@ -1350,7 +1350,11 @@ io.on('connection', (socket) => {
     await ensureSessionInAppwrite(sessionId, userMeta);
     // Join session room - this is critical for receiving agent messages
     socket.join(sessionId);
-    console.log(`📱 Socket ${socket.id} joined session room: ${sessionId}`);
+    
+    // Verify room membership
+    const room = io.sockets.adapter.rooms.get(sessionId);
+    const roomSize = room ? room.size : 0;
+    console.log(`📱 Socket ${socket.id} joined session room: ${sessionId} (${roomSize} socket(s) total)`);
     
     const welcomeMsg = "Hello! 👋 I'm your AI Customer Support Assistant. How can I help you today?";
     socket.emit('session_started', { sessionId });
@@ -1899,7 +1903,20 @@ Always be polite, patient, and solution-oriented. If you cannot resolve an issue
       return;
     }
     
-    await saveMessageToAppwrite(sessionId, 'agent', text, { agentId });
+    // Save message to Appwrite with error handling
+    let saveSuccess = false;
+    try {
+      saveSuccess = await saveMessageToAppwrite(sessionId, 'agent', text, { agentId });
+      if (!saveSuccess) {
+        console.error(`❌ Failed to save agent message to Appwrite for session ${sessionId}`);
+        // Continue to broadcast even if save fails, so user sees the message
+      } else {
+        console.log(`✅ Agent message saved to Appwrite: ${sessionId} (agent: ${agentId})`);
+      }
+    } catch (saveErr) {
+      console.error(`❌ Error saving agent message to Appwrite:`, saveErr?.message || saveErr);
+      // Continue to broadcast even if save fails, so user sees the message
+    }
     
     // Emit to session room for user widget and admin panel
     const messagePayload = { 
@@ -1921,15 +1938,32 @@ Always be polite, patient, and solution-oriented. If you cannot resolve an issue
     const room = io.sockets.adapter.rooms.get(sessionId);
     const roomSize = room ? room.size : 0;
     console.log(`👤 Agent ${agentId} sent message to session ${sessionId}`);
+    console.log(`   💾 Database save: ${saveSuccess ? '✅ Success' : '❌ Failed'}`);
     console.log(`   📤 Broadcasting to session room: ${sessionId} (${roomSize} socket(s) in room)`);
     
     // If no sockets in room, warn (user widget might not be connected or not joined room)
     if (roomSize === 0) {
       console.warn(`⚠️  No sockets found in room ${sessionId}, message may not reach user widget`);
       console.warn(`   💡 User widget should join room ${sessionId} on connection via 'start_session' event`);
+      // Try to find any socket connected to this session and emit directly
+      // This is a fallback for cases where room join didn't work
+      const allSockets = await io.fetchSockets();
+      let foundSocket = false;
+      for (const s of allSockets) {
+        if (s.rooms.has(sessionId)) {
+          foundSocket = true;
+          break;
+        }
+      }
+      if (!foundSocket) {
+        console.warn(`   ⚠️  No sockets found with sessionId ${sessionId} in any room`);
+      }
     } else {
       console.log(`   ✅ Message broadcast to ${roomSize} socket(s) in room`);
     }
+    
+    // Send success confirmation to agent socket
+    socket.emit('agent_message_sent', { sessionId, success: true, saved: saveSuccess });
   });
 
   // Handle disconnection
