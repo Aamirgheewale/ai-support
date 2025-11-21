@@ -2855,7 +2855,8 @@ app.post('/admin/users', requireAuth, requireRole(['super_admin']), async (req, 
     }
     
     // Generate userId from email or use provided
-    const userId = req.body.userId || email.split('@')[0] + '_' + Date.now();
+    // Make userId more unique to avoid conflicts
+    const userId = req.body.userId || email.split('@')[0] + '_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
     
     const user = await ensureUserRecord(userId, { email, name: name || email });
     if (!user) {
@@ -2864,6 +2865,19 @@ app.post('/admin/users', requireAuth, requireRole(['super_admin']), async (req, 
       if (!collectionExists) {
         return res.status(503).json({ error: 'Users collection not found. Please run migration: node migrate_create_users_collection.js' });
       }
+      
+      // Check if user exists by email (might have been created despite the error)
+      const existingByEmail = await getUserByEmail(email);
+      if (existingByEmail) {
+        // User exists, return it
+        return res.json({
+          userId: existingByEmail.userId,
+          email: existingByEmail.email,
+          name: existingByEmail.name,
+          roles: Array.isArray(existingByEmail.roles) ? existingByEmail.roles : []
+        });
+      }
+      
       // Check if roles attribute is wrong type (check recent error logs)
       // The error should have been logged by ensureUserRecord
       return res.status(500).json({ 
