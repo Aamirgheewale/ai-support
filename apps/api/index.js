@@ -206,6 +206,14 @@ async function ensureUserRecord(userId, { email, name }) {
         );
         return doc;
       } catch (e) {
+        // Check if roles attribute is wrong type (String instead of Array)
+        if (e.message?.includes('roles') && e.message?.includes('must be a valid string')) {
+          console.error(`❌ Error: The "roles" attribute in users collection is configured as String instead of String Array.`);
+          console.error(`   Please delete the "roles" attribute in Appwrite Console and recreate it as a String Array.`);
+          console.error(`   See MANUAL_ATTRIBUTE_SETUP.md for correct attribute configuration.`);
+          return null;
+        }
+        
         // If datetime attributes don't exist, try without them
         if (e.message?.includes('createdAt') || e.message?.includes('updatedAt') || e.message?.includes('Unknown attribute')) {
           try {
@@ -217,6 +225,13 @@ async function ensureUserRecord(userId, { email, name }) {
             );
             return doc;
           } catch (e2) {
+            // Check if roles attribute is wrong type
+            if (e2.message?.includes('roles') && e2.message?.includes('must be a valid string')) {
+              console.error(`❌ Error: The "roles" attribute in users collection is configured as String instead of String Array.`);
+              console.error(`   Please delete the "roles" attribute in Appwrite Console and recreate it as a String Array.`);
+              console.error(`   See MANUAL_ATTRIBUTE_SETUP.md for correct attribute configuration.`);
+              return null;
+            }
             // If userId attribute doesn't exist, collection isn't ready
             if (e2.message?.includes('userId') || e2.message?.includes('Unknown attribute')) {
               console.warn(`⚠️  Users collection missing required attributes. Please run migration or create attributes manually.`);
