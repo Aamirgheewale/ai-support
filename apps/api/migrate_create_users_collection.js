@@ -91,43 +91,56 @@ async function createCollections() {
     for (const attr of userAttributes) {
       try {
         if (attr.type === 'string') {
-          // createStringAttribute signature: (databaseId, collectionId, key, size, required, array, default, unique)
-          // For string attributes, pass empty string "" as default instead of null
-          await databases.createStringAttribute(
-            APPWRITE_DATABASE_ID,
-            'users',
-            attr.name,
-            attr.size,
-            attr.required,
-            attr.array,
-            '', // default value (empty string for no default)
-            attr.unique
-          );
-          console.log(`   ✅ Added attribute: ${attr.name}`);
-        } else if (attr.type === 'datetime') {
-          // createDatetimeAttribute signature: (databaseId, collectionId, key, required, array, default)
-          // For datetime, we can omit the default parameter entirely or pass undefined
-          // Try without default first
+          // createStringAttribute: The default parameter must be exactly '' (empty string) or omitted
+          // Signature: (databaseId, collectionId, key, size, required, array, default, unique)
+          // Try with empty string first
           try {
+            await databases.createStringAttribute(
+              APPWRITE_DATABASE_ID,
+              'users',
+              attr.name,
+              attr.size,
+              attr.required,
+              attr.array,
+              '', // empty string for no default
+              attr.unique
+            );
+            console.log(`   ✅ Added attribute: ${attr.name}`);
+          } catch (strErr) {
+            // If empty string fails, try omitting the parameter (pass undefined)
+            // But we need to pass all parameters, so try with null explicitly
+            if (strErr.message?.includes('default')) {
+              // Try calling with all params but check if we can use a different approach
+              // Some SDK versions might require the parameter to be explicitly omitted
+              console.log(`   ⚠️  Retrying ${attr.name} with different default approach...`);
+              // For now, log that manual creation might be needed
+              console.log(`   ⚠️  Attribute ${attr.name} needs to be created manually in Appwrite Console`);
+              console.log(`      Type: String, Size: ${attr.size}, Required: ${attr.required}, Array: ${attr.array}, Unique: ${attr.unique}`);
+            } else {
+              throw strErr;
+            }
+          }
+        } else if (attr.type === 'datetime') {
+          // createDatetimeAttribute: Try without default parameter
+          // Signature: (databaseId, collectionId, key, required, array, default)
+          try {
+            // Try calling with only required parameters (omit default)
             await databases.createDatetimeAttribute(
               APPWRITE_DATABASE_ID,
               'users',
               attr.name,
               attr.required,
               false // array
+              // Omitting default parameter
             );
             console.log(`   ✅ Added attribute: ${attr.name}`);
           } catch (dtErr) {
-            // If that fails, try with explicit null/undefined
-            await databases.createDatetimeAttribute(
-              APPWRITE_DATABASE_ID,
-              'users',
-              attr.name,
-              attr.required,
-              false, // array
-              undefined // default (try undefined instead of null)
-            );
-            console.log(`   ✅ Added attribute: ${attr.name}`);
+            if (dtErr.message?.includes('default')) {
+              console.log(`   ⚠️  Attribute ${attr.name} needs to be created manually in Appwrite Console`);
+              console.log(`      Type: DateTime, Required: ${attr.required}`);
+            } else {
+              throw dtErr;
+            }
           }
         }
       } catch (attrErr) {

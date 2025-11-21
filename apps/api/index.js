@@ -190,8 +190,10 @@ async function ensureUserRecord(userId, { email, name }) {
         name: name || email,
         roles: []
       };
-      // Try with createdAt/updatedAt, fallback without if attributes don't exist
+      
+      // Try creating document - handle missing attributes gracefully
       try {
+        // First try with all fields including datetime
         const doc = await awDatabases.createDocument(
           APPWRITE_DATABASE_ID,
           APPWRITE_USERS_COLLECTION_ID,
@@ -204,14 +206,27 @@ async function ensureUserRecord(userId, { email, name }) {
         );
         return doc;
       } catch (e) {
-        // If datetime attributes don't exist yet, create without them
-        const doc = await awDatabases.createDocument(
-          APPWRITE_DATABASE_ID,
-          APPWRITE_USERS_COLLECTION_ID,
-          ID.unique(),
-          createData
-        );
-        return doc;
+        // If datetime attributes don't exist, try without them
+        if (e.message?.includes('createdAt') || e.message?.includes('updatedAt') || e.message?.includes('Unknown attribute')) {
+          try {
+            const doc = await awDatabases.createDocument(
+              APPWRITE_DATABASE_ID,
+              APPWRITE_USERS_COLLECTION_ID,
+              ID.unique(),
+              createData
+            );
+            return doc;
+          } catch (e2) {
+            // If userId attribute doesn't exist, collection isn't ready
+            if (e2.message?.includes('userId') || e2.message?.includes('Unknown attribute')) {
+              console.warn(`⚠️  Users collection missing required attributes. Please run migration or create attributes manually.`);
+              console.warn(`   See MANUAL_ATTRIBUTE_SETUP.md for instructions`);
+              return null;
+            }
+            throw e2;
+          }
+        }
+        throw e;
       }
     }
   } catch (err) {
