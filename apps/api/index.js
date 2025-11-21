@@ -1947,16 +1947,23 @@ Always be polite, patient, and solution-oriented. If you cannot resolve an issue
       console.warn(`   💡 User widget should join room ${sessionId} on connection via 'start_session' event`);
       // Try to find any socket connected to this session and emit directly
       // This is a fallback for cases where room join didn't work
-      const allSockets = await io.fetchSockets();
-      let foundSocket = false;
-      for (const s of allSockets) {
-        if (s.rooms.has(sessionId)) {
-          foundSocket = true;
-          break;
+      try {
+        const allSockets = await io.fetchSockets();
+        let foundSocket = false;
+        for (const s of allSockets) {
+          if (s.rooms.has(sessionId)) {
+            foundSocket = true;
+            // Force emit directly to this socket as fallback
+            s.emit('agent_message', messagePayload);
+            console.log(`   🔄 Fallback: Emitted directly to socket ${s.id}`);
+          }
         }
-      }
-      if (!foundSocket) {
-        console.warn(`   ⚠️  No sockets found with sessionId ${sessionId} in any room`);
+        if (!foundSocket) {
+          console.warn(`   ⚠️  No sockets found with sessionId ${sessionId} in any room`);
+          console.warn(`   💡 Widget may need to reconnect and join room ${sessionId}`);
+        }
+      } catch (fetchErr) {
+        console.warn(`   ⚠️  Could not fetch sockets for fallback:`, fetchErr?.message);
       }
     } else {
       console.log(`   ✅ Message broadcast to ${roomSize} socket(s) in room`);
