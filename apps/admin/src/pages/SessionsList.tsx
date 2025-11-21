@@ -35,6 +35,10 @@ export default function SessionsList() {
       const params = new URLSearchParams()
       if (statusFilter) params.append('status', statusFilter)
       if (search) params.append('search', search)
+      if (agentFilter) params.append('agentId', agentFilter)
+      if (startDate) params.append('startDate', startDate)
+      if (endDate) params.append('endDate', endDate)
+      if (fullTextSearch) params.append('fullTextSearch', fullTextSearch)
       params.append('limit', '100')
 
       const res = await fetch(`${API_BASE}/admin/sessions?${params}`, {
@@ -200,43 +204,136 @@ export default function SessionsList() {
     <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
       <h1>AI Support Admin - Sessions</h1>
       
-      <div style={{ marginTop: '20px', display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap', alignItems: 'center' }}>
-        <input
-          type="text"
-          placeholder="Search session ID..."
-          value={search}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
-          style={{ padding: '8px', flex: 1, minWidth: '200px', border: '1px solid #ddd', borderRadius: '4px' }}
-        />
-        <select
-          value={statusFilter}
-          onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setStatusFilter(e.target.value)}
-          style={{ padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }}
-        >
-          <option value="">All Status</option>
-          <option value="active">Active</option>
-          <option value="agent_assigned">Agent Assigned</option>
-          <option value="closed">Closed</option>
-        </select>
-        {selectedSessions.size > 0 && (
+      <div style={{ marginTop: '20px', marginBottom: '20px' }}>
+        {/* Main Search Bar */}
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+          <input
+            type="text"
+            placeholder="Search session ID..."
+            value={search}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
+            style={{ padding: '8px', flex: 1, minWidth: '200px', border: '1px solid #ddd', borderRadius: '4px' }}
+          />
+          <input
+            type="text"
+            placeholder="Full-text search in messages..."
+            value={fullTextSearch}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFullTextSearch(e.target.value)}
+            style={{ padding: '8px', flex: 1, minWidth: '200px', border: '1px solid #ddd', borderRadius: '4px' }}
+          />
+          <select
+            value={statusFilter}
+            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setStatusFilter(e.target.value)}
+            style={{ padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }}
+          >
+            <option value="">All Status</option>
+            <option value="active">Active</option>
+            <option value="agent_assigned">Agent Assigned</option>
+            <option value="closed">Closed</option>
+          </select>
           <button 
-            onClick={() => setShowBulkModal(true)} 
-            disabled={bulkExporting}
+            onClick={() => setShowFilters(!showFilters)}
             style={{ 
               padding: '8px 16px', 
-              background: bulkExporting ? '#ccc' : '#28a745', 
+              background: showFilters ? '#6c757d' : '#667eea', 
               color: 'white', 
               border: 'none', 
               borderRadius: '4px', 
-              cursor: bulkExporting ? 'not-allowed' : 'pointer' 
+              cursor: 'pointer' 
             }}
           >
-            {bulkExporting ? 'Exporting...' : `Bulk Export (${selectedSessions.size})`}
+            {showFilters ? 'Hide Filters' : 'More Filters'}
           </button>
+          {selectedSessions.size > 0 && (
+            <button 
+              onClick={() => setShowBulkModal(true)} 
+              disabled={bulkExporting}
+              style={{ 
+                padding: '8px 16px', 
+                background: bulkExporting ? '#ccc' : '#28a745', 
+                color: 'white', 
+                border: 'none', 
+                borderRadius: '4px', 
+                cursor: bulkExporting ? 'not-allowed' : 'pointer' 
+              }}
+            >
+              {bulkExporting ? 'Exporting...' : `Bulk Export (${selectedSessions.size})`}
+            </button>
+          )}
+          <button onClick={loadSessions} style={{ padding: '8px 16px', background: '#667eea', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+            Refresh
+          </button>
+        </div>
+
+        {/* Advanced Filters Panel */}
+        {showFilters && (
+          <div style={{ 
+            padding: '15px', 
+            background: '#f8f9fa', 
+            borderRadius: '4px', 
+            border: '1px solid #ddd',
+            marginBottom: '10px'
+          }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: '500' }}>
+                  Agent ID
+                </label>
+                <input
+                  type="text"
+                  placeholder="Filter by agent..."
+                  value={agentFilter}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAgentFilter(e.target.value)}
+                  style={{ padding: '6px', width: '100%', border: '1px solid #ddd', borderRadius: '4px', fontSize: '13px' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: '500' }}>
+                  Start Date
+                </label>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setStartDate(e.target.value)}
+                  style={{ padding: '6px', width: '100%', border: '1px solid #ddd', borderRadius: '4px', fontSize: '13px' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: '500' }}>
+                  End Date
+                </label>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEndDate(e.target.value)}
+                  style={{ padding: '6px', width: '100%', border: '1px solid #ddd', borderRadius: '4px', fontSize: '13px' }}
+                />
+              </div>
+            </div>
+            <div style={{ marginTop: '10px', display: 'flex', gap: '10px' }}>
+              <button
+                onClick={() => {
+                  setAgentFilter('')
+                  setStartDate('')
+                  setEndDate('')
+                  setFullTextSearch('')
+                  setSearch('')
+                }}
+                style={{
+                  padding: '6px 12px',
+                  background: '#6c757d',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '12px'
+                }}
+              >
+                Clear All Filters
+              </button>
+            </div>
+          </div>
         )}
-        <button onClick={loadSessions} style={{ padding: '8px 16px', background: '#667eea', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-          Refresh
-        </button>
       </div>
 
       {loading ? (
