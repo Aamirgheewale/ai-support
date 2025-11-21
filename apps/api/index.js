@@ -1348,7 +1348,9 @@ io.on('connection', (socket) => {
     const userMeta = data?.userMeta || {};
     
     await ensureSessionInAppwrite(sessionId, userMeta);
+    // Join session room - this is critical for receiving agent messages
     socket.join(sessionId);
+    console.log(`📱 Socket ${socket.id} joined session room: ${sessionId}`);
     
     const welcomeMsg = "Hello! 👋 I'm your AI Customer Support Assistant. How can I help you today?";
     socket.emit('session_started', { sessionId });
@@ -1909,13 +1911,25 @@ Always be polite, patient, and solution-oriented. If you cannot resolve an issue
     };
     
     // Broadcast to session room (user widget and admin panel)
+    // This ensures all sockets in the session room receive the message
     io.to(sessionId).emit('agent_message', messagePayload);
     
-    // Also emit as a general message event for widget compatibility
+    // Also emit as a general message event for widget compatibility (some widgets listen to 'message')
     io.to(sessionId).emit('message', messagePayload);
     
+    // Debug: Log room membership to help diagnose delivery issues
+    const room = io.sockets.adapter.rooms.get(sessionId);
+    const roomSize = room ? room.size : 0;
     console.log(`👤 Agent ${agentId} sent message to session ${sessionId}`);
-    console.log(`   📤 Broadcasting to session room: ${sessionId}`);
+    console.log(`   📤 Broadcasting to session room: ${sessionId} (${roomSize} socket(s) in room)`);
+    
+    // If no sockets in room, warn (user widget might not be connected or not joined room)
+    if (roomSize === 0) {
+      console.warn(`⚠️  No sockets found in room ${sessionId}, message may not reach user widget`);
+      console.warn(`   💡 User widget should join room ${sessionId} on connection via 'start_session' event`);
+    } else {
+      console.log(`   ✅ Message broadcast to ${roomSize} socket(s) in room`);
+    }
   });
 
   // Handle disconnection
