@@ -4,6 +4,7 @@ import KpiCard from '../components/analytics/KpiCard';
 import TimeSeriesChart from '../components/analytics/TimeSeriesChart';
 import HistogramChart from '../components/analytics/HistogramChart';
 import ResponseTimeChart from '../components/analytics/ResponseTimeChart';
+import AgentPerformanceTable from '../components/analytics/AgentPerformanceTable';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
 const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET || 'dev-secret-change-me';
@@ -12,16 +13,19 @@ interface OverviewMetrics {
   totalSessions: number;
   totalMessages: number;
   avgMessagesPerSession: number;
-  avgResponseTimeMs: number;
+  avgBotResponseTimeMs?: number;
+  avgResponseTimeMs?: number;
   humanTakeoverRate: number;
   aiFallbackCount: number;
+  startDate?: string;
+  endDate?: string;
   sessionStatuses?: {
     active: number;
     agent_assigned: number;
     closed: number;
     needs_human: number;
   };
-  period: { from: string; to: string };
+  period?: { from: string; to: string };
   cached?: boolean;
 }
 
@@ -32,15 +36,16 @@ interface TimeSeriesData {
 }
 
 interface ConfidenceHistogram {
-  histogram: Array<{ bin: number; min: string; max: string; count: number }>;
+  histogram: Array<{ bin: string; count: number; start?: number; end?: number }>;
   totalMessages: number;
 }
 
 interface ResponseTimes {
-  percentiles: Record<number, number>;
-  distribution: Array<{ range: string; count: number }>;
-  totalResponses: number;
-  avgResponseTime: number;
+  percentiles: Record<string, number>; // e.g., { p50: 1234, p90: 5678, p99: 12345 }
+  count: number;
+  min: number;
+  max: number;
+  avg: number;
 }
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
@@ -62,6 +67,7 @@ export default function AnalyticsPage() {
   const [timeSeries, setTimeSeries] = useState<TimeSeriesData[]>([]);
   const [confidenceHistogram, setConfidenceHistogram] = useState<ConfidenceHistogram | null>(null);
   const [responseTimes, setResponseTimes] = useState<ResponseTimes | null>(null);
+  const [agentPerformance, setAgentPerformance] = useState<Array<{ agentId: string; sessionsHandled: number; avgResponseTimeMs: number; avgResolutionTimeMs: number; messagesHandled: number }>>([]);
   const [sessionStatuses, setSessionStatuses] = useState<Array<{ name: string; value: number }>>([]);
   
   const [error, setError] = useState<string | null>(null);
@@ -77,28 +83,31 @@ export default function AnalyticsPage() {
       };
       
       // Fetch all metrics in parallel
-      const [overviewRes, timeSeriesRes, histogramRes, responseTimesRes] = await Promise.all([
+      const [overviewRes, timeSeriesRes, histogramRes, responseTimesRes, agentPerfRes] = await Promise.all([
         fetch(`${API_BASE}/admin/metrics/overview?from=${fromDate}&to=${toDate}`, { headers }),
         fetch(`${API_BASE}/admin/metrics/messages-over-time?from=${fromDate}&to=${toDate}&interval=${interval}`, { headers }),
         fetch(`${API_BASE}/admin/metrics/confidence-histogram?from=${fromDate}&to=${toDate}&bins=10`, { headers }),
-        fetch(`${API_BASE}/admin/metrics/response-times?from=${fromDate}&to=${toDate}&percentiles=50,90,99`, { headers })
+        fetch(`${API_BASE}/admin/metrics/response-times?from=${fromDate}&to=${toDate}&percentiles=50,90,99`, { headers }),
+        fetch(`${API_BASE}/admin/metrics/agent-performance?from=${fromDate}&to=${toDate}`, { headers })
       ]);
       
-      if (!overviewRes.ok || !timeSeriesRes.ok || !histogramRes.ok || !responseTimesRes.ok) {
+      if (!overviewRes.ok || !timeSeriesRes.ok || !histogramRes.ok || !responseTimesRes.ok || !agentPerfRes.ok) {
         throw new Error('Failed to fetch metrics');
       }
       
-      const [overviewData, timeSeriesData, histogramData, responseTimesData] = await Promise.all([
+      const [overviewData, timeSeriesData, histogramData, responseTimesData, agentPerfData] = await Promise.all([
         overviewRes.json(),
         timeSeriesRes.json(),
         histogramRes.json(),
-        responseTimesRes.json()
+        responseTimesRes.json(),
+        agentPerfRes.json()
       ]);
       
       setOverview(overviewData);
-      setTimeSeries(timeSeriesData.timeseries || []);
-      setConfidenceHistogram(histogramData);
+      setTimeSeries(Array.isArray(timeSeriesData) ? timeSeriesData : []);
+      setConfidenceHistogram(Array.isArray(histogramData) ? { histogram: histogramData, totalMessages: histogramData.reduce((sum: number, bin: any) => sum + bin.count, 0) } : null);
       setResponseTimes(responseTimesData);
+      setAgentPerformance(Array.isArray(agentPerfData) ? agentPerfData : []);
       
       // Use actual session statuses from backend
       if (overviewData.sessionStatuses) {
@@ -252,7 +261,7 @@ export default function AnalyticsPage() {
           <KpiCard title="Total Messages" value={overview.totalMessages} />
           <KpiCard 
             title="Avg Response Time" 
-            value={`${overview.avgResponseTimeMs}ms`}
+            value={`${overview.avgBotResponseTimeMs || overview.avgResponseTimeMs || 0}ms`}
           />
           <KpiCard 
             title="Human Takeover Rate" 
@@ -280,7 +289,7 @@ export default function AnalyticsPage() {
         )}
 
         {/* Confidence Histogram */}
-        {confidenceHistogram && confidenceHistogram.histogram.length > 0 && (
+        {confidenceHistogram && confidenceHistogram.histogram && confidenceHistogram.histogram.length > 0 && (
           <div className="bg-white p-4 rounded-lg shadow">
             <h2 className="text-xl font-semibold mb-4">
               AI Confidence Distribution ({confidenceHistogram.totalMessages} bot messages)
@@ -290,12 +299,20 @@ export default function AnalyticsPage() {
         )}
 
         {/* Response Times */}
-        {responseTimes && responseTimes.distribution.length > 0 && (
+        {responseTimes && responseTimes.percentiles && Object.keys(responseTimes.percentiles).length > 0 && (
           <div className="bg-white p-4 rounded-lg shadow">
             <h2 className="text-xl font-semibold mb-4">
-              Response Time Distribution ({responseTimes.totalResponses} responses)
+              Response Time Percentiles ({responseTimes.count || 0} responses)
             </h2>
             <ResponseTimeChart data={responseTimes} />
+          </div>
+        )}
+
+        {/* Agent Performance */}
+        {agentPerformance.length > 0 && (
+          <div className="bg-white p-4 rounded-lg shadow">
+            <h2 className="text-xl font-semibold mb-4">Agent Performance</h2>
+            <AgentPerformanceTable data={agentPerformance} />
           </div>
         )}
 

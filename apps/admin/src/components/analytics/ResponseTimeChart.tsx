@@ -2,12 +2,11 @@ import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
 
 interface ResponseTimes {
-  percentiles: Record<number, number>;
-  distribution: Array<{ range: string; count: number }>;
-  totalResponses: number;
-  avgResponseTime: number;
-  minResponseTime: number;
-  maxResponseTime: number;
+  percentiles: Record<string, number>; // e.g., { p50: 1234, p90: 5678, p99: 12345 }
+  count: number;
+  min: number;
+  max: number;
+  avg: number;
 }
 
 interface ResponseTimeChartProps {
@@ -16,42 +15,39 @@ interface ResponseTimeChartProps {
 
 export default function ResponseTimeChart({ data }: ResponseTimeChartProps) {
   // Prepare percentile data for display
-  const percentileData = Object.entries(data.percentiles).map(([p, value]) => ({
-    percentile: `P${p}`,
+  const percentileData = Object.entries(data.percentiles || {}).map(([p, value]) => ({
+    percentile: p.toUpperCase(),
     value: Math.round(value)
   }));
 
   return (
     <div className="space-y-6">
-      {/* Distribution Chart */}
+      {/* Percentiles Bar Chart */}
       <div>
-        <h3 className="text-lg font-medium mb-2">Response Time Distribution</h3>
+        <h3 className="text-lg font-medium mb-2">Response Time Percentiles</h3>
         <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={data.distribution}>
+          <BarChart data={percentileData}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis 
-              dataKey="range" 
-              angle={-45}
-              textAnchor="end"
-              height={80}
+              dataKey="percentile"
             />
             <YAxis />
-            <Tooltip />
+            <Tooltip formatter={(value: number) => `${value}ms`} />
             <Legend />
-            <Bar dataKey="count" fill="#FF8042" name="Response Count" />
+            <Bar dataKey="value" fill="#FF8042" name="Response Time (ms)" />
             <ReferenceLine 
-              y={0} 
-              stroke="#000" 
+              y={data.avg} 
+              stroke="#0088FE" 
               strokeDasharray="3 3"
-              label={{ value: `Avg: ${data.avgResponseTime}ms`, position: 'top' }}
+              label={{ value: `Avg: ${data.avg}ms`, position: 'top' }}
             />
           </BarChart>
         </ResponsiveContainer>
       </div>
 
-      {/* Percentiles */}
+      {/* Percentiles Cards */}
       <div>
-        <h3 className="text-lg font-medium mb-2">Percentiles</h3>
+        <h3 className="text-lg font-medium mb-2">Percentile Summary</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {percentileData.map(item => (
             <div key={item.percentile} className="bg-gray-50 p-3 rounded">
@@ -61,7 +57,7 @@ export default function ResponseTimeChart({ data }: ResponseTimeChartProps) {
           ))}
         </div>
         <div className="mt-4 text-sm text-gray-600">
-          <div>Min: {data.minResponseTime}ms | Max: {data.maxResponseTime}ms | Avg: {data.avgResponseTime}ms</div>
+          <div>Min: {data.min}ms | Max: {data.max}ms | Avg: {data.avg}ms | Count: {data.count}</div>
         </div>
       </div>
     </div>

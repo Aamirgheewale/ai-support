@@ -2,10 +2,10 @@ import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 interface HistogramData {
-  bin: number;
-  min: string;
-  max: string;
+  bin: string;
   count: number;
+  start?: number;
+  end?: number;
 }
 
 interface HistogramChartProps {
@@ -14,7 +14,7 @@ interface HistogramChartProps {
 
 export default function HistogramChart({ data }: HistogramChartProps) {
   const chartData = data.map(item => ({
-    range: `${item.min}-${item.max}`,
+    range: item.bin,
     count: item.count
   }));
 

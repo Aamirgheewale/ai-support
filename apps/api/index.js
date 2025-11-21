@@ -5,6 +5,7 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const archiver = require('archiver');
 const { stringify } = require('csv-stringify');
+const { LRUCache } = require('lru-cache');
 
 const app = express();
 app.use(cors());
@@ -1525,6 +1526,636 @@ app.get('/session/:sessionId/theme', async (req, res) => {
     console.error('Error getting theme:', err);
     res.status(500).json({ error: err?.message || 'Failed to get theme' });
   }
+});
+
+// ============================================================================
+// ANALYTICS & METRICS ENDPOINTS
+// ============================================================================
+
+// In-memory cache for metrics (TTL 60s)
+// TODO: Replace with Redis/Prometheus for production multi-instance deployments
+const metricsCache = new LRUCache({
+  max: 100,
+  ttl: 60000 // 60 seconds
+});
+
+function getCacheKey(endpoint, params) {
+  return `${endpoint}:${JSON.stringify(params)}`;
+}
+
+// Helper: Get date range with defaults
+function getDateRange(from, to) {
+  const end = to ? new Date(to) : new Date();
+  const start = from ? new Date(from) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000); // Default: last 7 days
+  start.setHours(0, 0, 0, 0);
+  end.setHours(23, 59, 59, 999);
+  return { start, end };
+}
+
+// Helper: Stream messages with pagination (memory-efficient)
+async function* streamAllMessages(startDate, endDate) {
+  const limit = 100;
+  let offset = 0;
+  let hasMore = true;
+  
+  while (hasMore) {
+    try {
+      let queries = [];
+      if (Query && startDate) {
+        queries.push(Query.greaterThanEqual('createdAt', startDate.toISOString()));
+      }
+      if (Query && endDate) {
+        queries.push(Query.lessThanEqual('createdAt', endDate.toISOString()));
+      }
+      
+      const result = await awDatabases.listDocuments(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_MESSAGES_COLLECTION_ID,
+        queries.length > 0 ? queries : undefined,
+        limit,
+        offset
+      );
+      
+      for (const msg of result.documents) {
+        yield msg;
+      }
+      
+      offset += result.documents.length;
+      hasMore = result.documents.length === limit;
+    } catch (err) {
+      console.error('Error streaming messages:', err);
+      break;
+    }
+  }
+}
+
+// Helper: Stream sessions with pagination
+async function* streamAllSessions(startDate, endDate) {
+  const limit = 100;
+  let offset = 0;
+  let hasMore = true;
+  
+  while (hasMore) {
+    try {
+      let queries = [];
+      if (Query && startDate) {
+        queries.push(Query.greaterThanEqual('startTime', startDate.toISOString()));
+      }
+      if (Query && endDate) {
+        queries.push(Query.lessThanEqual('startTime', endDate.toISOString()));
+      }
+      
+      const result = await awDatabases.listDocuments(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_SESSIONS_COLLECTION_ID,
+        queries.length > 0 ? queries : undefined,
+        limit,
+        offset
+      );
+      
+      for (const session of result.documents) {
+        yield session;
+      }
+      
+      offset += result.documents.length;
+      hasMore = result.documents.length === limit;
+    } catch (err) {
+      console.error('Error streaming sessions:', err);
+      break;
+    }
+  }
+}
+
+// GET /admin/metrics/overview - Overview metrics
+app.get('/admin/metrics/overview', requireAdminAuth, async (req, res) => {
+  const { from, to } = req.query;
+  const authHeader = req.headers.authorization;
+  const adminToken = authHeader ? authHeader.substring(7) : 'unknown';
+  
+  const cacheKey = getCacheKey('overview', { from, to });
+  const cached = metricsCache.get(cacheKey);
+  if (cached) {
+    console.log(`📊 [CACHE HIT] Overview metrics`);
+    return res.json(cached);
+  }
+  
+  if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_SESSIONS_COLLECTION_ID || !APPWRITE_MESSAGES_COLLECTION_ID) {
+    return res.status(503).json({ error: 'Appwrite not configured' });
+  }
+  
+  const { start, end } = getDateRange(from, to);
+  console.log(`📊 Computing overview metrics: ${start.toISOString()} to ${end.toISOString()}`);
+  
+  try {
+    let totalSessions = 0;
+    let totalMessages = 0;
+    let sessionsWithMessages = new Set();
+    let humanTakeoverCount = 0;
+    let aiFallbackCount = 0;
+    let botResponseTimes = [];
+    
+    // Count sessions
+    for await (const session of streamAllSessions(start, end)) {
+      totalSessions++;
+      
+      // Check for human takeover (agent assigned)
+      let assignedAgent = session.assignedAgent;
+      if (!assignedAgent && session.userMeta) {
+        try {
+          const userMeta = typeof session.userMeta === 'string' ? JSON.parse(session.userMeta) : session.userMeta;
+          assignedAgent = userMeta?.assignedAgent;
+        } catch (e) {}
+      }
+      if (assignedAgent) {
+        humanTakeoverCount++;
+      }
+    }
+    
+    // Count messages and compute response times
+    const sessionMessages = new Map(); // sessionId -> [{sender, createdAt, ...}]
+    
+    for await (const msg of streamAllMessages(start, end)) {
+      totalMessages++;
+      sessionsWithMessages.add(msg.sessionId);
+      
+      if (!sessionMessages.has(msg.sessionId)) {
+        sessionMessages.set(msg.sessionId, []);
+      }
+      sessionMessages.get(msg.sessionId).push({
+        sender: msg.sender,
+        createdAt: new Date(msg.createdAt || msg.$createdAt || Date.now()),
+        confidence: msg.confidence
+      });
+    }
+    
+    // Compute bot response times (user message -> next bot message)
+    for (const [sessionId, messages] of sessionMessages.entries()) {
+      const sorted = messages.sort((a, b) => a.createdAt - b.createdAt);
+      for (let i = 0; i < sorted.length - 1; i++) {
+        if (sorted[i].sender === 'user' && sorted[i + 1].sender === 'bot') {
+          const responseTime = sorted[i + 1].createdAt - sorted[i].createdAt;
+          if (responseTime > 0 && responseTime < 300000) { // Max 5 minutes
+            botResponseTimes.push(responseTime);
+          }
+        }
+      }
+    }
+    
+    const avgMessagesPerSession = totalSessions > 0 ? totalMessages / totalSessions : 0;
+    const avgBotResponseTimeMs = botResponseTimes.length > 0 
+      ? botResponseTimes.reduce((a, b) => a + b, 0) / botResponseTimes.length 
+      : 0;
+    const humanTakeoverRate = totalSessions > 0 ? humanTakeoverCount / totalSessions : 0;
+    
+    // Count AI fallbacks (messages with low confidence or needsHuman flag)
+    for (const [sessionId, messages] of sessionMessages.entries()) {
+      for (const msg of messages) {
+        if (msg.sender === 'bot' && msg.confidence !== null && msg.confidence < 0.5) {
+          aiFallbackCount++;
+        }
+      }
+    }
+    
+    const result = {
+      totalSessions,
+      totalMessages,
+      avgMessagesPerSession: Math.round(avgMessagesPerSession * 100) / 100,
+      avgBotResponseTimeMs: Math.round(avgBotResponseTimeMs),
+      humanTakeoverRate: Math.round(humanTakeoverRate * 10000) / 100, // Percentage
+      aiFallbackCount,
+      startDate: start.toISOString().split('T')[0],
+      endDate: end.toISOString().split('T')[0]
+    };
+    
+    metricsCache.set(cacheKey, result);
+    logExportAction(adminToken, ['metrics'], 'overview');
+    
+    res.json(result);
+  } catch (err) {
+    console.error('Error computing overview metrics:', err);
+    res.status(500).json({ error: err?.message || 'Failed to compute metrics' });
+  }
+});
+
+// GET /admin/metrics/messages-over-time - Time series data
+app.get('/admin/metrics/messages-over-time', requireAdminAuth, async (req, res) => {
+  const { from, to, interval = 'day' } = req.query;
+  const authHeader = req.headers.authorization;
+  const adminToken = authHeader ? authHeader.substring(7) : 'unknown';
+  
+  const cacheKey = getCacheKey('messages-over-time', { from, to, interval });
+  const cached = metricsCache.get(cacheKey);
+  if (cached) {
+    console.log(`📊 [CACHE HIT] Messages over time`);
+    return res.json(cached);
+  }
+  
+  if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_SESSIONS_COLLECTION_ID || !APPWRITE_MESSAGES_COLLECTION_ID) {
+    return res.status(503).json({ error: 'Appwrite not configured' });
+  }
+  
+  const { start, end } = getDateRange(from, to);
+  console.log(`📊 Computing messages-over-time: ${start.toISOString()} to ${end.toISOString()}, interval=${interval}`);
+  
+  try {
+    const buckets = new Map(); // date -> { messages: 0, sessionsStarted: 0 }
+    const sessionStartDates = new Set(); // sessionId -> date (to avoid double counting)
+    
+    // Initialize buckets based on interval
+    const current = new Date(start);
+    while (current <= end) {
+      const dateKey = current.toISOString().split('T')[0];
+      buckets.set(dateKey, { messages: 0, sessionsStarted: 0 });
+      
+      if (interval === 'day') {
+        current.setDate(current.getDate() + 1);
+      } else if (interval === 'week') {
+        current.setDate(current.getDate() + 7);
+      } else if (interval === 'month') {
+        current.setMonth(current.getMonth() + 1);
+      }
+    }
+    
+    // Count messages by date
+    let messageCount = 0;
+    for await (const msg of streamAllMessages(start, end)) {
+      messageCount++;
+      if (messageCount > 200000) {
+        return res.status(413).json({ 
+          error: 'Too many messages to process. Please use background aggregation or reduce date range.' 
+        });
+      }
+      
+      const msgDate = new Date(msg.createdAt || msg.$createdAt || Date.now());
+      const dateKey = msgDate.toISOString().split('T')[0];
+      if (buckets.has(dateKey)) {
+        buckets.get(dateKey).messages++;
+      }
+    }
+    
+    // Count sessions started by date
+    for await (const session of streamAllSessions(start, end)) {
+      const sessionDate = new Date(session.startTime || session.$createdAt || Date.now());
+      const dateKey = sessionDate.toISOString().split('T')[0];
+      if (buckets.has(dateKey)) {
+        buckets.get(dateKey).sessionsStarted++;
+      }
+    }
+    
+    const result = Array.from(buckets.entries())
+      .map(([date, data]) => ({ date, messages: data.messages, sessionsStarted: data.sessionsStarted }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+    
+    metricsCache.set(cacheKey, result);
+    logExportAction(adminToken, ['metrics'], 'messages-over-time');
+    
+    res.json(result);
+  } catch (err) {
+    console.error('Error computing messages-over-time:', err);
+    res.status(500).json({ error: err?.message || 'Failed to compute metrics' });
+  }
+});
+
+// GET /admin/metrics/agent-performance - Agent performance metrics
+app.get('/admin/metrics/agent-performance', requireAdminAuth, async (req, res) => {
+  const { from, to } = req.query;
+  const authHeader = req.headers.authorization;
+  const adminToken = authHeader ? authHeader.substring(7) : 'unknown';
+  
+  const cacheKey = getCacheKey('agent-performance', { from, to });
+  const cached = metricsCache.get(cacheKey);
+  if (cached) {
+    console.log(`📊 [CACHE HIT] Agent performance`);
+    return res.json(cached);
+  }
+  
+  if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_SESSIONS_COLLECTION_ID || !APPWRITE_MESSAGES_COLLECTION_ID) {
+    return res.status(503).json({ error: 'Appwrite not configured' });
+  }
+  
+  const { start, end } = getDateRange(from, to);
+  console.log(`📊 Computing agent performance: ${start.toISOString()} to ${end.toISOString()}`);
+  
+  try {
+    const agentStats = new Map(); // agentId -> { sessionsHandled, messagesHandled, responseTimes, sessionStartTimes }
+    
+    // Process sessions
+    for await (const session of streamAllSessions(start, end)) {
+      let assignedAgent = session.assignedAgent;
+      if (!assignedAgent && session.userMeta) {
+        try {
+          const userMeta = typeof session.userMeta === 'string' ? JSON.parse(session.userMeta) : session.userMeta;
+          assignedAgent = userMeta?.assignedAgent;
+        } catch (e) {}
+      }
+      
+      if (assignedAgent) {
+        if (!agentStats.has(assignedAgent)) {
+          agentStats.set(assignedAgent, {
+            sessionsHandled: 0,
+            messagesHandled: 0,
+            responseTimes: [],
+            sessionStartTimes: []
+          });
+        }
+        const stats = agentStats.get(assignedAgent);
+        stats.sessionsHandled++;
+        const sessionStart = new Date(session.startTime || session.$createdAt || Date.now());
+        stats.sessionStartTimes.push(sessionStart);
+      }
+    }
+    
+    // Process messages for agents
+    for await (const msg of streamAllMessages(start, end)) {
+      if (msg.sender === 'agent') {
+        let agentId = null;
+        if (msg.metadata) {
+          try {
+            const metadata = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata;
+            agentId = metadata?.agentId;
+          } catch (e) {}
+        }
+        
+        if (agentId) {
+          if (!agentStats.has(agentId)) {
+            agentStats.set(agentId, {
+              sessionsHandled: 0,
+              messagesHandled: 0,
+              responseTimes: [],
+              sessionStartTimes: []
+            });
+          }
+          agentStats.get(agentId).messagesHandled++;
+        }
+      }
+    }
+    
+    // Compute response times (user message -> agent message in same session)
+    const sessionMessages = new Map();
+    for await (const msg of streamAllMessages(start, end)) {
+      if (!sessionMessages.has(msg.sessionId)) {
+        sessionMessages.set(msg.sessionId, []);
+      }
+      sessionMessages.get(msg.sessionId).push({
+        sender: msg.sender,
+        createdAt: new Date(msg.createdAt || msg.$createdAt || Date.now()),
+        metadata: msg.metadata
+      });
+    }
+    
+    for (const [sessionId, messages] of sessionMessages.entries()) {
+      const sorted = messages.sort((a, b) => a.createdAt - b.createdAt);
+      for (let i = 0; i < sorted.length - 1; i++) {
+        if (sorted[i].sender === 'user') {
+          // Find next agent message
+          for (let j = i + 1; j < sorted.length; j++) {
+            if (sorted[j].sender === 'agent') {
+              let agentId = null;
+              if (sorted[j].metadata) {
+                try {
+                  const metadata = typeof sorted[j].metadata === 'string' ? JSON.parse(sorted[j].metadata) : sorted[j].metadata;
+                  agentId = metadata?.agentId;
+                } catch (e) {}
+              }
+              if (agentId && agentStats.has(agentId)) {
+                const responseTime = sorted[j].createdAt - sorted[i].createdAt;
+                if (responseTime > 0 && responseTime < 300000) {
+                  agentStats.get(agentId).responseTimes.push(responseTime);
+                }
+              }
+              break;
+            }
+          }
+        }
+      }
+    }
+    
+    // Compute resolution times (session start -> last agent message)
+    for (const [agentId, stats] of agentStats.entries()) {
+      // Get sessions for this agent
+      for await (const session of streamAllSessions(start, end)) {
+        let assignedAgent = session.assignedAgent;
+        if (!assignedAgent && session.userMeta) {
+          try {
+            const userMeta = typeof session.userMeta === 'string' ? JSON.parse(session.userMeta) : session.userMeta;
+            assignedAgent = userMeta?.assignedAgent;
+          } catch (e) {}
+        }
+        
+        if (assignedAgent === agentId) {
+          const sessionStart = new Date(session.startTime || session.$createdAt || Date.now());
+          const sessionMsgs = sessionMessages.get(session.sessionId) || [];
+          const agentMsgs = sessionMsgs.filter(m => {
+            if (m.sender !== 'agent') return false;
+            let msgAgentId = null;
+            if (m.metadata) {
+              try {
+                const metadata = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : m.metadata;
+                msgAgentId = metadata?.agentId;
+              } catch (e) {}
+            }
+            return msgAgentId === agentId;
+          });
+          
+          if (agentMsgs.length > 0) {
+            const lastAgentMsg = agentMsgs[agentMsgs.length - 1];
+            const resolutionTime = lastAgentMsg.createdAt - sessionStart;
+            if (resolutionTime > 0) {
+              stats.sessionStartTimes.push(resolutionTime);
+            }
+          }
+        }
+      }
+    }
+    
+    const result = Array.from(agentStats.entries()).map(([agentId, stats]) => {
+      const avgResponseTimeMs = stats.responseTimes.length > 0
+        ? Math.round(stats.responseTimes.reduce((a, b) => a + b, 0) / stats.responseTimes.length)
+        : 0;
+      const avgResolutionTimeMs = stats.sessionStartTimes.length > 0
+        ? Math.round(stats.sessionStartTimes.reduce((a, b) => a + b, 0) / stats.sessionStartTimes.length)
+        : 0;
+      
+      return {
+        agentId,
+        sessionsHandled: stats.sessionsHandled,
+        avgResponseTimeMs,
+        avgResolutionTimeMs,
+        messagesHandled: stats.messagesHandled
+      };
+    }).sort((a, b) => b.sessionsHandled - a.sessionsHandled);
+    
+    metricsCache.set(cacheKey, result);
+    logExportAction(adminToken, ['metrics'], 'agent-performance');
+    
+    res.json(result);
+  } catch (err) {
+    console.error('Error computing agent performance:', err);
+    res.status(500).json({ error: err?.message || 'Failed to compute metrics' });
+  }
+});
+
+// GET /admin/metrics/confidence-histogram - Confidence score distribution
+app.get('/admin/metrics/confidence-histogram', requireAdminAuth, async (req, res) => {
+  const { from, to, bins = 10 } = req.query;
+  const authHeader = req.headers.authorization;
+  const adminToken = authHeader ? authHeader.substring(7) : 'unknown';
+  
+  const cacheKey = getCacheKey('confidence-histogram', { from, to, bins });
+  const cached = metricsCache.get(cacheKey);
+  if (cached) {
+    console.log(`📊 [CACHE HIT] Confidence histogram`);
+    return res.json(cached);
+  }
+  
+  if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_MESSAGES_COLLECTION_ID) {
+    return res.status(503).json({ error: 'Appwrite not configured' });
+  }
+  
+  const { start, end } = getDateRange(from, to);
+  const numBins = parseInt(bins) || 10;
+  console.log(`📊 Computing confidence histogram: ${start.toISOString()} to ${end.toISOString()}, bins=${numBins}`);
+  
+  try {
+    const confidences = [];
+    let messageCount = 0;
+    
+    for await (const msg of streamAllMessages(start, end)) {
+      messageCount++;
+      if (messageCount > 200000) {
+        return res.status(413).json({ 
+          error: 'Too many messages to process. Please use background aggregation or reduce date range.' 
+        });
+      }
+      
+      if (msg.sender === 'bot' && msg.confidence !== null && msg.confidence !== undefined) {
+        confidences.push(parseFloat(msg.confidence));
+      }
+    }
+    
+    if (confidences.length === 0) {
+      return res.json([]);
+    }
+    
+    const min = Math.min(...confidences);
+    const max = Math.max(...confidences);
+    const binWidth = (max - min) / numBins;
+    
+    const histogram = Array(numBins).fill(0).map((_, i) => {
+      const binStart = min + i * binWidth;
+      const binEnd = binStart + binWidth;
+      const count = confidences.filter(c => c >= binStart && (i === numBins - 1 ? c <= binEnd : c < binEnd)).length;
+      return {
+        bin: `${(binStart * 100).toFixed(0)}-${(binEnd * 100).toFixed(0)}%`,
+        count,
+        start: binStart,
+        end: binEnd
+      };
+    });
+    
+    metricsCache.set(cacheKey, histogram);
+    logExportAction(adminToken, ['metrics'], 'confidence-histogram');
+    
+    res.json(histogram);
+  } catch (err) {
+    console.error('Error computing confidence histogram:', err);
+    res.status(500).json({ error: err?.message || 'Failed to compute metrics' });
+  }
+});
+
+// GET /admin/metrics/response-times - Response time percentiles
+app.get('/admin/metrics/response-times', requireAdminAuth, async (req, res) => {
+  const { from, to, percentiles = '50,90,99' } = req.query;
+  const authHeader = req.headers.authorization;
+  const adminToken = authHeader ? authHeader.substring(7) : 'unknown';
+  
+  const cacheKey = getCacheKey('response-times', { from, to, percentiles });
+  const cached = metricsCache.get(cacheKey);
+  if (cached) {
+    console.log(`📊 [CACHE HIT] Response times`);
+    return res.json(cached);
+  }
+  
+  if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_MESSAGES_COLLECTION_ID) {
+    return res.status(503).json({ error: 'Appwrite not configured' });
+  }
+  
+  const { start, end } = getDateRange(from, to);
+  const percentileList = percentiles.split(',').map(p => parseInt(p.trim())).filter(p => !isNaN(p));
+  console.log(`📊 Computing response times: ${start.toISOString()} to ${end.toISOString()}, percentiles=${percentiles}`);
+  
+  try {
+    const responseTimes = [];
+    const sessionMessages = new Map();
+    
+    // Group messages by session
+    for await (const msg of streamAllMessages(start, end)) {
+      if (!sessionMessages.has(msg.sessionId)) {
+        sessionMessages.set(msg.sessionId, []);
+      }
+      sessionMessages.get(msg.sessionId).push({
+        sender: msg.sender,
+        createdAt: new Date(msg.createdAt || msg.$createdAt || Date.now())
+      });
+    }
+    
+    // Compute response times (user -> bot)
+    for (const [sessionId, messages] of sessionMessages.entries()) {
+      const sorted = messages.sort((a, b) => a.createdAt - b.createdAt);
+      for (let i = 0; i < sorted.length - 1; i++) {
+        if (sorted[i].sender === 'user' && sorted[i + 1].sender === 'bot') {
+          const responseTime = sorted[i + 1].createdAt - sorted[i].createdAt;
+          if (responseTime > 0 && responseTime < 300000) { // Max 5 minutes
+            responseTimes.push(responseTime);
+          }
+        }
+      }
+    }
+    
+    if (responseTimes.length === 0) {
+      return res.json({ percentiles: {}, count: 0 });
+    }
+    
+    responseTimes.sort((a, b) => a - b);
+    
+    const result = {
+      percentiles: {},
+      count: responseTimes.length,
+      min: responseTimes[0],
+      max: responseTimes[responseTimes.length - 1],
+      avg: Math.round(responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length)
+    };
+    
+    for (const p of percentileList) {
+      const index = Math.ceil((p / 100) * responseTimes.length) - 1;
+      result.percentiles[`p${p}`] = responseTimes[Math.max(0, index)];
+    }
+    
+    metricsCache.set(cacheKey, result);
+    logExportAction(adminToken, ['metrics'], 'response-times');
+    
+    res.json(result);
+  } catch (err) {
+    console.error('Error computing response times:', err);
+    res.status(500).json({ error: err?.message || 'Failed to compute metrics' });
+  }
+});
+
+// POST /admin/metrics/aggregate-request - Request background aggregation (stub)
+app.post('/admin/metrics/aggregate-request', requireAdminAuth, async (req, res) => {
+  const { from, to, metrics } = req.body;
+  const authHeader = req.headers.authorization;
+  const adminToken = authHeader ? authHeader.substring(7) : 'unknown';
+  
+  console.log(`📊 [AGGREGATE REQUEST] Admin: ${adminToken}, From: ${from}, To: ${to}, Metrics: ${metrics?.join(', ') || 'all'}`);
+  // TODO: Implement background job queue (Bull/BullMQ, Celery, etc.)
+  // TODO: Store aggregation request in Appwrite or job queue
+  // TODO: Process in background worker and store results in precomputed analytics collection
+  
+  res.status(202).json({ 
+    message: 'Aggregation request received. Results will be available via background job.',
+    jobId: `job_${Date.now()}` // Placeholder
+  });
 });
 
 // ============================================================================
