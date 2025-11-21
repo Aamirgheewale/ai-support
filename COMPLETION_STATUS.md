@@ -60,11 +60,12 @@
    - Download chat transcripts
    - Bulk export functionality
 
-2. **Advanced Search & Filtering** ⚠️
-   - Date range filtering
-   - Agent filtering (by specific agent ID)
-   - Full-text search across messages
-   - Status filtering ✅ (Already implemented: Active, Agent Assigned, Closed)
+2. **Advanced Search & Filtering** ✅
+   - ✅ Date range filtering (start date, end date)
+   - ✅ Agent filtering (by specific agent ID)
+   - ✅ Full-text search across messages
+   - ✅ Status filtering (Active, Agent Assigned, Closed)
+   - ✅ Improved filtering UI with collapsible advanced filters panel
 
 3. **Analytics Dashboard** ❌
    - Metrics: Total sessions, messages, response time
@@ -157,10 +158,10 @@
    - Add charts library (Chart.js or Recharts)
    - Build analytics page in admin UI
 
-3. **Enhance Search** (High Priority)
-   - Add date range picker
-   - Improve filtering UI
-   - Add full-text search
+3. **Enhance Search** ✅ (COMPLETED)
+   - ✅ Date range picker (start date, end date)
+   - ✅ Improved filtering UI (collapsible advanced filters panel)
+   - ✅ Full-text search across messages
 
 4. **Implement RBAC** (Medium Priority)
    - Add user roles to Appwrite
