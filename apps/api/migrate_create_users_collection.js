@@ -28,6 +28,22 @@ async function createCollections() {
     
     const databases = new Databases(client);
     
+    // Test connection first
+    console.log('🔌 Testing Appwrite connection...');
+    try {
+      await databases.listDatabases();
+      console.log('✅ Appwrite connection successful\n');
+    } catch (connErr) {
+      console.error('❌ Failed to connect to Appwrite:', connErr.message);
+      if (connErr.message?.includes('fetch failed') || connErr.message?.includes('ECONNREFUSED')) {
+        console.error('   This might be a network issue. Check:');
+        console.error('   1. Your internet connection');
+        console.error('   2. APPWRITE_ENDPOINT is correct:', APPWRITE_ENDPOINT);
+        console.error('   3. Firewall/proxy settings');
+      }
+      throw connErr;
+    }
+    
     console.log('📦 Creating collections...\n');
     
     // Create users collection
@@ -120,7 +136,11 @@ async function createCollections() {
     } catch (err) {
       if (err.code === 409) {
         console.log('ℹ️  roleChanges collection already exists');
+      } else if (err.message?.includes('fetch failed')) {
+        console.error('❌ Network error creating roleChanges collection');
+        throw err;
       } else {
+        console.error('❌ Error creating roleChanges collection:', err.message);
         throw err;
       }
     }
@@ -180,16 +200,40 @@ async function createCollections() {
     
   } catch (err) {
     console.error('\n❌ Migration failed:', err.message);
+    
+    // Provide helpful error messages
+    if (err.message?.includes('fetch failed') || err.message?.includes('ECONNREFUSED')) {
+      console.error('\n💡 Network Error - Possible solutions:');
+      console.error('   1. Check your internet connection');
+      console.error('   2. Verify APPWRITE_ENDPOINT:', APPWRITE_ENDPOINT);
+      console.error('   3. Check if Appwrite service is accessible');
+      console.error('   4. Try again in a few moments');
+    } else if (err.code === 401 || err.message?.includes('Unauthorized')) {
+      console.error('\n💡 Authentication Error - Check:');
+      console.error('   1. APPWRITE_API_KEY is correct');
+      console.error('   2. API key has proper permissions (databases.read, databases.write, collections.read, collections.write)');
+    } else if (err.code === 404 || err.message?.includes('not found')) {
+      console.error('\n💡 Not Found Error - Check:');
+      console.error('   1. APPWRITE_DATABASE_ID is correct:', APPWRITE_DATABASE_ID);
+      console.error('   2. Database exists in your Appwrite project');
+    }
+    
     if (err.response) {
       try {
         const response = JSON.parse(err.response);
-        console.error('   Response:', JSON.stringify(response, null, 2));
+        console.error('\n   Detailed Response:', JSON.stringify(response, null, 2));
       } catch (e) {
-        console.error('   Response:', err.response);
+        console.error('\n   Response:', err.response);
       }
     }
+    
+    if (err.stack && process.env.DEBUG) {
+      console.error('\n   Stack:', err.stack);
+    }
+    
     process.exit(1);
   }
 }
 
 createCollections();
+
