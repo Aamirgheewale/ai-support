@@ -151,29 +151,12 @@ If you prefer to use Appwrite AI to generate these attributes automatically, use
 ### Prompt for Users Collection
 
 ```
-Create attributes for the "users" collection in Appwrite database. Add these 6 attributes in order:
-
-1. userId: String type, size 255, required=true, array=false, unique=true, no default value
-2. email: String type, size 255, required=true, array=false, unique=true, no default value
-3. name: String type, size 255, required=false, array=false, unique=false, no default value
-4. roles: String type, size 255, required=false, array=true, unique=false, no default value (this is a string array)
-5. createdAt: DateTime type, required=true, array=false, no default value
-6. updatedAt: DateTime type, required=false, array=false, no default value
-
-Important: Do not set any default values for any attributes. Leave default fields empty. Create attributes sequentially and wait for each to be ready before creating the next one.
+Create 6 attributes in "users": userId(String,255,req,unique), email(String,255,req,unique), name(String,255), roles(String,255,array), createdAt(DateTime,req), updatedAt(DateTime). No defaults.
 ```
 
 ### Prompt for RoleChanges Collection
 
 ```
-Create attributes for the "roleChanges" collection in Appwrite database. Add these 5 attributes in order:
-
-1. userId: String type, size 255, required=true, array=false, unique=false, no default value
-2. changedBy: String type, size 255, required=true, array=false, unique=false, no default value
-3. oldRoles: String type, size 255, required=false, array=true, unique=false, no default value (this is a string array)
-4. newRoles: String type, size 255, required=false, array=true, unique=false, no default value (this is a string array)
-5. createdAt: DateTime type, required=true, array=false, no default value
-
-Important: Do not set any default values for any attributes. Leave default fields empty. Create attributes sequentially and wait for each to be ready before creating the next one.
+Create 5 attributes in "roleChanges": userId(String,255,req), changedBy(String,255,req), oldRoles(String,255,array), newRoles(String,255,array), createdAt(DateTime,req). No defaults.
 ```
 
