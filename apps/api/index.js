@@ -273,44 +273,54 @@ async function ensureUserRecord(userId, { email, name }) {
     // Handle document ID conflict (409 error)
     if (err.code === 409 || err.message?.includes('already exists') || err.message?.includes('requested ID already exists')) {
       console.warn(`⚠️  Document conflict for userId "${userId}". Checking if user already exists...`);
-      // Try to get existing user by userId (might have been created by another request)
-      const existing = await getUserById(userId);
-      if (existing) {
-        console.log(`✅ Found existing user for userId "${userId}", returning existing record`);
-        return existing;
-      }
-      // If not found by userId, try by email as fallback
-      const existingByEmail = await getUserByEmail(email);
-      if (existingByEmail) {
-        console.log(`✅ Found existing user for email "${email}", returning existing record`);
-        return existingByEmail;
-      }
-      // If still not found, wait a bit and check again (race condition - user might be creating)
-      console.warn(`⚠️  Document ID conflict but user not found. Waiting and checking again...`);
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
       
-      // Check again after delay
-      const existingAfterDelay = await getUserById(userId);
-      if (existingAfterDelay) {
-        console.log(`✅ Found user after delay for userId "${userId}", returning existing record`);
-        return existingAfterDelay;
-      }
-      
-      const existingByEmailAfterDelay = await getUserByEmail(email);
-      if (existingByEmailAfterDelay) {
-        console.log(`✅ Found user after delay for email "${email}", returning existing record`);
-        return existingByEmailAfterDelay;
+      // Try multiple times with increasing delays (index might not be ready)
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) {
+          await new Promise(resolve => setTimeout(resolve, 500 * attempt)); // 500ms, 1000ms delays
+        }
+        
+        // Try to get existing user by userId
+        const existing = await getUserById(userId);
+        if (existing) {
+          console.log(`✅ Found existing user for userId "${userId}" (attempt ${attempt + 1}), returning existing record`);
+          return existing;
+        }
+        
+        // Try by email
+        const existingByEmail = await getUserByEmail(email);
+        if (existingByEmail) {
+          console.log(`✅ Found existing user for email "${email}" (attempt ${attempt + 1}), returning existing record`);
+          return existingByEmail;
+        }
       }
       
-      // If still not found after delay, the conflict is likely due to unique constraint on userId/email
-      // The "Document ID already exists" error might actually mean "userId/email already exists"
-      // Since we can't find the user, this is likely a persistent issue
+      // If still not found after multiple attempts, try listing all users to debug
+      try {
+        const allUsers = await awDatabases.listDocuments(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_USERS_COLLECTION_ID,
+          [],
+          100
+        );
+        const matchingUsers = allUsers.documents.filter(doc => 
+          doc.userId === userId || doc.email === email
+        );
+        if (matchingUsers.length > 0) {
+          console.log(`✅ Found ${matchingUsers.length} matching user(s) via list query, returning first match`);
+          return matchingUsers[0];
+        }
+      } catch (listErr) {
+        console.warn(`⚠️  Could not list users for debugging:`, listErr.message);
+      }
+      
+      // If still not found, the conflict is likely due to unique constraint on userId/email
       console.error(`❌ Persistent conflict: Cannot create user with userId "${userId}" and email "${email}"`);
-      console.error(`   User not found in database but creation fails with conflict error.`);
-      console.error(`   Possible causes:`);
-      console.error(`   1. Unique index on userId/email is preventing creation`);
-      console.error(`   2. User exists but query is not finding it`);
-      console.error(`   3. Database inconsistency`);
+      console.error(`   User not found in database after multiple attempts but creation fails with conflict error.`);
+      console.error(`   This might indicate:`);
+      console.error(`   1. Unique index constraint violation (userId or email already exists)`);
+      console.error(`   2. Database index not fully synchronized`);
+      console.error(`   3. Query timing issue - user exists but not queryable yet`);
       return null;
     }
     
