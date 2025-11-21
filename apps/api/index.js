@@ -274,18 +274,40 @@ async function ensureUserRecord(userId, { email, name }) {
       console.warn(`⚠️  Document ID conflict but user not found. Retrying with new unique ID...`);
       try {
         const { ID } = require('node-appwrite');
-        const retryDoc = await awDatabases.createDocument(
-          APPWRITE_DATABASE_ID,
-          APPWRITE_USERS_COLLECTION_ID,
-          ID.unique(), // Generate a completely new unique ID
-          {
-            userId,
-            email,
-            name: name || email,
-            roles: []
+        // Try with createdAt/updatedAt first
+        try {
+          const retryDoc = await awDatabases.createDocument(
+            APPWRITE_DATABASE_ID,
+            APPWRITE_USERS_COLLECTION_ID,
+            ID.unique(), // Generate a completely new unique ID
+            {
+              userId,
+              email,
+              name: name || email,
+              roles: [],
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString()
+            }
+          );
+          return retryDoc;
+        } catch (retryErr) {
+          // If datetime attributes don't exist, try without them
+          if (retryErr.message?.includes('createdAt') || retryErr.message?.includes('updatedAt')) {
+            const retryDoc = await awDatabases.createDocument(
+              APPWRITE_DATABASE_ID,
+              APPWRITE_USERS_COLLECTION_ID,
+              ID.unique(),
+              {
+                userId,
+                email,
+                name: name || email,
+                roles: []
+              }
+            );
+            return retryDoc;
           }
-        );
-        return retryDoc;
+          throw retryErr;
+        }
       } catch (retryErr) {
         console.error('Error retrying user creation:', retryErr.message || retryErr);
         return null;
