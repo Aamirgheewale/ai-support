@@ -42,15 +42,12 @@ async function createCollection(name, collectionId) {
   }
 }
 
-async function createStringAttribute(collectionId, key, size = 255, required = false, array = false, defaultVal = null) {
+async function createStringAttribute(collectionId, key, size = 255, required = false, array = false) {
   try {
     console.log(`   Adding string attribute: ${key}...`);
-    // Appwrite doesn't accept null as default - use empty string or omit
-    if (defaultVal === null || defaultVal === undefined) {
-      await databases.createStringAttribute(APPWRITE_DATABASE_ID, collectionId, key, size, required, array);
-    } else {
-      await databases.createStringAttribute(APPWRITE_DATABASE_ID, collectionId, key, size, required, array, defaultVal);
-    }
+    // Appwrite createStringAttribute signature: (databaseId, collectionId, key, size, required, array)
+    // No default parameter - Appwrite doesn't support default values for string attributes
+    await databases.createStringAttribute(APPWRITE_DATABASE_ID, collectionId, key, size, required, array);
     console.log(`   ✅ Added: ${key}`);
     return true;
   } catch (err) {

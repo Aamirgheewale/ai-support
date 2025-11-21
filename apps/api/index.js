@@ -1484,6 +1484,9 @@ io.on('connection', (socket) => {
         }
       }
       
+      // Start latency timer early (before any async operations) so it's always defined
+      const latencyStart = process.hrtime.bigint();
+      
       // Build conversation context
       const systemPrompt = `You are a professional AI Customer Support Assistant. Your role is to:
 - Provide helpful, friendly, and empathetic customer support
@@ -1519,9 +1522,6 @@ Always be polite, patient, and solution-oriented. If you cannot resolve an issue
         modelVersion: geminiModelName || 'unknown',
         promptLength: conversationContext.length
       };
-      
-      // Start latency timer (declare outside try block so it's accessible in catch)
-      const latencyStart = process.hrtime.bigint();
       
       try {
         result = await geminiModel.generateContent(conversationContext);
