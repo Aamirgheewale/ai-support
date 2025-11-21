@@ -273,7 +273,7 @@ async function ensureUserRecord(userId, { email, name }) {
       }
       // If still not found, wait a bit and check again (race condition - user might be creating)
       console.warn(`⚠️  Document ID conflict but user not found. Waiting and checking again...`);
-      await new Promise(resolve => setTimeout(resolve, 500)); // Wait 500ms
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
       
       // Check again after delay
       const existingAfterDelay = await getUserById(userId);
@@ -288,64 +288,16 @@ async function ensureUserRecord(userId, { email, name }) {
         return existingByEmailAfterDelay;
       }
       
-      // If still not found, the conflict might be due to unique constraint on userId/email
-      // Check if userId or email already exists in the database
-      console.warn(`⚠️  User still not found after delay. Checking for unique constraint violations...`);
-      
-      // Final retry with new unique ID and handle unique constraint errors
-      try {
-        const { ID } = require('node-appwrite');
-        // Try with createdAt/updatedAt first
-        try {
-          const retryDoc = await awDatabases.createDocument(
-            APPWRITE_DATABASE_ID,
-            APPWRITE_USERS_COLLECTION_ID,
-            ID.unique(), // Generate a completely new unique ID
-            {
-              userId,
-              email,
-              name: name || email,
-              roles: [],
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString()
-            }
-          );
-          return retryDoc;
-        } catch (retryErr) {
-          // Check if it's a unique constraint violation on userId or email
-          if (retryErr.code === 409 || retryErr.message?.includes('already exists') || retryErr.message?.includes('unique')) {
-            // Final check - user might exist now
-            const finalCheck = await getUserById(userId) || await getUserByEmail(email);
-            if (finalCheck) {
-              return finalCheck;
-            }
-            // If still not found, it's a persistent conflict - return null
-            console.error(`❌ Persistent conflict creating user with userId "${userId}" and email "${email}"`);
-            console.error(`   This might indicate a unique constraint violation. Check if userId or email already exists.`);
-            return null;
-          }
-          
-          // If datetime attributes don't exist, try without them
-          if (retryErr.message?.includes('createdAt') || retryErr.message?.includes('updatedAt')) {
-            const retryDoc = await awDatabases.createDocument(
-              APPWRITE_DATABASE_ID,
-              APPWRITE_USERS_COLLECTION_ID,
-              ID.unique(),
-              {
-                userId,
-                email,
-                name: name || email,
-                roles: []
-              }
-            );
-            return retryDoc;
-          }
-          throw retryErr;
-        }
-      } catch (retryErr) {
-        console.error('Error retrying user creation:', retryErr.message || retryErr);
-        return null;
-      }
+      // If still not found after delay, the conflict is likely due to unique constraint on userId/email
+      // The "Document ID already exists" error might actually mean "userId/email already exists"
+      // Since we can't find the user, this is likely a persistent issue
+      console.error(`❌ Persistent conflict: Cannot create user with userId "${userId}" and email "${email}"`);
+      console.error(`   User not found in database but creation fails with conflict error.`);
+      console.error(`   Possible causes:`);
+      console.error(`   1. Unique index on userId/email is preventing creation`);
+      console.error(`   2. User exists but query is not finding it`);
+      console.error(`   3. Database inconsistency`);
+      return null;
     }
     
     // Check for roles attribute type error
