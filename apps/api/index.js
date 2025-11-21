@@ -1520,7 +1520,7 @@ Always be polite, patient, and solution-oriented. If you cannot resolve an issue
         promptLength: conversationContext.length
       };
       
-      // Start latency timer
+      // Start latency timer (declare outside try block so it's accessible in catch)
       const latencyStart = process.hrtime.bigint();
       
       try {
@@ -1633,7 +1633,7 @@ Always be polite, patient, and solution-oriented. If you cannot resolve an issue
       
       const fallbackMsg = 'AI temporarily unavailable; your message is recorded and an agent will follow up.';
       
-      // Calculate latency even for errors
+      // Calculate latency even for errors (latencyStart is defined outside try block)
       const latencyEnd = process.hrtime.bigint();
       const latencyMs = Number(latencyEnd - latencyStart) / 1000000;
       

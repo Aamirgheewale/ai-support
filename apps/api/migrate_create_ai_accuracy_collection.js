@@ -45,16 +45,12 @@ async function createCollection(name, collectionId) {
 async function createStringAttribute(collectionId, key, size = 255, required = false, array = false, defaultVal = null) {
   try {
     console.log(`   Adding string attribute: ${key}...`);
-    const params = {
-      key,
-      size,
-      required,
-      array
-    };
-    if (defaultVal !== null && defaultVal !== undefined) {
-      params.default = defaultVal;
+    // Appwrite doesn't accept null as default - use empty string or omit
+    if (defaultVal === null || defaultVal === undefined) {
+      await databases.createStringAttribute(APPWRITE_DATABASE_ID, collectionId, key, size, required, array);
+    } else {
+      await databases.createStringAttribute(APPWRITE_DATABASE_ID, collectionId, key, size, required, array, defaultVal);
     }
-    await databases.createStringAttribute(APPWRITE_DATABASE_ID, collectionId, key, size, required, array, defaultVal);
     console.log(`   ✅ Added: ${key}`);
     return true;
   } catch (err) {
@@ -95,16 +91,12 @@ async function createIntegerAttribute(collectionId, key, required = false, min =
 async function createFloatAttribute(collectionId, key, required = false, min = null, max = null, defaultVal = null) {
   try {
     console.log(`   Adding float attribute: ${key}...`);
-    const params = {
-      key,
-      required,
-      min: min !== null ? min : undefined,
-      max: max !== null ? max : undefined
-    };
-    if (defaultVal !== null && defaultVal !== undefined) {
-      params.default = defaultVal;
+    // Appwrite doesn't accept null as default - omit if null
+    if (defaultVal === null || defaultVal === undefined) {
+      await databases.createFloatAttribute(APPWRITE_DATABASE_ID, collectionId, key, required, min, max);
+    } else {
+      await databases.createFloatAttribute(APPWRITE_DATABASE_ID, collectionId, key, required, min, max, defaultVal);
     }
-    await databases.createFloatAttribute(APPWRITE_DATABASE_ID, collectionId, key, required, min, max, defaultVal);
     console.log(`   ✅ Added: ${key}`);
     return true;
   } catch (err) {
