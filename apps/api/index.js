@@ -1430,6 +1430,9 @@ io.on('connection', (socket) => {
       return;
     }
 
+    // Start latency timer early (BEFORE try block) so it's always accessible in catch block
+    const latencyStart = process.hrtime.bigint();
+    
     // Call Gemini AI
     try {
       // Ensure model is initialized
@@ -1483,9 +1486,6 @@ io.on('connection', (socket) => {
           console.warn('Appwrite history load failed:', err?.message || err);
         }
       }
-      
-      // Start latency timer early (before any async operations) so it's always defined
-      const latencyStart = process.hrtime.bigint();
       
       // Build conversation context
       const systemPrompt = `You are a professional AI Customer Support Assistant. Your role is to:
