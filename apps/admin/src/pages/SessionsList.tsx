@@ -19,6 +19,11 @@ export default function SessionsList() {
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('')
   const [search, setSearch] = useState('')
+  const [agentFilter, setAgentFilter] = useState('')
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+  const [fullTextSearch, setFullTextSearch] = useState('')
+  const [showFilters, setShowFilters] = useState(false)
   const [selectedSessions, setSelectedSessions] = useState<Set<string>>(new Set())
   const [exporting, setExporting] = useState<string | null>(null)
   const [bulkExporting, setBulkExporting] = useState(false)
@@ -27,7 +32,7 @@ export default function SessionsList() {
 
   useEffect(() => {
     loadSessions()
-  }, [statusFilter, search])
+  }, [statusFilter, search, agentFilter, startDate, endDate, fullTextSearch])
 
   async function loadSessions() {
     setLoading(true)
