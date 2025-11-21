@@ -86,13 +86,13 @@ async function createCollections() {
         false
       );
       
+      // Create datetime attributes without default (Appwrite doesn't accept null, omit parameter)
       await databases.createDatetimeAttribute(
         APPWRITE_DATABASE_ID,
         'users',
         'createdAt',
         true,
-        false,
-        null // no default
+        false
       );
       
       await databases.createDatetimeAttribute(
@@ -100,8 +100,7 @@ async function createCollections() {
         'users',
         'updatedAt',
         false,
-        false,
-        null // no default
+        false
       );
       
       console.log('✅ Added users collection attributes');
@@ -133,61 +132,6 @@ async function createCollections() {
         false
       );
       console.log('✅ Created roleChanges collection');
-      
-      await databases.createStringAttribute(
-        APPWRITE_DATABASE_ID,
-        'roleChanges',
-        'userId',
-        255,
-        true,
-        false,
-        false
-      );
-      
-      await databases.createStringAttribute(
-        APPWRITE_DATABASE_ID,
-        'roleChanges',
-        'changedBy',
-        255,
-        true,
-        false,
-        false
-      );
-      
-      await databases.createStringAttribute(
-        APPWRITE_DATABASE_ID,
-        'roleChanges',
-        'oldRoles',
-        255,
-        false,
-        true,
-        false
-      );
-      
-      await databases.createStringAttribute(
-        APPWRITE_DATABASE_ID,
-        'roleChanges',
-        'newRoles',
-        255,
-        false,
-        true,
-        false
-      );
-      
-      await databases.createDatetimeAttribute(
-        APPWRITE_DATABASE_ID,
-        'roleChanges',
-        'createdAt',
-        true,
-        false,
-        null // no default
-      );
-      
-      console.log('✅ Added roleChanges collection attributes');
-      
-      // Wait for attributes to be ready
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
     } catch (err) {
       if (err.code === 409) {
         console.log('ℹ️  roleChanges collection already exists');
@@ -195,6 +139,52 @@ async function createCollections() {
         throw err;
       }
     }
+    
+    // Add roleChanges attributes
+    console.log('📝 Adding attributes to roleChanges collection...');
+    const roleChangeAttributes = [
+      { name: 'userId', type: 'string', size: 255, required: true, array: false, unique: false },
+      { name: 'changedBy', type: 'string', size: 255, required: true, array: false, unique: false },
+      { name: 'oldRoles', type: 'string', size: 255, required: false, array: true, unique: false },
+      { name: 'newRoles', type: 'string', size: 255, required: false, array: true, unique: false },
+      { name: 'createdAt', type: 'datetime', required: true }
+    ];
+    
+    for (const attr of roleChangeAttributes) {
+      try {
+        if (attr.type === 'string') {
+          await databases.createStringAttribute(
+            APPWRITE_DATABASE_ID,
+            'roleChanges',
+            attr.name,
+            attr.size,
+            attr.required,
+            attr.array,
+            attr.unique
+          );
+        } else if (attr.type === 'datetime') {
+          await databases.createDatetimeAttribute(
+            APPWRITE_DATABASE_ID,
+            'roleChanges',
+            attr.name,
+            attr.required,
+            false
+          );
+        }
+        console.log(`   ✅ Added attribute: ${attr.name}`);
+      } catch (attrErr) {
+        if (attrErr.code === 409) {
+          console.log(`   ℹ️  Attribute ${attr.name} already exists`);
+        } else {
+          console.warn(`   ⚠️  Failed to add attribute ${attr.name}:`, attrErr.message);
+        }
+      }
+    }
+    
+    console.log('✅ RoleChanges collection attributes ready');
+    
+    // Wait for attributes to be ready
+    await new Promise(resolve => setTimeout(resolve, 3000));
     
     console.log('\n✅ Migration complete!');
     console.log('\n📝 Next steps:');

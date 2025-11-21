@@ -2710,24 +2710,40 @@ app.post('/admin/users', requireAuth, requireRole(['super_admin']), async (req, 
     
     const user = await ensureUserRecord(userId, { email, name: name || email });
     if (!user) {
-      return res.status(500).json({ error: 'Failed to create user' });
+      // Check if collection exists
+      const collectionExists = await checkUsersCollectionExists();
+      if (!collectionExists) {
+        return res.status(503).json({ error: 'Users collection not found. Please run migration: node migrate_create_users_collection.js' });
+      }
+      return res.status(500).json({ error: 'Failed to create user. Collection may be missing required attributes.' });
     }
     
     // Set roles if provided
     if (roles && Array.isArray(roles)) {
-      await setUserRoles(userId, roles);
-      const updatedUser = await getUserById(userId);
-      res.json({
-        userId: updatedUser.userId,
-        email: updatedUser.email,
-        name: updatedUser.name,
-        roles: Array.isArray(updatedUser.roles) ? updatedUser.roles : []
+      const rolesSet = await setUserRoles(userId, roles);
+      if (rolesSet) {
+        const updatedUser = await getUserById(userId);
+        if (updatedUser) {
+          return res.json({
+            userId: updatedUser.userId,
+            email: updatedUser.email,
+            name: updatedUser.name,
+            roles: Array.isArray(updatedUser.roles) ? updatedUser.roles : []
+          });
+        }
+      }
+      // Fallback: return user without updated roles
+      return res.json({
+        userId: user.userId || userId,
+        email: user.email || email,
+        name: user.name || name || email,
+        roles: roles
       });
     } else {
       res.json({
-        userId: user.userId,
-        email: user.email,
-        name: user.name,
+        userId: user.userId || userId,
+        email: user.email || email,
+        name: user.name || name || email,
         roles: Array.isArray(user.roles) ? user.roles : []
       });
     }
