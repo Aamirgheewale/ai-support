@@ -1397,7 +1397,13 @@ io.on('connection', (socket) => {
     }
 
     // Ensure socket is in session room (in case of reconnection or room loss)
+    // This is critical for receiving agent messages
     socket.join(sessionId);
+    const roomAfterJoin = io.sockets.adapter.rooms.get(sessionId);
+    const roomSizeAfterJoin = roomAfterJoin ? roomAfterJoin.size : 0;
+    if (roomSizeAfterJoin > 0) {
+      console.log(`📱 Socket ${socket.id} ensured in session room: ${sessionId} (${roomSizeAfterJoin} socket(s) total)`);
+    }
     const trimmedText = text.trim();
     console.log(`💬 Message received [${sessionId}]: "${trimmedText.substring(0, 50)}${trimmedText.length > 50 ? '...' : ''}"`);
 
