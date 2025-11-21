@@ -117,8 +117,8 @@ export default function AnalyticsPage() {
           { name: 'Closed', value: overviewData.sessionStatuses.closed || 0 },
           { name: 'Needs Human', value: overviewData.sessionStatuses.needs_human || 0 }
         ];
-        // Filter out zero values to prevent overlapping labels
-        setSessionStatuses(statuses.filter(s => s.value > 0));
+        // Always show all statuses, even if zero (so users can see all categories)
+        setSessionStatuses(statuses);
       } else if (overviewData.totalSessions > 0) {
         // Fallback to old calculation if backend doesn't provide statuses
         const active = overviewData.totalSessions - overviewData.aiFallbackCount - (overviewData.totalSessions * overviewData.humanTakeoverRate / 100);
