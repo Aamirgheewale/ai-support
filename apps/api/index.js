@@ -1654,9 +1654,25 @@ app.get('/admin/metrics/overview', requireAdminAuth, async (req, res) => {
     let aiFallbackCount = 0;
     let botResponseTimes = [];
     
+    // Track session status breakdown
+    const statusCounts = {
+      active: 0,
+      agent_assigned: 0,
+      closed: 0,
+      needs_human: 0
+    };
+    
     // Count sessions
     for await (const session of streamAllSessions(start, end)) {
       totalSessions++;
+      
+      // Track status
+      const status = (session.status || 'active').toLowerCase();
+      if (statusCounts.hasOwnProperty(status)) {
+        statusCounts[status]++;
+      } else {
+        statusCounts.active++; // Default to active for unknown statuses
+      }
       
       // Check for human takeover (agent assigned)
       let assignedAgent = session.assignedAgent;
@@ -1668,6 +1684,11 @@ app.get('/admin/metrics/overview', requireAdminAuth, async (req, res) => {
       }
       if (assignedAgent) {
         humanTakeoverCount++;
+        // Also count as agent_assigned if status isn't already set
+        if (status !== 'agent_assigned' && status !== 'closed') {
+          statusCounts.active = Math.max(0, statusCounts.active - 1);
+          statusCounts.agent_assigned++;
+        }
       }
     }
     
@@ -1723,6 +1744,7 @@ app.get('/admin/metrics/overview', requireAdminAuth, async (req, res) => {
       avgBotResponseTimeMs: Math.round(avgBotResponseTimeMs),
       humanTakeoverRate: Math.round(humanTakeoverRate * 10000) / 100, // Percentage
       aiFallbackCount,
+      sessionStatuses: statusCounts, // Include status breakdown
       startDate: start.toISOString().split('T')[0],
       endDate: end.toISOString().split('T')[0]
     };
