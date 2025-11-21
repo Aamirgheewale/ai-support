@@ -194,10 +194,12 @@ async function ensureUserRecord(userId, { email, name }) {
       // Try creating document - handle missing attributes gracefully
       try {
         // First try with all fields including datetime
+        // Use ID.unique() to generate a unique document ID
+        const docId = ID.unique();
         const doc = await awDatabases.createDocument(
           APPWRITE_DATABASE_ID,
           APPWRITE_USERS_COLLECTION_ID,
-          ID.unique(),
+          docId,
           {
             ...createData,
             createdAt: new Date().toISOString(),
@@ -217,10 +219,12 @@ async function ensureUserRecord(userId, { email, name }) {
         // If datetime attributes don't exist, try without them
         if (e.message?.includes('createdAt') || e.message?.includes('updatedAt') || e.message?.includes('Unknown attribute')) {
           try {
+            // Use ID.unique() to generate a unique document ID
+            const docId = ID.unique();
             const doc = await awDatabases.createDocument(
               APPWRITE_DATABASE_ID,
               APPWRITE_USERS_COLLECTION_ID,
-              ID.unique(),
+              docId,
               createData
             );
             return doc;
