@@ -372,7 +372,14 @@ async function logRoleChange(userId, changedBy, oldRoles, newRoles) {
       }
     );
   } catch (err) {
-    console.error('Error logging role change:', err);
+    // Check if oldRoles/newRoles attributes are wrong type (String instead of Array)
+    if (err.message?.includes('oldRoles') || err.message?.includes('newRoles')) {
+      if (err.message?.includes('must be a valid string')) {
+        console.error(`❌ Error: The "oldRoles" or "newRoles" attributes in roleChanges collection are configured as String instead of String Array.`);
+        console.error(`   Please delete these attributes in Appwrite Console and recreate them as String Arrays.`);
+        console.error(`   See MANUAL_ATTRIBUTE_SETUP.md for correct attribute configuration.`);
+      }
+    }
     // Fallback to console log
     console.log(`📝 [AUDIT] Role change: ${userId} by ${changedBy}, ${JSON.stringify(oldRoles)} -> ${JSON.stringify(newRoles)}`);
   }
