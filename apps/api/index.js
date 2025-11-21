@@ -271,15 +271,44 @@ async function setUserRoles(userId, rolesArray) {
     const newRoles = Array.isArray(rolesArray) ? rolesArray : [];
     
     const { ID } = require('node-appwrite');
-    await awDatabases.updateDocument(
-      APPWRITE_DATABASE_ID,
-      APPWRITE_USERS_COLLECTION_ID,
-      user.$id,
-      {
-        roles: newRoles,
-        updatedAt: new Date().toISOString()
+    try {
+      await awDatabases.updateDocument(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_USERS_COLLECTION_ID,
+        user.$id,
+        {
+          roles: newRoles,
+          updatedAt: new Date().toISOString()
+        }
+      );
+    } catch (e) {
+      // Check if roles attribute is wrong type (String instead of Array)
+      if (e.message?.includes('roles') && e.message?.includes('must be a valid string')) {
+        console.error(`❌ Error: The "roles" attribute in users collection is configured as String instead of String Array.`);
+        console.error(`   Please delete the "roles" attribute in Appwrite Console and recreate it as a String Array.`);
+        console.error(`   See MANUAL_ATTRIBUTE_SETUP.md for correct attribute configuration.`);
+        return false;
       }
-    );
+      // Try without updatedAt
+      try {
+        await awDatabases.updateDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_USERS_COLLECTION_ID,
+          user.$id,
+          {
+            roles: newRoles
+          }
+        );
+      } catch (e2) {
+        if (e2.message?.includes('roles') && e2.message?.includes('must be a valid string')) {
+          console.error(`❌ Error: The "roles" attribute in users collection is configured as String instead of String Array.`);
+          console.error(`   Please delete the "roles" attribute in Appwrite Console and recreate it as a String Array.`);
+          console.error(`   See MANUAL_ATTRIBUTE_SETUP.md for correct attribute configuration.`);
+          return false;
+        }
+        throw e2;
+      }
+    }
     
     // Audit log
     await logRoleChange(userId, 'system', oldRoles, newRoles);
