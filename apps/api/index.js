@@ -301,6 +301,18 @@ async function ensureUserRecord(userId, { email, name }) {
         );
         return doc;
       } catch (e) {
+        // Check if it's a unique constraint violation (email or userId already exists)
+        if (e.code === 409 || e.message?.includes('already exists')) {
+          // This might be a unique constraint violation - check if user exists
+          const existingCheck = await getUserByEmail(email) || await getUserById(userId);
+          if (existingCheck) {
+            console.log(`✅ User already exists (found via conflict check), returning existing record`);
+            return existingCheck;
+          }
+          // If not found, this will be handled by the outer catch block
+          throw e;
+        }
+        
         // Check if roles attribute is wrong type (String instead of Array)
         if (e.message?.includes('roles') && e.message?.includes('must be a valid string')) {
           console.error(`❌ Error: The "roles" attribute in users collection is configured as String instead of String Array.`);
@@ -373,7 +385,7 @@ async function ensureUserRecord(userId, { email, name }) {
         }
       }
       
-      // If still not found after multiple attempts, try listing all users to debug
+      // If still not found after multiple attempts, try listing all users to find matches
       try {
         const allUsers = await awDatabases.listDocuments(
           APPWRITE_DATABASE_ID,
@@ -382,24 +394,62 @@ async function ensureUserRecord(userId, { email, name }) {
           100
         );
         const matchingUsers = allUsers.documents.filter(doc => 
-          doc.userId === userId || doc.email === email
+          (doc.userId && doc.userId === userId) || (doc.email && doc.email === email)
         );
         if (matchingUsers.length > 0) {
           console.log(`✅ Found ${matchingUsers.length} matching user(s) via list query, returning first match`);
-          return matchingUsers[0];
+          const matched = matchingUsers[0];
+          // If userId is NULL, update it
+          if (!matched.userId && userId) {
+            try {
+              await awDatabases.updateDocument(
+                APPWRITE_DATABASE_ID,
+                APPWRITE_USERS_COLLECTION_ID,
+                matched.$id,
+                { userId: userId }
+              );
+              matched.userId = userId;
+            } catch (updateErr) {
+              console.warn(`⚠️  Could not update userId:`, updateErr.message);
+            }
+          }
+          return matched;
         }
       } catch (listErr) {
         console.warn(`⚠️  Could not list users for debugging:`, listErr.message);
       }
       
-      // If still not found, the conflict is likely due to unique constraint on userId/email
-      console.error(`❌ Persistent conflict: Cannot create user with userId "${userId}" and email "${email}"`);
-      console.error(`   User not found in database after multiple attempts but creation fails with conflict error.`);
-      console.error(`   This might indicate:`);
-      console.error(`   1. Unique index constraint violation (userId or email already exists)`);
-      console.error(`   2. Database index not fully synchronized`);
-      console.error(`   3. Query timing issue - user exists but not queryable yet`);
-      return null;
+      // Final attempt: try creating with a completely different approach
+      // Maybe the issue is with the document ID generation
+      console.warn(`⚠️  Attempting final creation with alternative approach...`);
+      try {
+        const { ID } = require('node-appwrite');
+        // Use a simpler document ID approach
+        const finalDocId = ID.unique();
+        const finalDoc = await awDatabases.createDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_USERS_COLLECTION_ID,
+          finalDocId,
+          {
+            userId,
+            email,
+            name: name || email,
+            roles: [],
+            createdAt: new Date().toISOString()
+          }
+        );
+        console.log(`✅ Successfully created user with final attempt`);
+        return finalDoc;
+      } catch (finalErr) {
+        console.error(`❌ Persistent conflict: Cannot create user with userId "${userId}" and email "${email}"`);
+        console.error(`   Error: ${finalErr.message || finalErr}`);
+        console.error(`   Possible causes:`);
+        console.error(`   1. Unique index constraint violation (userId "${userId}" or email "${email}" already exists)`);
+        console.error(`   2. Database index not fully synchronized`);
+        console.error(`   3. Query timing issue - user exists but not queryable yet`);
+        console.error(`   Recommendation: Check Appwrite Console for existing users with this email or userId`);
+        return null;
+      }
     }
     
     // Check for roles attribute type error
