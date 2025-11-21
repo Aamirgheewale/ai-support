@@ -66,16 +66,12 @@ async function createStringAttribute(collectionId, key, size = 255, required = f
 async function createIntegerAttribute(collectionId, key, required = false, min = null, max = null, defaultVal = null) {
   try {
     console.log(`   Adding integer attribute: ${key}...`);
-    const params = {
-      key,
-      required,
-      min: min !== null ? min : undefined,
-      max: max !== null ? max : undefined
-    };
-    if (defaultVal !== null && defaultVal !== undefined) {
-      params.default = defaultVal;
+    // Appwrite doesn't accept null as default - omit if null
+    if (defaultVal === null || defaultVal === undefined) {
+      await databases.createIntegerAttribute(APPWRITE_DATABASE_ID, collectionId, key, required, min, max);
+    } else {
+      await databases.createIntegerAttribute(APPWRITE_DATABASE_ID, collectionId, key, required, min, max, defaultVal);
     }
-    await databases.createIntegerAttribute(APPWRITE_DATABASE_ID, collectionId, key, required, min, max, defaultVal);
     console.log(`   ✅ Added: ${key}`);
     return true;
   } catch (err) {
