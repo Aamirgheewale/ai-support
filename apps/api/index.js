@@ -152,7 +152,8 @@ async function ensureUserRecord(userId, { email, name }) {
     return null;
   }
   try {
-    const existing = await getUserById(userId);
+    // Check for existing user by userId first
+    let existing = await getUserById(userId);
     if (existing) {
       // Update existing user
       const { ID } = require('node-appwrite');
