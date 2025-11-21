@@ -255,6 +255,43 @@ async function ensureUserRecord(userId, { email, name }) {
       return null;
     }
     
+    // Handle document ID conflict (409 error)
+    if (err.code === 409 || err.message?.includes('already exists') || err.message?.includes('requested ID already exists')) {
+      console.warn(`⚠️  Document conflict for userId "${userId}". Checking if user already exists...`);
+      // Try to get existing user by userId (might have been created by another request)
+      const existing = await getUserById(userId);
+      if (existing) {
+        console.log(`✅ Found existing user for userId "${userId}", returning existing record`);
+        return existing;
+      }
+      // If not found by userId, try by email as fallback
+      const existingByEmail = await getUserByEmail(email);
+      if (existingByEmail) {
+        console.log(`✅ Found existing user for email "${email}", returning existing record`);
+        return existingByEmail;
+      }
+      // If still not found, retry with a new unique ID (race condition handling)
+      console.warn(`⚠️  Document ID conflict but user not found. Retrying with new unique ID...`);
+      try {
+        const { ID } = require('node-appwrite');
+        const retryDoc = await awDatabases.createDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_USERS_COLLECTION_ID,
+          ID.unique(), // Generate a completely new unique ID
+          {
+            userId,
+            email,
+            name: name || email,
+            roles: []
+          }
+        );
+        return retryDoc;
+      } catch (retryErr) {
+        console.error('Error retrying user creation:', retryErr.message || retryErr);
+        return null;
+      }
+    }
+    
     // Check for roles attribute type error
     if (err.message?.includes('roles') && err.message?.includes('must be a valid string')) {
       console.error('Error ensuring user record: Invalid document structure: Attribute "roles" has invalid format. Value must be a valid string and no longer than 255 chars');
