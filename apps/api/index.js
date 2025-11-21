@@ -744,10 +744,18 @@ Always be polite, patient, and solution-oriented. If you cannot resolve an issue
 
 // Admin REST endpoints
 
-// GET /admin/sessions - List sessions
+// GET /admin/sessions - List sessions with advanced filtering
 app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
   try {
-    const { status, limit = 50, search } = req.query;
+    const { 
+      status, 
+      limit = 50, 
+      search, 
+      agentId, 
+      startDate, 
+      endDate,
+      fullTextSearch 
+    } = req.query;
     
     if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_SESSIONS_COLLECTION_ID) {
       return res.json({ sessions: [], message: 'Appwrite not configured' });
@@ -760,7 +768,26 @@ app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
     }
     if (search && search.trim() !== '' && Query) {
       queries.push(Query.equal('sessionId', search));
-      console.log(`🔍 Filtering sessions by search: "${search}"`);
+      console.log(`🔍 Filtering sessions by sessionId search: "${search}"`);
+    }
+    if (startDate && Query) {
+      try {
+        const start = new Date(startDate);
+        queries.push(Query.greaterThanEqual('startTime', start.toISOString()));
+        console.log(`🔍 Filtering sessions from date: "${startDate}"`);
+      } catch (e) {
+        console.warn('Invalid startDate format:', startDate);
+      }
+    }
+    if (endDate && Query) {
+      try {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        queries.push(Query.lessThanEqual('startTime', end.toISOString()));
+        console.log(`🔍 Filtering sessions until date: "${endDate}"`);
+      } catch (e) {
+        console.warn('Invalid endDate format:', endDate);
+      }
     }
     
     console.log(`📋 Fetching sessions with ${queries.length} query filter(s)`);
@@ -771,7 +798,7 @@ app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
         APPWRITE_DATABASE_ID,
         APPWRITE_SESSIONS_COLLECTION_ID,
         queries.length > 0 ? queries : undefined,
-        parseInt(limit)
+        parseInt(limit) * 10 // Fetch more for client-side filtering
       );
       console.log(`✅ Backend returned ${result.total} total session(s), ${result.documents.length} in this page`);
     } catch (queryErr) {
@@ -809,12 +836,111 @@ app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
       };
     });
     
+    // Client-side filtering for agentId (since it's in userMeta, not directly queryable)
+    if (agentId && agentId.trim() !== '') {
+      const beforeFilter = transformedSessions.length;
+      transformedSessions = transformedSessions.filter(s => s.assignedAgent === agentId);
+      console.log(`🔍 Agent filter: ${beforeFilter} → ${transformedSessions.length} sessions with agent="${agentId}"`);
+    }
+    
+    // Client-side date filtering (fallback if backend query failed)
+    if (startDate && (!queries.length || queries.length === 0)) {
+      try {
+        const start = new Date(startDate);
+        const beforeFilter = transformedSessions.length;
+        transformedSessions = transformedSessions.filter(s => {
+          const sessionDate = s.startTime ? new Date(s.startTime) : (s.$createdAt ? new Date(s.$createdAt) : null);
+          return sessionDate && sessionDate >= start;
+        });
+        console.log(`🔍 Start date filter: ${beforeFilter} → ${transformedSessions.length} sessions`);
+      } catch (e) {
+        console.warn('Invalid startDate for client-side filter:', startDate);
+      }
+    }
+    
+    if (endDate && (!queries.length || queries.length === 0)) {
+      try {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        const beforeFilter = transformedSessions.length;
+        transformedSessions = transformedSessions.filter(s => {
+          const sessionDate = s.startTime ? new Date(s.startTime) : (s.$createdAt ? new Date(s.$createdAt) : null);
+          return sessionDate && sessionDate <= end;
+        });
+        console.log(`🔍 End date filter: ${beforeFilter} → ${transformedSessions.length} sessions`);
+      } catch (e) {
+        console.warn('Invalid endDate for client-side filter:', endDate);
+      }
+    }
+    
+    // Full-text search across messages (requires fetching messages)
+    if (fullTextSearch && fullTextSearch.trim() !== '') {
+      console.log(`🔍 Full-text search: "${fullTextSearch}"`);
+      const searchTerm = fullTextSearch.toLowerCase();
+      const matchingSessionIds = new Set();
+      
+      try {
+        // Fetch messages in batches and search
+        let messageOffset = 0;
+        const messageLimit = 1000;
+        let hasMoreMessages = true;
+        
+        while (hasMoreMessages && matchingSessionIds.size < 100) {
+          let messageResult;
+          try {
+            if (Query) {
+              messageResult = await awDatabases.listDocuments(
+                APPWRITE_DATABASE_ID,
+                APPWRITE_MESSAGES_COLLECTION_ID,
+                undefined,
+                messageLimit,
+                messageOffset
+              );
+            } else {
+              messageResult = await awDatabases.listDocuments(
+                APPWRITE_DATABASE_ID,
+                APPWRITE_MESSAGES_COLLECTION_ID,
+                undefined,
+                messageLimit,
+                messageOffset
+              );
+            }
+            
+            // Search in message text
+            for (const msg of messageResult.documents) {
+              const text = (msg.text || '').toLowerCase();
+              if (text.includes(searchTerm)) {
+                matchingSessionIds.add(msg.sessionId);
+              }
+            }
+            
+            messageOffset += messageResult.documents.length;
+            hasMoreMessages = messageResult.documents.length === messageLimit;
+          } catch (msgErr) {
+            console.error('Error searching messages:', msgErr);
+            break;
+          }
+        }
+        
+        // Filter sessions to only those with matching messages
+        const beforeFilter = transformedSessions.length;
+        transformedSessions = transformedSessions.filter(s => matchingSessionIds.has(s.sessionId));
+        console.log(`🔍 Full-text search: ${beforeFilter} → ${transformedSessions.length} sessions with matching messages`);
+      } catch (searchErr) {
+        console.error('Full-text search error:', searchErr);
+        // Continue without full-text filtering if search fails
+      }
+    }
+    
     // If query failed and we fetched all, filter client-side on backend
-    if (status && status.trim() !== '' && queries.length > 0) {
+    if (status && status.trim() !== '' && queries.length === 0) {
       const beforeFilter = transformedSessions.length;
       transformedSessions = transformedSessions.filter(s => s.status === status);
       console.log(`🔍 Backend client-side filter: ${beforeFilter} → ${transformedSessions.length} sessions with status="${status}"`);
     }
+    
+    // Limit results
+    transformedSessions = transformedSessions.slice(0, parseInt(limit));
     
     console.log(`📤 Sending ${transformedSessions.length} session(s) to frontend`);
     res.json({ sessions: transformedSessions });
