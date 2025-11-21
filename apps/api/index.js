@@ -154,6 +154,46 @@ async function ensureUserRecord(userId, { email, name }) {
   try {
     // Check for existing user by userId first
     let existing = await getUserById(userId);
+    
+    // Also check by email (in case userId is NULL in database)
+    if (!existing) {
+      existing = await getUserByEmail(email);
+      // If found by email but userId is NULL or different, update it
+      if (existing && (!existing.userId || existing.userId !== userId)) {
+        console.log(`⚠️  Found user by email "${email}" but userId is ${existing.userId || 'NULL'}. Updating userId to "${userId}"...`);
+        try {
+          const updateData = {
+            userId: userId, // Set or update userId
+            email,
+            name: name || existing.name || email
+          };
+          try {
+            await awDatabases.updateDocument(
+              APPWRITE_DATABASE_ID,
+              APPWRITE_USERS_COLLECTION_ID,
+              existing.$id,
+              {
+                ...updateData,
+                updatedAt: new Date().toISOString()
+              }
+            );
+          } catch (e) {
+            await awDatabases.updateDocument(
+              APPWRITE_DATABASE_ID,
+              APPWRITE_USERS_COLLECTION_ID,
+              existing.$id,
+              updateData
+            );
+          }
+          return { ...existing, ...updateData };
+        } catch (updateErr) {
+          console.error(`❌ Failed to update userId for existing user:`, updateErr.message);
+          // Continue to return existing user even if update fails
+          return existing;
+        }
+      }
+    }
+    
     if (existing) {
       // Update existing user
       const { ID } = require('node-appwrite');
@@ -161,6 +201,10 @@ async function ensureUserRecord(userId, { email, name }) {
         email,
         name: name || existing.name
       };
+      // Ensure userId is set if it was NULL
+      if (!existing.userId || existing.userId !== userId) {
+        updateData.userId = userId;
+      }
       // Only add updatedAt if the attribute exists
       try {
         await awDatabases.updateDocument(
