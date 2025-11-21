@@ -112,7 +112,11 @@ async function getUserById(userId) {
     );
     return result.documents.length > 0 ? result.documents[0] : null;
   } catch (err) {
-    console.error('Error fetching user by ID:', err);
+    // If collection doesn't exist or attribute not found, return null (migration not run yet)
+    if (err.code === 404 || err.type === 'general_query_invalid' || err.message?.includes('not found')) {
+      return null;
+    }
+    console.error('Error fetching user by ID:', err.message || err);
     return null;
   }
 }
@@ -133,7 +137,11 @@ async function getUserByEmail(email) {
     );
     return result.documents.length > 0 ? result.documents[0] : null;
   } catch (err) {
-    console.error('Error fetching user by email:', err);
+    // If collection doesn't exist or attribute not found, return null
+    if (err.code === 404 || err.type === 'general_query_invalid' || err.message?.includes('not found')) {
+      return null;
+    }
+    console.error('Error fetching user by email:', err.message || err);
     return null;
   }
 }
@@ -148,37 +156,71 @@ async function ensureUserRecord(userId, { email, name }) {
     if (existing) {
       // Update existing user
       const { ID } = require('node-appwrite');
-      await awDatabases.updateDocument(
-        APPWRITE_DATABASE_ID,
-        APPWRITE_USERS_COLLECTION_ID,
-        existing.$id,
-        {
-          email,
-          name: name || existing.name,
-          updatedAt: new Date().toISOString()
-        }
-      );
-      return { ...existing, email, name: name || existing.name };
+      const updateData = {
+        email,
+        name: name || existing.name
+      };
+      // Only add updatedAt if the attribute exists
+      try {
+        await awDatabases.updateDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_USERS_COLLECTION_ID,
+          existing.$id,
+          {
+            ...updateData,
+            updatedAt: new Date().toISOString()
+          }
+        );
+      } catch (e) {
+        // If updatedAt doesn't exist, try without it
+        await awDatabases.updateDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_USERS_COLLECTION_ID,
+          existing.$id,
+          updateData
+        );
+      }
+      return { ...existing, ...updateData };
     } else {
       // Create new user
       const { ID } = require('node-appwrite');
-      const doc = await awDatabases.createDocument(
-        APPWRITE_DATABASE_ID,
-        APPWRITE_USERS_COLLECTION_ID,
-        ID.unique(),
-        {
-          userId,
-          email,
-          name: name || email,
-          roles: [],
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        }
-      );
-      return doc;
+      const createData = {
+        userId,
+        email,
+        name: name || email,
+        roles: []
+      };
+      // Try with createdAt/updatedAt, fallback without if attributes don't exist
+      try {
+        const doc = await awDatabases.createDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_USERS_COLLECTION_ID,
+          ID.unique(),
+          {
+            ...createData,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          }
+        );
+        return doc;
+      } catch (e) {
+        // If datetime attributes don't exist yet, create without them
+        const doc = await awDatabases.createDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_USERS_COLLECTION_ID,
+          ID.unique(),
+          createData
+        );
+        return doc;
+      }
     }
   } catch (err) {
-    console.error('Error ensuring user record:', err);
+    // If collection doesn't exist, return null (migration not run)
+    if (err.code === 404 || err.type === 'collection_not_found') {
+      console.warn('⚠️  Users collection not found. Please run migration: node migrate_create_users_collection.js');
+      return null;
+    }
+    console.error('Error ensuring user record:', err.message || err);
     return null;
   }
 }
@@ -226,6 +268,19 @@ async function isUserInRole(userId, role) {
   }
   const roles = Array.isArray(user.roles) ? user.roles : [];
   return roles.includes(role) || roles.includes('super_admin'); // super_admin has all permissions
+}
+
+// Helper to check if users collection exists
+async function checkUsersCollectionExists() {
+  if (!awDatabases || !APPWRITE_DATABASE_ID) {
+    return false;
+  }
+  try {
+    await awDatabases.listDocuments(APPWRITE_DATABASE_ID, APPWRITE_USERS_COLLECTION_ID, [], 1);
+    return true;
+  } catch (err) {
+    return false;
+  }
 }
 
 async function logRoleChange(userId, changedBy, oldRoles, newRoles) {
@@ -289,12 +344,16 @@ async function requireAuth(req, res, next) {
   // For dev: map ADMIN_SHARED_SECRET to super_admin
   if (token === ADMIN_SHARED_SECRET) {
     const devUserId = 'dev-admin';
-    await ensureUserRecord(devUserId, { email: 'dev@admin.local', name: 'Dev Admin' });
-    const user = await getUserById(devUserId);
-    if (user && (!user.roles || user.roles.length === 0)) {
-      await setUserRoles(devUserId, ['super_admin']);
+    // Try to ensure user record, but don't fail if collection doesn't exist
+    const userRecord = await ensureUserRecord(devUserId, { email: 'dev@admin.local', name: 'Dev Admin' });
+    if (userRecord) {
+      const user = await getUserById(devUserId);
+      if (user && (!user.roles || user.roles.length === 0)) {
+        await setUserRoles(devUserId, ['super_admin']);
+      }
     }
-    req.user = { userId: devUserId, email: 'dev@admin.local' };
+    // Always set req.user for dev mode, even if collection doesn't exist yet
+    req.user = { userId: devUserId, email: 'dev@admin.local', roles: ['super_admin'] };
     return next();
   }
   
@@ -319,12 +378,28 @@ function requireRole(allowedRoles) {
     }
     
     const userId = req.user.userId;
-    let hasRole = false;
     
-    for (const role of roles) {
-      if (await isUserInRole(userId, role)) {
-        hasRole = true;
-        break;
+    // Check if user has roles in req.user (for dev mode fallback)
+    if (req.user.roles && Array.isArray(req.user.roles)) {
+      const hasRole = roles.some(role => req.user.roles.includes(role) || req.user.roles.includes('super_admin'));
+      if (hasRole) {
+        return next();
+      }
+    }
+    
+    // Otherwise check via database
+    let hasRole = false;
+    try {
+      for (const role of roles) {
+        if (await isUserInRole(userId, role)) {
+          hasRole = true;
+          break;
+        }
+      }
+    } catch (err) {
+      // If collection doesn't exist, allow if user has roles in req.user (dev mode)
+      if (req.user.roles && Array.isArray(req.user.roles)) {
+        hasRole = roles.some(role => req.user.roles.includes(role) || req.user.roles.includes('super_admin'));
       }
     }
     

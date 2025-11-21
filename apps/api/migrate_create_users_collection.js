@@ -91,7 +91,8 @@ async function createCollections() {
         'users',
         'createdAt',
         true,
-        false
+        false,
+        null // no default
       );
       
       await databases.createDatetimeAttribute(
@@ -99,7 +100,8 @@ async function createCollections() {
         'users',
         'updatedAt',
         false,
-        false
+        false,
+        null // no default
       );
       
       console.log('✅ Added users collection attributes');
@@ -177,7 +179,8 @@ async function createCollections() {
         'roleChanges',
         'createdAt',
         true,
-        false
+        false,
+        null // no default
       );
       
       console.log('✅ Added roleChanges collection attributes');
