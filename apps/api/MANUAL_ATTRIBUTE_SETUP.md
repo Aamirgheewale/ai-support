@@ -117,6 +117,42 @@ Create these attributes:
 
 4. **Verify**: After creating all attributes, verify they exist by checking the Attributes tab.
 
+## Making Attributes Unique (After Creation)
+
+If you've already created `userId` or `email` attributes but they're not set as unique, you have two options:
+
+### Option 1: Delete and Recreate (Recommended)
+
+1. Go to **Appwrite Console → Databases → Your Database → users → Attributes**
+2. Find the attribute (`userId` or `email`)
+3. **Delete** it (three dots → Delete)
+4. **Recreate** it with the same settings but **check "Unique"** ✅
+
+### Option 2: Update via Appwrite Console
+
+**Note**: Appwrite doesn't allow changing the "Unique" constraint after creation. You must delete and recreate the attribute.
+
+**Steps:**
+1. Go to **Attributes** tab
+2. Click the **three dots (⋯)** next to `userId` or `email`
+3. Click **Delete** → Confirm
+4. Click **Create Attribute**
+5. Recreate with:
+   - **Key**: `userId` (or `email`)
+   - **Type**: String
+   - **Size**: 255
+   - **Required**: ✅ Yes (for both)
+   - **Array**: ❌ No
+   - **Unique**: ✅ **Yes** (check this!)
+   - **Default**: Leave empty
+6. Click **Create**
+
+**Important**: 
+- ⚠️ **Deleting an attribute will remove all data in that column** for existing documents
+- If you have existing users, you'll need to re-enter their `userId` or `email` values after recreating the attribute
+- For `userId`: Make sure each user has a unique `userId` before setting it as unique
+- For `email`: Make sure each user has a unique `email` before setting it as unique
+
 ## Quick Checklist
 
 **Users Collection:**
