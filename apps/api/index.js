@@ -1123,6 +1123,104 @@ async function saveMessageToAppwrite(sessionId, sender, text, metadata = {}) {
   }
 }
 
+// ============================================================================
+// Accuracy Logging Implementation
+// ============================================================================
+
+// PII Redaction helper (simple pattern matching)
+function redactPII(text) {
+  if (!REDACT_PII || !text) return text;
+  
+  // Simple email pattern redaction
+  const emailPattern = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g;
+  let redacted = text.replace(emailPattern, '[REDACTED]');
+  
+  // Phone number pattern (basic)
+  const phonePattern = /\b\d{3}[-.]?\d{3}[-.]?\d{4}\b/g;
+  redacted = redacted.replace(phonePattern, '[REDACTED]');
+  
+  return redacted;
+}
+
+// Save accuracy record helper
+async function saveAccuracyRecord(sessionId, messageId, aiText, confidence, latencyMs, tokens, responseType, metadata = {}) {
+  if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_AI_ACCURACY_COLLECTION_ID) {
+    console.warn('⚠️  Appwrite not configured, cannot save accuracy record');
+    return null;
+  }
+  
+  try {
+    // Truncate aiText if needed (max 10000 chars)
+    let truncatedText = aiText || '';
+    if (truncatedText.length > 10000) {
+      truncatedText = truncatedText.substring(0, 10000) + '...[truncated]';
+    }
+    
+    // Redact PII if enabled
+    truncatedText = redactPII(truncatedText);
+    
+    const accuracyDoc = {
+      messageId: messageId || null,
+      sessionId: sessionId,
+      aiText: truncatedText,
+      confidence: confidence !== undefined && confidence !== null ? confidence : null,
+      tokens: tokens !== undefined && tokens !== null ? tokens : null,
+      latencyMs: latencyMs !== undefined && latencyMs !== null ? latencyMs : null,
+      responseType: responseType || 'ai', // "ai" | "fallback" | "stub"
+      humanMark: null, // Will be set via feedback endpoints
+      evaluation: null, // Will be set via admin evaluation
+      createdAt: new Date().toISOString(),
+      metadata: typeof metadata === 'object' ? JSON.stringify(metadata) : metadata
+    };
+    
+    const { ID } = require('node-appwrite');
+    const result = await awDatabases.createDocument(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_AI_ACCURACY_COLLECTION_ID,
+      ID.unique(),
+      accuracyDoc
+    );
+    
+    console.log(`📊 Accuracy record saved: ${sessionId} (${responseType}, ${latencyMs}ms, conf: ${confidence})`);
+    return result.$id;
+  } catch (err) {
+    // Gracefully handle errors - don't crash the app
+    console.warn(`⚠️  Failed to save accuracy record:`, err.message || err);
+    // Check if collection exists
+    if (err.code === 404) {
+      console.warn(`   💡 Run migration: node migrate_create_ai_accuracy_collection.js`);
+    }
+    return null;
+  }
+}
+
+// Log accuracy audit entry
+async function logAccuracyAudit(accuracyId, adminId, action, note = null) {
+  if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_ACCURACY_AUDIT_COLLECTION_ID) {
+    console.log(`📝 [AUDIT] Accuracy ${action}: ${accuracyId} by ${adminId}${note ? ` - ${note}` : ''}`);
+    return;
+  }
+  
+  try {
+    const { ID } = require('node-appwrite');
+    await awDatabases.createDocument(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_ACCURACY_AUDIT_COLLECTION_ID,
+      ID.unique(),
+      {
+        accuracyId,
+        adminId,
+        action, // "evaluate" | "feedback"
+        note: note || null,
+        ts: new Date().toISOString()
+      }
+    );
+  } catch (err) {
+    // Fallback to console log
+    console.log(`📝 [AUDIT] Accuracy ${action}: ${accuracyId} by ${adminId}${note ? ` - ${note}` : ''}`);
+  }
+}
+
 // Appwrite helper: Mark session needs human
 async function markSessionNeedsHuman(sessionId, reason) {
   if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_SESSIONS_COLLECTION_ID) {
