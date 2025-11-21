@@ -14,8 +14,8 @@ Create these attributes in order:
 - **Size**: 255
 - **Required**: ✅ Yes
 - **Array**: ❌ No
-- **Default**: Leave empty or `null`
-- **Unique**: ✅ Yes
+- **Default**: Leave empty (don't enter anything)
+- **Unique**: ⚠️ **Set via Index** (see "Making Attributes Unique" section below)
 
 ### 2. email (String)
 - **Key**: `email`
@@ -23,8 +23,8 @@ Create these attributes in order:
 - **Size**: 255
 - **Required**: ✅ Yes
 - **Array**: ❌ No
-- **Default**: Leave empty or `null`
-- **Unique**: ✅ Yes
+- **Default**: Leave empty (don't enter anything)
+- **Unique**: ⚠️ **Set via Index** (see "Making Attributes Unique" section below)
 
 ### 3. name (String)
 - **Key**: `name`
@@ -117,41 +117,64 @@ Create these attributes:
 
 4. **Verify**: After creating all attributes, verify they exist by checking the Attributes tab.
 
-## Making Attributes Unique (After Creation)
+## Making Attributes Unique (Using Indexes)
 
-If you've already created `userId` or `email` attributes but they're not set as unique, you have two options:
+**Important**: In Appwrite, uniqueness is **NOT** set via a checkbox on the attribute. Instead, you must create a **Unique Index** on the attribute.
 
-### Option 1: Delete and Recreate (Recommended)
+### Steps to Make Attributes Unique:
 
-1. Go to **Appwrite Console → Databases → Your Database → users → Attributes**
-2. Find the attribute (`userId` or `email`)
-3. **Delete** it (three dots → Delete)
-4. **Recreate** it with the same settings but **check "Unique"** ✅
+1. Go to **Appwrite Console → Databases → Your Database → users → Indexes** tab
+2. Click **Create Index** button
+3. For `userId`:
+   - **Name**: `idx_userId_unique` (or any name you prefer)
+   - **Attributes**: Click "Add attribute" → Select `userId`
+   - **Type**: Select **"Unique"** from the dropdown
+   - Click **Create**
+4. Repeat for `email`:
+   - **Name**: `idx_email_unique` (or any name you prefer)
+   - **Attributes**: Click "Add attribute" → Select `email`
+   - **Type**: Select **"Unique"** from the dropdown
+   - Click **Create**
 
-### Option 2: Update via Appwrite Console
+### Visual Guide:
 
-**Note**: Appwrite doesn't allow changing the "Unique" constraint after creation. You must delete and recreate the attribute.
+```
+Appwrite Console
+│
+├── Databases
+│   └── Your Database
+│       └── users Collection
+│           ├── Attributes (create attributes here)
+│           └── Indexes (create unique indexes here) ← This is where uniqueness is set!
+│               └── Create Index
+│                   ├── Name: idx_userId_unique
+│                   ├── Attributes: userId
+│                   └── Type: Unique ✅
+```
 
-**Steps:**
-1. Go to **Attributes** tab
-2. Click the **three dots (⋯)** next to `userId` or `email`
-3. Click **Delete** → Confirm
-4. Click **Create Attribute**
-5. Recreate with:
-   - **Key**: `userId` (or `email`)
-   - **Type**: String
-   - **Size**: 255
-   - **Required**: ✅ Yes (for both)
-   - **Array**: ❌ No
-   - **Unique**: ✅ **Yes** (check this!)
-   - **Default**: Leave empty
-6. Click **Create**
+### Important Notes:
 
-**Important**: 
-- ⚠️ **Deleting an attribute will remove all data in that column** for existing documents
-- If you have existing users, you'll need to re-enter their `userId` or `email` values after recreating the attribute
-- For `userId`: Make sure each user has a unique `userId` before setting it as unique
-- For `email`: Make sure each user has a unique `email` before setting it as unique
+- ✅ **No need to delete/recreate attributes** - just create indexes
+- ✅ **Safe for existing data** - won't affect existing documents
+- ✅ **Enforces uniqueness** - prevents duplicate values
+- ⚠️ **Before creating unique indexes**, make sure:
+  - All existing `userId` values are unique
+  - All existing `email` values are unique
+  - If duplicates exist, remove them first or the index creation will fail
+
+### Verify Uniqueness:
+
+After creating the indexes, run:
+```bash
+cd apps/api
+node check_attribute_types.js
+```
+
+You should see:
+```
+✅ userId: OK
+✅ email: OK
+```
 
 ## Quick Checklist
 
