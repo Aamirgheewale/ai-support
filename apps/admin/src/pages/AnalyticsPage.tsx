@@ -117,8 +117,10 @@ export default function AnalyticsPage() {
           { name: 'Closed', value: overviewData.sessionStatuses.closed || 0 },
           { name: 'Needs Human', value: overviewData.sessionStatuses.needs_human || 0 }
         ];
-        // Always show all statuses, even if zero (so users can see all categories)
+        // Always show all statuses, even if zero (so users can see all categories in legend)
+        // Filter out zero values only for pie chart segments (Recharts won't render 0 segments anyway)
         setSessionStatuses(statuses);
+        console.log('📊 Session statuses:', statuses);
       } else if (overviewData.totalSessions > 0) {
         // Fallback to old calculation if backend doesn't provide statuses
         const active = overviewData.totalSessions - overviewData.aiFallbackCount - (overviewData.totalSessions * overviewData.humanTakeoverRate / 100);
@@ -323,13 +325,13 @@ export default function AnalyticsPage() {
             <ResponsiveContainer width="100%" height={350}>
               <PieChart>
                 <Pie
-                  data={sessionStatuses}
+                  data={sessionStatuses.filter(s => s.value > 0)} // Only show segments for non-zero values
                   cx="50%"
                   cy="50%"
                   labelLine={true}
                   label={({ name, percent, value }) => {
                     // Only show label if segment is significant (> 5%) or if it's the only segment
-                    if (percent > 0.05 || sessionStatuses.length === 1) {
+                    if (percent > 0.05 || sessionStatuses.filter(s => s.value > 0).length === 1) {
                       return `${name}: ${value} (${(percent * 100).toFixed(1)}%)`;
                     }
                     return '';
@@ -340,24 +342,31 @@ export default function AnalyticsPage() {
                   dataKey="value"
                   paddingAngle={2}
                 >
-                  {sessionStatuses.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
+                  {sessionStatuses.filter(s => s.value > 0).map((entry, index) => {
+                    const originalIndex = sessionStatuses.findIndex(s => s.name === entry.name);
+                    return <Cell key={`cell-${index}`} fill={COLORS[originalIndex % COLORS.length]} />;
+                  })}
                 </Pie>
                 <Tooltip 
                   formatter={(value: number, name: string) => [`${value} sessions`, name]}
-                  contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb' }}
-                />
-                <Legend 
-                  verticalAlign="bottom" 
-                  height={36}
-                  formatter={(value: string, entry: any) => {
-                    const data = sessionStatuses.find(s => s.name === value);
-                    return `${value} (${data?.value || 0})`;
-                  }}
+                  contentStyle={{ borderRadius: '8px', border: '1px solid #e5-7eb' }}
                 />
               </PieChart>
             </ResponsiveContainer>
+            {/* Custom Legend - Always show all statuses including zero values */}
+            <div className="flex flex-wrap justify-center gap-4 mt-4">
+              {sessionStatuses.map((status, index) => (
+                <div key={status.name} className="flex items-center gap-2">
+                  <div 
+                    className="w-4 h-4 rounded" 
+                    style={{ backgroundColor: status.value > 0 ? COLORS[index % COLORS.length] : '#e5e7eb' }}
+                  />
+                  <span className="text-sm text-gray-700">
+                    {status.name} ({status.value})
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
