@@ -91,55 +91,116 @@ async function createCollections() {
     for (const attr of userAttributes) {
       try {
         if (attr.type === 'string') {
-          // createStringAttribute: The default parameter must be exactly '' (empty string) or omitted
+          // createStringAttribute: Try multiple approaches for default parameter
           // Signature: (databaseId, collectionId, key, size, required, array, default, unique)
-          // Try with empty string first
-          try {
-            await databases.createStringAttribute(
-              APPWRITE_DATABASE_ID,
-              'users',
-              attr.name,
-              attr.size,
-              attr.required,
-              attr.array,
-              '', // empty string for no default
-              attr.unique
-            );
-            console.log(`   ✅ Added attribute: ${attr.name}`);
-          } catch (strErr) {
-            // If empty string fails, try omitting the parameter (pass undefined)
-            // But we need to pass all parameters, so try with null explicitly
-            if (strErr.message?.includes('default')) {
-              // Try calling with all params but check if we can use a different approach
-              // Some SDK versions might require the parameter to be explicitly omitted
-              console.log(`   ⚠️  Retrying ${attr.name} with different default approach...`);
-              // For now, log that manual creation might be needed
-              console.log(`   ⚠️  Attribute ${attr.name} needs to be created manually in Appwrite Console`);
-              console.log(`      Type: String, Size: ${attr.size}, Required: ${attr.required}, Array: ${attr.array}, Unique: ${attr.unique}`);
-            } else {
-              throw strErr;
+          let created = false;
+          const attempts = [
+            // Try 1: Pass null explicitly
+            async () => {
+              await databases.createStringAttribute(
+                APPWRITE_DATABASE_ID,
+                'users',
+                attr.name,
+                attr.size,
+                attr.required,
+                attr.array,
+                null, // null for no default
+                attr.unique
+              );
+            },
+            // Try 2: Pass empty string
+            async () => {
+              await databases.createStringAttribute(
+                APPWRITE_DATABASE_ID,
+                'users',
+                attr.name,
+                attr.size,
+                attr.required,
+                attr.array,
+                '', // empty string
+                attr.unique
+              );
+            },
+            // Try 3: Use undefined (might skip the parameter)
+            async () => {
+              await databases.createStringAttribute(
+                APPWRITE_DATABASE_ID,
+                'users',
+                attr.name,
+                attr.size,
+                attr.required,
+                attr.array,
+                undefined, // undefined
+                attr.unique
+              );
+            }
+          ];
+          
+          for (let i = 0; i < attempts.length && !created; i++) {
+            try {
+              await attempts[i]();
+              console.log(`   ✅ Added attribute: ${attr.name} (attempt ${i + 1})`);
+              created = true;
+            } catch (attemptErr) {
+              if (i === attempts.length - 1) {
+                // Last attempt failed
+                console.warn(`   ⚠️  Failed to add attribute ${attr.name} after ${attempts.length} attempts`);
+                console.warn(`      Error: ${attemptErr.message}`);
+                console.warn(`      Please create this attribute manually in Appwrite Console`);
+                console.warn(`      See MANUAL_ATTRIBUTE_SETUP.md for details`);
+              }
             }
           }
         } else if (attr.type === 'datetime') {
           // createDatetimeAttribute: Try without default parameter
-          // Signature: (databaseId, collectionId, key, required, array, default)
-          try {
-            // Try calling with only required parameters (omit default)
-            await databases.createDatetimeAttribute(
-              APPWRITE_DATABASE_ID,
-              'users',
-              attr.name,
-              attr.required,
-              false // array
-              // Omitting default parameter
-            );
-            console.log(`   ✅ Added attribute: ${attr.name}`);
-          } catch (dtErr) {
-            if (dtErr.message?.includes('default')) {
-              console.log(`   ⚠️  Attribute ${attr.name} needs to be created manually in Appwrite Console`);
-              console.log(`      Type: DateTime, Required: ${attr.required}`);
-            } else {
-              throw dtErr;
+          let created = false;
+          const attempts = [
+            // Try 1: Omit default parameter entirely
+            async () => {
+              await databases.createDatetimeAttribute(
+                APPWRITE_DATABASE_ID,
+                'users',
+                attr.name,
+                attr.required,
+                false // array
+              );
+            },
+            // Try 2: Pass null
+            async () => {
+              await databases.createDatetimeAttribute(
+                APPWRITE_DATABASE_ID,
+                'users',
+                attr.name,
+                attr.required,
+                false, // array
+                null
+              );
+            },
+            // Try 3: Pass undefined
+            async () => {
+              await databases.createDatetimeAttribute(
+                APPWRITE_DATABASE_ID,
+                'users',
+                attr.name,
+                attr.required,
+                false, // array
+                undefined
+              );
+            }
+          ];
+          
+          for (let i = 0; i < attempts.length && !created; i++) {
+            try {
+              await attempts[i]();
+              console.log(`   ✅ Added attribute: ${attr.name} (attempt ${i + 1})`);
+              created = true;
+            } catch (attemptErr) {
+              if (i === attempts.length - 1) {
+                console.warn(`   ⚠️  Failed to add attribute ${attr.name} after ${attempts.length} attempts`);
+                console.warn(`      Error: ${attemptErr.message}`);
+                console.warn(`      Please create this attribute manually in Appwrite Console`);
+                console.warn(`      See MANUAL_ATTRIBUTE_SETUP.md for details`);
+              }
             }
           }
         }
@@ -198,42 +259,108 @@ async function createCollections() {
     for (const attr of roleChangeAttributes) {
       try {
         if (attr.type === 'string') {
-          // createStringAttribute signature: (databaseId, collectionId, key, size, required, array, default, unique)
-          // For string attributes, pass empty string "" as default instead of null
-          await databases.createStringAttribute(
-            APPWRITE_DATABASE_ID,
-            'roleChanges',
-            attr.name,
-            attr.size,
-            attr.required,
-            attr.array,
-            '', // default value (empty string for no default)
-            attr.unique
-          );
-          console.log(`   ✅ Added attribute: ${attr.name}`);
+          // createStringAttribute: Try multiple approaches
+          let created = false;
+          const attempts = [
+            async () => {
+              await databases.createStringAttribute(
+                APPWRITE_DATABASE_ID,
+                'roleChanges',
+                attr.name,
+                attr.size,
+                attr.required,
+                attr.array,
+                null, // null for no default
+                attr.unique
+              );
+            },
+            async () => {
+              await databases.createStringAttribute(
+                APPWRITE_DATABASE_ID,
+                'roleChanges',
+                attr.name,
+                attr.size,
+                attr.required,
+                attr.array,
+                '', // empty string
+                attr.unique
+              );
+            },
+            async () => {
+              await databases.createStringAttribute(
+                APPWRITE_DATABASE_ID,
+                'roleChanges',
+                attr.name,
+                attr.size,
+                attr.required,
+                attr.array,
+                undefined, // undefined
+                attr.unique
+              );
+            }
+          ];
+          
+          for (let i = 0; i < attempts.length && !created; i++) {
+            try {
+              await attempts[i]();
+              console.log(`   ✅ Added attribute: ${attr.name} (attempt ${i + 1})`);
+              created = true;
+            } catch (attemptErr) {
+              if (i === attempts.length - 1) {
+                console.warn(`   ⚠️  Failed to add attribute ${attr.name} after ${attempts.length} attempts`);
+                console.warn(`      Error: ${attemptErr.message}`);
+                console.warn(`      Please create this attribute manually in Appwrite Console`);
+                console.warn(`      See MANUAL_ATTRIBUTE_SETUP.md for details`);
+              }
+            }
+          }
         } else if (attr.type === 'datetime') {
-          // createDatetimeAttribute signature: (databaseId, collectionId, key, required, array, default)
-          // For datetime, try without default first, then with undefined
-          try {
-            await databases.createDatetimeAttribute(
-              APPWRITE_DATABASE_ID,
-              'roleChanges',
-              attr.name,
-              attr.required,
-              false // array
-            );
-            console.log(`   ✅ Added attribute: ${attr.name}`);
-          } catch (dtErr) {
-            // If that fails, try with explicit undefined
-            await databases.createDatetimeAttribute(
-              APPWRITE_DATABASE_ID,
-              'roleChanges',
-              attr.name,
-              attr.required,
-              false, // array
-              undefined // default (try undefined instead of null)
-            );
-            console.log(`   ✅ Added attribute: ${attr.name}`);
+          let created = false;
+          const attempts = [
+            async () => {
+              await databases.createDatetimeAttribute(
+                APPWRITE_DATABASE_ID,
+                'roleChanges',
+                attr.name,
+                attr.required,
+                false // array
+              );
+            },
+            async () => {
+              await databases.createDatetimeAttribute(
+                APPWRITE_DATABASE_ID,
+                'roleChanges',
+                attr.name,
+                attr.required,
+                false, // array
+                null
+              );
+            },
+            async () => {
+              await databases.createDatetimeAttribute(
+                APPWRITE_DATABASE_ID,
+                'roleChanges',
+                attr.name,
+                attr.required,
+                false, // array
+                undefined
+              );
+            }
+          ];
+          
+          for (let i = 0; i < attempts.length && !created; i++) {
+            try {
+              await attempts[i]();
+              console.log(`   ✅ Added attribute: ${attr.name} (attempt ${i + 1})`);
+              created = true;
+            } catch (attemptErr) {
+              if (i === attempts.length - 1) {
+                console.warn(`   ⚠️  Failed to add attribute ${attr.name} after ${attempts.length} attempts`);
+                console.warn(`      Error: ${attemptErr.message}`);
+                console.warn(`      Please create this attribute manually in Appwrite Console`);
+                console.warn(`      See MANUAL_ATTRIBUTE_SETUP.md for details`);
+              }
+            }
           }
         }
       } catch (attrErr) {
