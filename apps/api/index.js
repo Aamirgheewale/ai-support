@@ -230,6 +230,40 @@ async function ensureUserRecord(userId, { email, name }) {
       // Before creating, double-check if user exists by email (race condition protection)
       const existingByEmailCheck = await getUserByEmail(email);
       if (existingByEmailCheck) {
+        // If userId is NULL or different, update it
+        if (!existingByEmailCheck.userId || existingByEmailCheck.userId !== userId) {
+          console.log(`⚠️  Found user by email "${email}" but userId is ${existingByEmailCheck.userId || 'NULL'}. Updating userId to "${userId}"...`);
+          try {
+            const updateData = {
+              userId: userId,
+              email,
+              name: name || existingByEmailCheck.name || email
+            };
+            try {
+              await awDatabases.updateDocument(
+                APPWRITE_DATABASE_ID,
+                APPWRITE_USERS_COLLECTION_ID,
+                existingByEmailCheck.$id,
+                {
+                  ...updateData,
+                  updatedAt: new Date().toISOString()
+                }
+              );
+            } catch (e) {
+              await awDatabases.updateDocument(
+                APPWRITE_DATABASE_ID,
+                APPWRITE_USERS_COLLECTION_ID,
+                existingByEmailCheck.$id,
+                updateData
+              );
+            }
+            return { ...existingByEmailCheck, ...updateData };
+          } catch (updateErr) {
+            console.error(`❌ Failed to update userId:`, updateErr.message);
+            // Return existing user even if update fails
+            return existingByEmailCheck;
+          }
+        }
         console.log(`✅ Found existing user by email "${email}" before creation, returning existing record`);
         return existingByEmailCheck;
       }
