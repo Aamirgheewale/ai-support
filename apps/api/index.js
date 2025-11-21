@@ -1390,6 +1390,7 @@ io.on('connection', (socket) => {
       return;
     }
 
+    // Ensure socket is in session room (in case of reconnection or room loss)
     socket.join(sessionId);
     const trimmedText = text.trim();
     console.log(`💬 Message received [${sessionId}]: "${trimmedText.substring(0, 50)}${trimmedText.length > 50 ? '...' : ''}"`);
@@ -1897,8 +1898,24 @@ Always be polite, patient, and solution-oriented. If you cannot resolve an issue
     }
     
     await saveMessageToAppwrite(sessionId, 'agent', text, { agentId });
-    io.to(sessionId).emit('agent_message', { text, agentId, sender: 'agent', ts: Date.now() });
+    
+    // Emit to session room for user widget and admin panel
+    const messagePayload = { 
+      text, 
+      agentId, 
+      sender: 'agent', 
+      ts: Date.now(),
+      sessionId // Include sessionId for widget identification
+    };
+    
+    // Broadcast to session room (user widget and admin panel)
+    io.to(sessionId).emit('agent_message', messagePayload);
+    
+    // Also emit as a general message event for widget compatibility
+    io.to(sessionId).emit('message', messagePayload);
+    
     console.log(`👤 Agent ${agentId} sent message to session ${sessionId}`);
+    console.log(`   📤 Broadcasting to session room: ${sessionId}`);
   });
 
   // Handle disconnection
