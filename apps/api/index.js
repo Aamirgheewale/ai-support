@@ -2168,8 +2168,6 @@ server.listen(PORT, () => {
   console.log(`🚀 Socket.IO API server listening on port ${PORT}`);
   console.log(`📋 Environment: Gemini=${geminiClient ? '✅' : '❌'}, Appwrite=${awDatabases ? '✅' : '❌'}`);
 });
-  defaultFrom.setHours(0, 0, 0, 0); // Start of day
-  const defaultTo = new Date(now);
   defaultTo.setHours(23, 59, 59, 999); // End of day
   
   let from = defaultFrom;
