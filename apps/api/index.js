@@ -227,52 +227,98 @@ async function ensureUserRecord(userId, { email, name }) {
       }
       return { ...existing, ...updateData };
     } else {
-      // Before creating, double-check if user exists by email (race condition protection)
-      const existingByEmailCheck = await getUserByEmail(email);
-      if (existingByEmailCheck) {
-        // If userId is NULL or different, update it
-        if (!existingByEmailCheck.userId || existingByEmailCheck.userId !== userId) {
-          console.log(`⚠️  Found user by email "${email}" but userId is ${existingByEmailCheck.userId || 'NULL'}. Updating userId to "${userId}"...`);
-          try {
-            const updateData = {
-              userId: userId,
-              email,
-              name: name || existingByEmailCheck.name || email
-            };
+      // Before creating, do a comprehensive check for existing users
+      // This prevents unique constraint violations
+      let existingUser = null;
+      
+      // Check by email first
+      try {
+        existingUser = await getUserByEmail(email);
+        if (existingUser) {
+          // If userId is NULL or different, update it
+          if (!existingUser.userId || existingUser.userId !== userId) {
+            console.log(`⚠️  Found user by email "${email}" but userId is ${existingUser.userId || 'NULL'}. Updating userId to "${userId}"...`);
+            try {
+              const updateData = {
+                userId: userId,
+                email,
+                name: name || existingUser.name || email
+              };
+              try {
+                await awDatabases.updateDocument(
+                  APPWRITE_DATABASE_ID,
+                  APPWRITE_USERS_COLLECTION_ID,
+                  existingUser.$id,
+                  {
+                    ...updateData,
+                    updatedAt: new Date().toISOString()
+                  }
+                );
+              } catch (e) {
+                await awDatabases.updateDocument(
+                  APPWRITE_DATABASE_ID,
+                  APPWRITE_USERS_COLLECTION_ID,
+                  existingUser.$id,
+                  updateData
+                );
+              }
+              return { ...existingUser, ...updateData };
+            } catch (updateErr) {
+              console.error(`❌ Failed to update userId:`, updateErr.message);
+              // Return existing user even if update fails
+              return existingUser;
+            }
+          }
+          console.log(`✅ Found existing user by email "${email}" before creation, returning existing record`);
+          return existingUser;
+        }
+      } catch (emailErr) {
+        console.warn(`⚠️  Error checking by email:`, emailErr.message);
+      }
+      
+      // Check by userId
+      try {
+        existingUser = await getUserById(userId);
+        if (existingUser) {
+          console.log(`✅ Found existing user by userId "${userId}" before creation, returning existing record`);
+          return existingUser;
+        }
+      } catch (idErr) {
+        console.warn(`⚠️  Error checking by userId:`, idErr.message);
+      }
+      
+      // Final comprehensive check: list all users and search manually
+      // This catches edge cases where queries might fail but user exists
+      try {
+        const allUsers = await awDatabases.listDocuments(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_USERS_COLLECTION_ID,
+          [],
+          100
+        );
+        const matchingUser = allUsers.documents.find(doc => 
+          (doc.email && doc.email === email) || (doc.userId && doc.userId === userId)
+        );
+        if (matchingUser) {
+          console.log(`✅ Found existing user via comprehensive list check`);
+          // Update userId if needed
+          if (!matchingUser.userId && userId) {
             try {
               await awDatabases.updateDocument(
                 APPWRITE_DATABASE_ID,
                 APPWRITE_USERS_COLLECTION_ID,
-                existingByEmailCheck.$id,
-                {
-                  ...updateData,
-                  updatedAt: new Date().toISOString()
-                }
+                matchingUser.$id,
+                { userId: userId }
               );
-            } catch (e) {
-              await awDatabases.updateDocument(
-                APPWRITE_DATABASE_ID,
-                APPWRITE_USERS_COLLECTION_ID,
-                existingByEmailCheck.$id,
-                updateData
-              );
+              matchingUser.userId = userId;
+            } catch (updateErr) {
+              console.warn(`⚠️  Could not update userId:`, updateErr.message);
             }
-            return { ...existingByEmailCheck, ...updateData };
-          } catch (updateErr) {
-            console.error(`❌ Failed to update userId:`, updateErr.message);
-            // Return existing user even if update fails
-            return existingByEmailCheck;
           }
+          return matchingUser;
         }
-        console.log(`✅ Found existing user by email "${email}" before creation, returning existing record`);
-        return existingByEmailCheck;
-      }
-      
-      // Also check by userId one more time
-      const existingByIdCheck = await getUserById(userId);
-      if (existingByIdCheck) {
-        console.log(`✅ Found existing user by userId "${userId}" before creation, returning existing record`);
-        return existingByIdCheck;
+      } catch (listErr) {
+        console.warn(`⚠️  Could not perform comprehensive list check:`, listErr.message);
       }
       
       // Create new user
@@ -302,15 +348,53 @@ async function ensureUserRecord(userId, { email, name }) {
         return doc;
       } catch (e) {
         // Check if it's a unique constraint violation (email or userId already exists)
-        if (e.code === 409 || e.message?.includes('already exists')) {
-          // This might be a unique constraint violation - check if user exists
-          const existingCheck = await getUserByEmail(email) || await getUserById(userId);
-          if (existingCheck) {
-            console.log(`✅ User already exists (found via conflict check), returning existing record`);
-            return existingCheck;
+        if (e.code === 409 || e.message?.includes('already exists') || e.message?.includes('unique')) {
+          console.log(`⚠️  Conflict detected during creation, performing comprehensive search...`);
+          // Comprehensive search for existing user
+          let foundUser = null;
+          
+          // Try all search methods
+          try {
+            foundUser = await getUserByEmail(email);
+          } catch (err) {
+            // Ignore
           }
-          // If not found, this will be handled by the outer catch block
-          throw e;
+          
+          if (!foundUser) {
+            try {
+              foundUser = await getUserById(userId);
+            } catch (err) {
+              // Ignore
+            }
+          }
+          
+          // Last resort: list all and filter
+          if (!foundUser) {
+            try {
+              const allUsers = await awDatabases.listDocuments(
+                APPWRITE_DATABASE_ID,
+                APPWRITE_USERS_COLLECTION_ID,
+                [],
+                100
+              );
+              foundUser = allUsers.documents.find(doc => 
+                (doc.email && doc.email === email) || (doc.userId && doc.userId === userId)
+              );
+            } catch (listErr) {
+              // Ignore
+            }
+          }
+          
+          if (foundUser) {
+            console.log(`✅ User already exists (found via conflict check), returning existing record`);
+            return foundUser;
+          }
+          
+          // If still not found, this is a real conflict - log and return null
+          console.error(`❌ Unique constraint violation: User with email "${email}" or userId "${userId}" may already exist but cannot be found`);
+          console.error(`   This might indicate a database synchronization issue.`);
+          console.error(`   Recommendation: Check Appwrite Console manually for users with this email or userId`);
+          return null;
         }
         
         // Check if roles attribute is wrong type (String instead of Array)
@@ -420,11 +504,44 @@ async function ensureUserRecord(userId, { email, name }) {
       }
       
       // Final attempt: try creating with a completely different approach
-      // Maybe the issue is with the document ID generation
+      // Generate a completely new unique document ID and try once more
       console.warn(`⚠️  Attempting final creation with alternative approach...`);
+      
+      // One more comprehensive check before final attempt
+      try {
+        const finalCheck = await awDatabases.listDocuments(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_USERS_COLLECTION_ID,
+          [],
+          100
+        );
+        const finalMatch = finalCheck.documents.find(doc => 
+          (doc.email && doc.email === email) || (doc.userId && doc.userId === userId)
+        );
+        if (finalMatch) {
+          console.log(`✅ Found user in final check before creation attempt`);
+          if (!finalMatch.userId && userId) {
+            try {
+              await awDatabases.updateDocument(
+                APPWRITE_DATABASE_ID,
+                APPWRITE_USERS_COLLECTION_ID,
+                finalMatch.$id,
+                { userId: userId }
+              );
+              finalMatch.userId = userId;
+            } catch (updateErr) {
+              // Ignore update errors
+            }
+          }
+          return finalMatch;
+        }
+      } catch (finalCheckErr) {
+        // Ignore final check errors
+      }
+      
       try {
         const { ID } = require('node-appwrite');
-        // Use a simpler document ID approach
+        // Generate a completely unique document ID
         const finalDocId = ID.unique();
         const finalDoc = await awDatabases.createDocument(
           APPWRITE_DATABASE_ID,
@@ -441,13 +558,35 @@ async function ensureUserRecord(userId, { email, name }) {
         console.log(`✅ Successfully created user with final attempt`);
         return finalDoc;
       } catch (finalErr) {
+        // If final attempt fails, it's definitely a unique constraint issue
         console.error(`❌ Persistent conflict: Cannot create user with userId "${userId}" and email "${email}"`);
         console.error(`   Error: ${finalErr.message || finalErr}`);
+        console.error(`   Error code: ${finalErr.code || 'unknown'}`);
+        
+        // One last attempt to find the user
+        try {
+          const lastCheck = await awDatabases.listDocuments(
+            APPWRITE_DATABASE_ID,
+            APPWRITE_USERS_COLLECTION_ID,
+            [],
+            100
+          );
+          const lastMatch = lastCheck.documents.find(doc => 
+            (doc.email && doc.email === email) || (doc.userId && doc.userId === userId)
+          );
+          if (lastMatch) {
+            console.log(`✅ Found user after final creation failure, returning existing record`);
+            return lastMatch;
+          }
+        } catch (lastCheckErr) {
+          // Ignore
+        }
+        
         console.error(`   Possible causes:`);
         console.error(`   1. Unique index constraint violation (userId "${userId}" or email "${email}" already exists)`);
         console.error(`   2. Database index not fully synchronized`);
         console.error(`   3. Query timing issue - user exists but not queryable yet`);
-        console.error(`   Recommendation: Check Appwrite Console for existing users with this email or userId`);
+        console.error(`   Recommendation: Check Appwrite Console manually for users with this email or userId`);
         return null;
       }
     }
