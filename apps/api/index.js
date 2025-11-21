@@ -183,6 +183,20 @@ async function ensureUserRecord(userId, { email, name }) {
       }
       return { ...existing, ...updateData };
     } else {
+      // Before creating, double-check if user exists by email (race condition protection)
+      const existingByEmailCheck = await getUserByEmail(email);
+      if (existingByEmailCheck) {
+        console.log(`✅ Found existing user by email "${email}" before creation, returning existing record`);
+        return existingByEmailCheck;
+      }
+      
+      // Also check by userId one more time
+      const existingByIdCheck = await getUserById(userId);
+      if (existingByIdCheck) {
+        console.log(`✅ Found existing user by userId "${userId}" before creation, returning existing record`);
+        return existingByIdCheck;
+      }
+      
       // Create new user
       const { ID } = require('node-appwrite');
       const createData = {
