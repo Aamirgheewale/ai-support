@@ -91,6 +91,7 @@ async function createCollections() {
     for (const attr of userAttributes) {
       try {
         if (attr.type === 'string') {
+          // createStringAttribute: (databaseId, collectionId, key, size, required, array, default, unique)
           await databases.createStringAttribute(
             APPWRITE_DATABASE_ID,
             'users',
@@ -98,16 +99,19 @@ async function createCollections() {
             attr.size,
             attr.required,
             attr.array,
+            null, // default value (null for no default)
             attr.unique
           );
           console.log(`   ✅ Added attribute: ${attr.name}`);
         } else if (attr.type === 'datetime') {
+          // createDatetimeAttribute: (databaseId, collectionId, key, required, array, default)
           await databases.createDatetimeAttribute(
             APPWRITE_DATABASE_ID,
             'users',
             attr.name,
             attr.required,
-            false
+            false, // array
+            null   // default value (null for no default)
           );
           console.log(`   ✅ Added attribute: ${attr.name}`);
         }
@@ -166,6 +170,7 @@ async function createCollections() {
     for (const attr of roleChangeAttributes) {
       try {
         if (attr.type === 'string') {
+          // createStringAttribute: (databaseId, collectionId, key, size, required, array, default, unique)
           await databases.createStringAttribute(
             APPWRITE_DATABASE_ID,
             'roleChanges',
@@ -173,16 +178,19 @@ async function createCollections() {
             attr.size,
             attr.required,
             attr.array,
+            null, // default value (null for no default)
             attr.unique
           );
           console.log(`   ✅ Added attribute: ${attr.name}`);
         } else if (attr.type === 'datetime') {
+          // createDatetimeAttribute: (databaseId, collectionId, key, required, array, default)
           await databases.createDatetimeAttribute(
             APPWRITE_DATABASE_ID,
             'roleChanges',
             attr.name,
             attr.required,
-            false
+            false, // array
+            null   // default value (null for no default)
           );
           console.log(`   ✅ Added attribute: ${attr.name}`);
         }
