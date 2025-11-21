@@ -270,8 +270,28 @@ async function ensureUserRecord(userId, { email, name }) {
         console.log(`✅ Found existing user for email "${email}", returning existing record`);
         return existingByEmail;
       }
-      // If still not found, retry with a new unique ID (race condition handling)
-      console.warn(`⚠️  Document ID conflict but user not found. Retrying with new unique ID...`);
+      // If still not found, wait a bit and check again (race condition - user might be creating)
+      console.warn(`⚠️  Document ID conflict but user not found. Waiting and checking again...`);
+      await new Promise(resolve => setTimeout(resolve, 500)); // Wait 500ms
+      
+      // Check again after delay
+      const existingAfterDelay = await getUserById(userId);
+      if (existingAfterDelay) {
+        console.log(`✅ Found user after delay for userId "${userId}", returning existing record`);
+        return existingAfterDelay;
+      }
+      
+      const existingByEmailAfterDelay = await getUserByEmail(email);
+      if (existingByEmailAfterDelay) {
+        console.log(`✅ Found user after delay for email "${email}", returning existing record`);
+        return existingByEmailAfterDelay;
+      }
+      
+      // If still not found, the conflict might be due to unique constraint on userId/email
+      // Check if userId or email already exists in the database
+      console.warn(`⚠️  User still not found after delay. Checking for unique constraint violations...`);
+      
+      // Final retry with new unique ID and handle unique constraint errors
       try {
         const { ID } = require('node-appwrite');
         // Try with createdAt/updatedAt first
@@ -291,6 +311,19 @@ async function ensureUserRecord(userId, { email, name }) {
           );
           return retryDoc;
         } catch (retryErr) {
+          // Check if it's a unique constraint violation on userId or email
+          if (retryErr.code === 409 || retryErr.message?.includes('already exists') || retryErr.message?.includes('unique')) {
+            // Final check - user might exist now
+            const finalCheck = await getUserById(userId) || await getUserByEmail(email);
+            if (finalCheck) {
+              return finalCheck;
+            }
+            // If still not found, it's a persistent conflict - return null
+            console.error(`❌ Persistent conflict creating user with userId "${userId}" and email "${email}"`);
+            console.error(`   This might indicate a unique constraint violation. Check if userId or email already exists.`);
+            return null;
+          }
+          
           // If datetime attributes don't exist, try without them
           if (retryErr.message?.includes('createdAt') || retryErr.message?.includes('updatedAt')) {
             const retryDoc = await awDatabases.createDocument(
