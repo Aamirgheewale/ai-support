@@ -109,14 +109,31 @@ async function checkUsersCollection() {
       );
       
       const indexMap = {};
-      indexes.indexes.forEach(idx => {
-        idx.attributes.forEach(attr => {
-          if (!indexMap[attr.key]) {
-            indexMap[attr.key] = [];
+      // Handle different response formats
+      const indexList = Array.isArray(indexes) ? indexes : (indexes.indexes || []);
+      
+      indexList.forEach(idx => {
+        const idxType = idx.type || idx;
+        const idxKey = idx.key || idx.name || '';
+        const attrs = idx.attributes || idx.columns || [];
+        
+        attrs.forEach(attr => {
+          const attrKey = attr.key || attr || '';
+          if (attrKey) {
+            if (!indexMap[attrKey]) {
+              indexMap[attrKey] = [];
+            }
+            indexMap[attrKey].push({ type: idxType, name: idxKey });
           }
-          indexMap[attr.key].push({ type: idx.type, name: idx.key });
         });
       });
+      
+      // Debug output
+      if (Object.keys(indexMap).length > 0) {
+        console.log(`   Found indexes on: ${Object.keys(indexMap).join(', ')}`);
+      } else {
+        console.log('   No indexes found (this might be normal if indexes are being created)');
+      }
       
       // Check if userId has unique index
       if (!indexMap['userId'] || !indexMap['userId'].some(i => i.type === 'unique')) {
@@ -135,8 +152,22 @@ async function checkUsersCollection() {
       } else {
         console.log('✅ email: Has unique index');
       }
+      
+      // Warn about unnecessary unique indexes
+      if (indexMap['name'] && indexMap['name'].some(i => i.type === 'unique')) {
+        console.log('⚠️  name: Has unique index (not required - name can be duplicate)');
+        console.log('   Consider removing: idx_name_unique (optional cleanup)');
+      }
+      if (indexMap['roles'] && indexMap['roles'].some(i => i.type === 'unique')) {
+        console.log('⚠️  roles: Has unique index (NOT recommended - roles is an array)');
+        console.log('   Consider removing: idx_roles_unique');
+        console.log('   Multiple users can have the same roles, so unique constraint is incorrect');
+      }
     } catch (idxErr) {
       console.warn('⚠️  Could not check indexes:', idxErr.message);
+      if (idxErr.response) {
+        console.warn('   Response:', idxErr.response);
+      }
     }
     
     return hasErrors;
