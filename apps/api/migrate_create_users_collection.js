@@ -91,7 +91,8 @@ async function createCollections() {
     for (const attr of userAttributes) {
       try {
         if (attr.type === 'string') {
-          // createStringAttribute: (databaseId, collectionId, key, size, required, array, default, unique)
+          // createStringAttribute signature: (databaseId, collectionId, key, size, required, array, default, unique)
+          // For string attributes, pass empty string "" as default instead of null
           await databases.createStringAttribute(
             APPWRITE_DATABASE_ID,
             'users',
@@ -99,21 +100,35 @@ async function createCollections() {
             attr.size,
             attr.required,
             attr.array,
-            null, // default value (null for no default)
+            '', // default value (empty string for no default)
             attr.unique
           );
           console.log(`   ✅ Added attribute: ${attr.name}`);
         } else if (attr.type === 'datetime') {
-          // createDatetimeAttribute: (databaseId, collectionId, key, required, array, default)
-          await databases.createDatetimeAttribute(
-            APPWRITE_DATABASE_ID,
-            'users',
-            attr.name,
-            attr.required,
-            false, // array
-            null   // default value (null for no default)
-          );
-          console.log(`   ✅ Added attribute: ${attr.name}`);
+          // createDatetimeAttribute signature: (databaseId, collectionId, key, required, array, default)
+          // For datetime, we can omit the default parameter entirely or pass undefined
+          // Try without default first
+          try {
+            await databases.createDatetimeAttribute(
+              APPWRITE_DATABASE_ID,
+              'users',
+              attr.name,
+              attr.required,
+              false // array
+            );
+            console.log(`   ✅ Added attribute: ${attr.name}`);
+          } catch (dtErr) {
+            // If that fails, try with explicit null/undefined
+            await databases.createDatetimeAttribute(
+              APPWRITE_DATABASE_ID,
+              'users',
+              attr.name,
+              attr.required,
+              false, // array
+              undefined // default (try undefined instead of null)
+            );
+            console.log(`   ✅ Added attribute: ${attr.name}`);
+          }
         }
       } catch (attrErr) {
         if (attrErr.code === 409) {
@@ -170,7 +185,8 @@ async function createCollections() {
     for (const attr of roleChangeAttributes) {
       try {
         if (attr.type === 'string') {
-          // createStringAttribute: (databaseId, collectionId, key, size, required, array, default, unique)
+          // createStringAttribute signature: (databaseId, collectionId, key, size, required, array, default, unique)
+          // For string attributes, pass empty string "" as default instead of null
           await databases.createStringAttribute(
             APPWRITE_DATABASE_ID,
             'roleChanges',
@@ -178,21 +194,34 @@ async function createCollections() {
             attr.size,
             attr.required,
             attr.array,
-            null, // default value (null for no default)
+            '', // default value (empty string for no default)
             attr.unique
           );
           console.log(`   ✅ Added attribute: ${attr.name}`);
         } else if (attr.type === 'datetime') {
-          // createDatetimeAttribute: (databaseId, collectionId, key, required, array, default)
-          await databases.createDatetimeAttribute(
-            APPWRITE_DATABASE_ID,
-            'roleChanges',
-            attr.name,
-            attr.required,
-            false, // array
-            null   // default value (null for no default)
-          );
-          console.log(`   ✅ Added attribute: ${attr.name}`);
+          // createDatetimeAttribute signature: (databaseId, collectionId, key, required, array, default)
+          // For datetime, try without default first, then with undefined
+          try {
+            await databases.createDatetimeAttribute(
+              APPWRITE_DATABASE_ID,
+              'roleChanges',
+              attr.name,
+              attr.required,
+              false // array
+            );
+            console.log(`   ✅ Added attribute: ${attr.name}`);
+          } catch (dtErr) {
+            // If that fails, try with explicit undefined
+            await databases.createDatetimeAttribute(
+              APPWRITE_DATABASE_ID,
+              'roleChanges',
+              attr.name,
+              attr.required,
+              false, // array
+              undefined // default (try undefined instead of null)
+            );
+            console.log(`   ✅ Added attribute: ${attr.name}`);
+          }
         }
       } catch (attrErr) {
         if (attrErr.code === 409) {
