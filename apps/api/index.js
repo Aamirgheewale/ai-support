@@ -2159,36 +2159,15 @@ app.post('/admin/metrics/aggregate-request', requireAdminAuth, async (req, res) 
 });
 
 // ============================================================================
-// Analytics & Metrics Endpoints
+// END OF ANALYTICS & METRICS ENDPOINTS
+// All metrics endpoints are defined above (starting around line 1531)
 // ============================================================================
 
-// Simple in-memory cache for metrics (TTL: 60s)
-// TODO: Replace with Redis/Prometheus for production multi-instance deployments
-const metricsCache = new Map();
-const CACHE_TTL_MS = 60000; // 60 seconds
-
-function getCacheKey(endpoint, params) {
-  return `${endpoint}:${JSON.stringify(params)}`;
-}
-
-function getCached(key) {
-  const cached = metricsCache.get(key);
-  if (!cached) return null;
-  if (Date.now() - cached.timestamp > CACHE_TTL_MS) {
-    metricsCache.delete(key);
-    return null;
-  }
-  return cached.data;
-}
-
-function setCache(key, data) {
-  metricsCache.set(key, { data, timestamp: Date.now() });
-}
-
-// Helper: Parse and validate date range
-function parseDateRange(req) {
-  const now = new Date();
-  const defaultFrom = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); // 7 days ago
+const PORT = process.env.PORT || 4000;
+server.listen(PORT, () => {
+  console.log(`🚀 Socket.IO API server listening on port ${PORT}`);
+  console.log(`📋 Environment: Gemini=${geminiClient ? '✅' : '❌'}, Appwrite=${awDatabases ? '✅' : '❌'}`);
+});
   defaultFrom.setHours(0, 0, 0, 0); // Start of day
   const defaultTo = new Date(now);
   defaultTo.setHours(23, 59, 59, 999); // End of day
