@@ -2168,4 +2168,3 @@ server.listen(PORT, () => {
   console.log(`🚀 Socket.IO API server listening on port ${PORT}`);
   console.log(`📋 Environment: Gemini=${geminiClient ? '✅' : '❌'}, Appwrite=${awDatabases ? '✅' : '❌'}`);
 });
-  const authHeader = req.headers.authorization;
