@@ -4,6 +4,7 @@ import SessionsList from './pages/SessionsList'
 import ConversationView from './pages/ConversationView'
 import AnalyticsPage from './pages/AnalyticsPage'
 import UsersPage from './pages/UsersPage'
+import AccuracyPage from './pages/AccuracyPage'
 
 function Navigation() {
   const { hasRole } = useAuth()
@@ -29,6 +30,15 @@ function Navigation() {
               >
                 Analytics
               </Link>
+              {/* Accuracy link - only visible to admin/super_admin */}
+              {(hasRole('admin') || hasRole('super_admin')) && (
+                <Link
+                  to="/accuracy"
+                  className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
+                >
+                  Accuracy
+                </Link>
+              )}
               {/* Users link - only visible to super_admin */}
               {hasRole('super_admin') && (
                 <Link
@@ -57,6 +67,7 @@ function App() {
             <Route path="/" element={<SessionsList />} />
             <Route path="/sessions/:sessionId" element={<ConversationView />} />
             <Route path="/analytics" element={<AnalyticsPage />} />
+            <Route path="/accuracy" element={<AccuracyPage />} />
             <Route path="/users" element={<UsersPage />} />
           </Routes>
         </div>

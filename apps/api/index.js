@@ -24,6 +24,13 @@ const APPWRITE_SESSIONS_COLLECTION_ID = process.env.APPWRITE_SESSIONS_COLLECTION
 const APPWRITE_MESSAGES_COLLECTION_ID = process.env.APPWRITE_MESSAGES_COLLECTION_ID;
 const APPWRITE_USERS_COLLECTION_ID = 'users'; // Collection name (not ID)
 const APPWRITE_ROLE_CHANGES_COLLECTION_ID = 'roleChanges'; // Collection name
+const APPWRITE_AI_ACCURACY_COLLECTION_ID = 'ai_accuracy'; // Collection name
+const APPWRITE_ACCURACY_AUDIT_COLLECTION_ID = 'accuracy_audit'; // Collection name
+
+// Accuracy logging configuration
+const ACCURACY_RETENTION_DAYS = parseInt(process.env.ACCURACY_RETENTION_DAYS || '365', 10);
+const ACCURACY_MAX_SCAN_ROWS = parseInt(process.env.ACCURACY_MAX_SCAN_ROWS || '200000', 10);
+const REDACT_PII = process.env.REDACT_PII === 'true';
 
 // Import Query at module level for use in queries
 let Query = null;
@@ -1249,7 +1256,23 @@ io.on('connection', (socket) => {
     socket.emit('session_started', { sessionId });
     socket.emit('bot_message', { text: welcomeMsg, confidence: 1 });
     
+    const welcomeStart = process.hrtime.bigint();
     await saveMessageToAppwrite(sessionId, 'bot', welcomeMsg, { confidence: 1 });
+    const welcomeEnd = process.hrtime.bigint();
+    const welcomeLatencyMs = Number(welcomeEnd - welcomeStart) / 1000000;
+    
+    // Save accuracy record for welcome message
+    await saveAccuracyRecord(
+      sessionId,
+      null,
+      welcomeMsg,
+      1,
+      Math.round(welcomeLatencyMs),
+      null,
+      'stub',
+      { model: 'system', type: 'welcome' }
+    );
+    
     console.log(`📝 Session started: ${sessionId} (socket: ${socket.id})`);
   });
 
@@ -1383,7 +1406,25 @@ io.on('connection', (socket) => {
     // If Gemini isn't configured, return stub
     if (!geminiClient || !geminiModel) {
       const stub = `🧪 Stub reply: received "${trimmedText}" — set GEMINI_API_KEY to enable real responses.`;
+      const stubStart = process.hrtime.bigint();
+      
       await saveMessageToAppwrite(sessionId, 'bot', stub, { confidence: 1 });
+      
+      const stubEnd = process.hrtime.bigint();
+      const stubLatencyMs = Number(stubEnd - stubStart) / 1000000;
+      
+      // Save accuracy record for stub
+      await saveAccuracyRecord(
+        sessionId,
+        null,
+        stub,
+        1,
+        Math.round(stubLatencyMs),
+        null,
+        'stub',
+        { model: 'stub', reason: 'GEMINI_API_KEY not set' }
+      );
+      
       io.to(sessionId).emit('bot_message', { text: stub, confidence: 1 });
       console.log(`🤖 Stub reply sent to [${sessionId}]`);
       return;
@@ -1472,11 +1513,56 @@ Always be polite, patient, and solution-oriented. If you cannot resolve an issue
       let result;
       let response;
       let aiText;
+      let messageDocId = null;
+      let accuracyMetadata = {
+        model: geminiModelName || 'unknown',
+        modelVersion: geminiModelName || 'unknown',
+        promptLength: conversationContext.length
+      };
+      
+      // Start latency timer
+      const latencyStart = process.hrtime.bigint();
       
       try {
         result = await geminiModel.generateContent(conversationContext);
         response = await result.response;
         aiText = response.text() || 'Sorry, I could not produce an answer.';
+        
+        // Calculate latency
+        const latencyEnd = process.hrtime.bigint();
+        const latencyMs = Number(latencyEnd - latencyStart) / 1000000; // Convert nanoseconds to milliseconds
+        
+        // Try to extract tokens from response (if available)
+        let tokens = null;
+        try {
+          if (response.usageMetadata) {
+            tokens = response.usageMetadata.totalTokenCount || null;
+          }
+        } catch (tokenErr) {
+          // Tokens not available, ignore
+        }
+        
+        // Save message first to get messageId
+        const messageSaved = await saveMessageToAppwrite(sessionId, 'bot', aiText, { confidence: 0.9 });
+        
+        // Get the message document ID if possible (we'll need to query for it)
+        // For now, we'll save accuracy record without messageId and update later if needed
+        // TODO: Improve this by returning messageId from saveMessageToAppwrite
+        
+        // Save accuracy record
+        await saveAccuracyRecord(
+          sessionId,
+          null, // messageId - will be linked later if needed
+          aiText,
+          0.9,
+          Math.round(latencyMs),
+          tokens,
+          'ai',
+          {
+            ...accuracyMetadata,
+            aiRequestId: result.response?.promptFeedback?.blockReason || null
+          }
+        );
       } catch (modelErr) {
         // Try fallback models
         if (modelErr?.status === 404 || modelErr?.message?.includes('404') || modelErr?.message?.includes('not found')) {
@@ -1531,7 +1617,6 @@ Always be polite, patient, and solution-oriented. If you cannot resolve an issue
         }
       }
 
-      await saveMessageToAppwrite(sessionId, 'bot', aiText, { confidence: 0.9 });
       io.to(sessionId).emit('bot_message', { text: aiText, confidence: 0.9 });
       console.log(`✅ Gemini reply sent to [${sessionId}]`);
     } catch (err) {
@@ -1547,8 +1632,31 @@ Always be polite, patient, and solution-oriented. If you cannot resolve an issue
       }
       
       const fallbackMsg = 'AI temporarily unavailable; your message is recorded and an agent will follow up.';
-      io.to(sessionId).emit('bot_message', { text: fallbackMsg, confidence: 0 });
+      
+      // Calculate latency even for errors
+      const latencyEnd = process.hrtime.bigint();
+      const latencyMs = Number(latencyEnd - latencyStart) / 1000000;
+      
+      // Save fallback message
       await saveMessageToAppwrite(sessionId, 'bot', fallbackMsg, { confidence: 0, error: err?.message });
+      
+      // Save accuracy record for fallback
+      await saveAccuracyRecord(
+        sessionId,
+        null,
+        fallbackMsg,
+        0,
+        Math.round(latencyMs),
+        null,
+        'fallback',
+        {
+          model: geminiModelName || 'unknown',
+          error: err?.message || 'Unknown error',
+          errorCode: err?.code || err?.status || null
+        }
+      );
+      
+      io.to(sessionId).emit('bot_message', { text: fallbackMsg, confidence: 0 });
     }
   });
 
@@ -3396,6 +3504,452 @@ app.delete('/admin/users/:userId', requireAuth, requireRole(['super_admin']), as
 
 // ============================================================================
 // END OF RBAC USER MANAGEMENT ENDPOINTS
+// ============================================================================
+
+// ============================================================================
+// ACCURACY LOGGING ENDPOINTS
+// ============================================================================
+
+// In-memory cache for accuracy stats (TTL 60s)
+const accuracyStatsCache = new LRUCache({
+  max: 100,
+  ttl: 60000 // 60 seconds
+});
+
+// GET /admin/accuracy/:accuracyId - Get single accuracy record
+app.get('/admin/accuracy/:accuracyId', requireAuth, requireRole(['admin', 'super_admin']), async (req, res) => {
+  try {
+    if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_AI_ACCURACY_COLLECTION_ID) {
+      return res.status(503).json({ error: 'Appwrite not configured' });
+    }
+    
+    const { accuracyId } = req.params;
+    const doc = await awDatabases.getDocument(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_AI_ACCURACY_COLLECTION_ID,
+      accuracyId
+    );
+    
+    res.json(doc);
+  } catch (err) {
+    if (err.code === 404) {
+      return res.status(404).json({ error: 'Accuracy record not found' });
+    }
+    console.error('Error fetching accuracy record:', err);
+    res.status(500).json({ error: err?.message || 'Failed to fetch accuracy record' });
+  }
+});
+
+// GET /admin/accuracy - List accuracy records with filtering
+app.get('/admin/accuracy', requireAuth, requireRole(['admin', 'super_admin']), async (req, res) => {
+  try {
+    if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_AI_ACCURACY_COLLECTION_ID) {
+      return res.status(503).json({ error: 'Appwrite not configured' });
+    }
+    
+    const { sessionId, from, to, mark, limit = 50, offset = 0 } = req.query;
+    const queries = [];
+    
+    if (sessionId) {
+      queries.push(Query.equal('sessionId', sessionId));
+    }
+    
+    if (from || to) {
+      const fromDate = from ? new Date(from) : new Date(0);
+      const toDate = to ? new Date(to) : new Date();
+      queries.push(Query.between('createdAt', fromDate.toISOString(), toDate.toISOString()));
+    }
+    
+    if (mark) {
+      queries.push(Query.equal('humanMark', mark));
+    }
+    
+    queries.push(Query.orderDesc('createdAt'));
+    queries.push(Query.limit(parseInt(limit, 10)));
+    queries.push(Query.offset(parseInt(offset, 10)));
+    
+    const result = await awDatabases.listDocuments(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_AI_ACCURACY_COLLECTION_ID,
+      queries
+    );
+    
+    res.json({
+      records: result.documents,
+      total: result.total,
+      limit: parseInt(limit, 10),
+      offset: parseInt(offset, 10)
+    });
+  } catch (err) {
+    console.error('Error listing accuracy records:', err);
+    res.status(500).json({ error: err?.message || 'Failed to list accuracy records' });
+  }
+});
+
+// GET /admin/accuracy/stats - Get aggregated accuracy statistics
+app.get('/admin/accuracy/stats', requireAuth, requireRole(['admin', 'super_admin']), async (req, res) => {
+  try {
+    if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_AI_ACCURACY_COLLECTION_ID) {
+      return res.status(503).json({ error: 'Appwrite not configured' });
+    }
+    
+    const { from, to } = req.query;
+    const cacheKey = `stats_${from || 'all'}_${to || 'all'}`;
+    
+    // Check cache
+    const cached = accuracyStatsCache.get(cacheKey);
+    if (cached) {
+      return res.json(cached);
+    }
+    
+    const fromDate = from ? new Date(from) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000); // Default: last 7 days
+    const toDate = to ? new Date(to) : new Date();
+    
+    const queries = [Query.between('createdAt', fromDate.toISOString(), toDate.toISOString())];
+    
+    // Stream through all records with pagination
+    let totalScanned = 0;
+    let totalResponses = 0;
+    let totalConfidence = 0;
+    let totalLatency = 0;
+    let helpfulCount = 0;
+    let unhelpfulCount = 0;
+    let flaggedCount = 0;
+    let hasMore = true;
+    let offset = 0;
+    const pageSize = 100;
+    
+    while (hasMore && totalScanned < ACCURACY_MAX_SCAN_ROWS) {
+      const pageQueries = [...queries, Query.limit(pageSize), Query.offset(offset)];
+      const result = await awDatabases.listDocuments(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_AI_ACCURACY_COLLECTION_ID,
+        pageQueries
+      );
+      
+      for (const doc of result.documents) {
+        totalScanned++;
+        totalResponses++;
+        
+        if (doc.confidence !== null && doc.confidence !== undefined) {
+          totalConfidence += doc.confidence;
+        }
+        
+        if (doc.latencyMs !== null && doc.latencyMs !== undefined) {
+          totalLatency += doc.latencyMs;
+        }
+        
+        if (doc.humanMark === 'up') helpfulCount++;
+        else if (doc.humanMark === 'down') unhelpfulCount++;
+        else if (doc.humanMark === 'flag') flaggedCount++;
+      }
+      
+      offset += pageSize;
+      hasMore = result.documents.length === pageSize;
+    }
+    
+    if (totalScanned >= ACCURACY_MAX_SCAN_ROWS) {
+      return res.status(413).json({
+        error: 'Too many records to scan',
+        message: 'Please use a smaller date range or implement background aggregation',
+        scanned: totalScanned,
+        maxAllowed: ACCURACY_MAX_SCAN_ROWS
+      });
+    }
+    
+    const stats = {
+      totalResponses,
+      avgConfidence: totalResponses > 0 ? totalConfidence / totalResponses : 0,
+      avgLatencyMs: totalResponses > 0 ? Math.round(totalLatency / totalResponses) : 0,
+      helpfulRate: totalResponses > 0 ? (helpfulCount / totalResponses) * 100 : 0,
+      unhelpfulRate: totalResponses > 0 ? (unhelpfulCount / totalResponses) * 100 : 0,
+      flaggedCount,
+      startDate: fromDate.toISOString(),
+      endDate: toDate.toISOString()
+    };
+    
+    // Cache result
+    accuracyStatsCache.set(cacheKey, stats);
+    
+    res.json(stats);
+  } catch (err) {
+    console.error('Error computing accuracy stats:', err);
+    res.status(500).json({ error: err?.message || 'Failed to compute stats' });
+  }
+});
+
+// POST /admin/accuracy/:accuracyId/feedback - Add feedback to accuracy record
+app.post('/admin/accuracy/:accuracyId/feedback', requireAuth, async (req, res) => {
+  try {
+    if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_AI_ACCURACY_COLLECTION_ID) {
+      return res.status(503).json({ error: 'Appwrite not configured' });
+    }
+    
+    const { accuracyId } = req.params;
+    const { mark, note } = req.body;
+    
+    if (!mark || !['up', 'down', 'flag'].includes(mark)) {
+      return res.status(400).json({ error: 'mark must be "up", "down", or "flag"' });
+    }
+    
+    // Get current record
+    const current = await awDatabases.getDocument(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_AI_ACCURACY_COLLECTION_ID,
+      accuracyId
+    );
+    
+    // Update record
+    await awDatabases.updateDocument(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_AI_ACCURACY_COLLECTION_ID,
+      accuracyId,
+      {
+        humanMark: mark,
+        evaluation: note || current.evaluation || null
+      }
+    );
+    
+    // Log audit
+    const adminId = req.user?.userId || 'anonymous';
+    await logAccuracyAudit(accuracyId, adminId, 'feedback', note);
+    
+    // Clear cache
+    accuracyStatsCache.clear();
+    
+    res.json({ success: true, accuracyId, mark });
+  } catch (err) {
+    if (err.code === 404) {
+      return res.status(404).json({ error: 'Accuracy record not found' });
+    }
+    console.error('Error updating accuracy feedback:', err);
+    res.status(500).json({ error: err?.message || 'Failed to update feedback' });
+  }
+});
+
+// POST /session/:sessionId/feedback - Anonymous session feedback (links to last AI message)
+app.post('/session/:sessionId/feedback', async (req, res) => {
+  try {
+    if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_AI_ACCURACY_COLLECTION_ID) {
+      return res.status(503).json({ error: 'Appwrite not configured' });
+    }
+    
+    const { sessionId } = req.params;
+    const { mark } = req.body;
+    
+    if (!mark || !['up', 'down', 'flag'].includes(mark)) {
+      return res.status(400).json({ error: 'mark must be "up", "down", or "flag"' });
+    }
+    
+    // Find last AI accuracy record for this session
+    const result = await awDatabases.listDocuments(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_AI_ACCURACY_COLLECTION_ID,
+      [
+        Query.equal('sessionId', sessionId),
+        Query.orderDesc('createdAt'),
+        Query.limit(1)
+      ]
+    );
+    
+    if (result.documents.length === 0) {
+      return res.status(404).json({ error: 'No AI accuracy records found for this session' });
+    }
+    
+    const accuracyId = result.documents[0].$id;
+    
+    // Update record
+    await awDatabases.updateDocument(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_AI_ACCURACY_COLLECTION_ID,
+      accuracyId,
+      { humanMark: mark }
+    );
+    
+    // Log audit
+    await logAccuracyAudit(accuracyId, 'anonymous', 'feedback', `Session feedback: ${mark}`);
+    
+    // Clear cache
+    accuracyStatsCache.clear();
+    
+    res.json({ success: true, accuracyId, mark });
+  } catch (err) {
+    console.error('Error updating session feedback:', err);
+    res.status(500).json({ error: err?.message || 'Failed to update feedback' });
+  }
+});
+
+// POST /admin/accuracy/:accuracyId/evaluate - Admin evaluation
+app.post('/admin/accuracy/:accuracyId/evaluate', requireAuth, requireRole(['admin', 'super_admin']), async (req, res) => {
+  try {
+    if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_AI_ACCURACY_COLLECTION_ID) {
+      return res.status(503).json({ error: 'Appwrite not configured' });
+    }
+    
+    const { accuracyId } = req.params;
+    const { evaluation, humanMark } = req.body;
+    
+    const updateData = {};
+    if (evaluation !== undefined) updateData.evaluation = evaluation;
+    if (humanMark !== undefined && ['up', 'down', 'flag', null].includes(humanMark)) {
+      updateData.humanMark = humanMark;
+    }
+    
+    await awDatabases.updateDocument(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_AI_ACCURACY_COLLECTION_ID,
+      accuracyId,
+      updateData
+    );
+    
+    // Log audit
+    const adminId = req.user?.userId || 'anonymous';
+    await logAccuracyAudit(accuracyId, adminId, 'evaluate', evaluation);
+    
+    // Clear cache
+    accuracyStatsCache.clear();
+    
+    res.json({ success: true, accuracyId });
+  } catch (err) {
+    if (err.code === 404) {
+      return res.status(404).json({ error: 'Accuracy record not found' });
+    }
+    console.error('Error evaluating accuracy:', err);
+    res.status(500).json({ error: err?.message || 'Failed to evaluate' });
+  }
+});
+
+// GET /admin/accuracy/export - Export accuracy logs
+app.get('/admin/accuracy/export', requireAuth, requireRole(['admin', 'super_admin']), async (req, res) => {
+  try {
+    if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_AI_ACCURACY_COLLECTION_ID) {
+      return res.status(503).json({ error: 'Appwrite not configured' });
+    }
+    
+    const { format = 'json', from, to } = req.query;
+    const fromDate = from ? new Date(from) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const toDate = to ? new Date(to) : new Date();
+    
+    const queries = [Query.between('createdAt', fromDate.toISOString(), toDate.toISOString()), Query.orderAsc('createdAt')];
+    
+    if (format === 'csv') {
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="accuracy_export_${Date.now()}.csv"`);
+      
+      // Write CSV header
+      res.write('createdAt,sessionId,aiText,confidence,latencyMs,tokens,responseType,humanMark,evaluation\n');
+      
+      // Stream results
+      let offset = 0;
+      const pageSize = 100;
+      let hasMore = true;
+      
+      while (hasMore) {
+        const pageQueries = [...queries, Query.limit(pageSize), Query.offset(offset)];
+        const result = await awDatabases.listDocuments(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_AI_ACCURACY_COLLECTION_ID,
+          pageQueries
+        );
+        
+        for (const doc of result.documents) {
+          const row = [
+            doc.createdAt || '',
+            doc.sessionId || '',
+            `"${(doc.aiText || '').replace(/"/g, '""')}"`,
+            doc.confidence || '',
+            doc.latencyMs || '',
+            doc.tokens || '',
+            doc.responseType || '',
+            doc.humanMark || '',
+            `"${(doc.evaluation || '').replace(/"/g, '""')}"`
+          ].join(',');
+          res.write(row + '\n');
+        }
+        
+        offset += pageSize;
+        hasMore = result.documents.length === pageSize;
+      }
+      
+      res.end();
+    } else {
+      // JSON export
+      const allDocs = [];
+      let offset = 0;
+      const pageSize = 100;
+      let hasMore = true;
+      
+      while (hasMore) {
+        const pageQueries = [...queries, Query.limit(pageSize), Query.offset(offset)];
+        const result = await awDatabases.listDocuments(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_AI_ACCURACY_COLLECTION_ID,
+          pageQueries
+        );
+        
+        allDocs.push(...result.documents);
+        offset += pageSize;
+        hasMore = result.documents.length === pageSize;
+      }
+      
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', `attachment; filename="accuracy_export_${Date.now()}.json"`);
+      res.json(allDocs);
+    }
+  } catch (err) {
+    console.error('Error exporting accuracy:', err);
+    res.status(500).json({ error: err?.message || 'Failed to export' });
+  }
+});
+
+// POST /admin/accuracy/cleanup - Cleanup old records (super_admin only)
+// TODO: Schedule as cron/Appwrite Function in production
+app.post('/admin/accuracy/cleanup', requireAuth, requireRole(['super_admin']), async (req, res) => {
+  try {
+    if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_AI_ACCURACY_COLLECTION_ID) {
+      return res.status(503).json({ error: 'Appwrite not configured' });
+    }
+    
+    const cutoffDate = new Date(Date.now() - ACCURACY_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+    
+    // Find old records
+    const result = await awDatabases.listDocuments(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_AI_ACCURACY_COLLECTION_ID,
+      [
+        Query.lessThan('createdAt', cutoffDate.toISOString()),
+        Query.limit(1000) // Process in batches
+      ]
+    );
+    
+    let deleted = 0;
+    for (const doc of result.documents) {
+      try {
+        await awDatabases.deleteDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_AI_ACCURACY_COLLECTION_ID,
+          doc.$id
+        );
+        deleted++;
+      } catch (delErr) {
+        console.warn(`Failed to delete ${doc.$id}:`, delErr.message);
+      }
+    }
+    
+    res.json({
+      success: true,
+      deleted,
+      cutoffDate: cutoffDate.toISOString(),
+      message: `Deleted ${deleted} records older than ${ACCURACY_RETENTION_DAYS} days. Run again to process more.`
+    });
+  } catch (err) {
+    console.error('Error cleaning up accuracy records:', err);
+    res.status(500).json({ error: err?.message || 'Failed to cleanup' });
+  }
+});
+
+// ============================================================================
+// END OF ACCURACY LOGGING ENDPOINTS
 // ============================================================================
 
 const PORT = process.env.PORT || 4000;
