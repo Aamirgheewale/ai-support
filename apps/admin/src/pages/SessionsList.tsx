@@ -494,6 +494,9 @@ export default function SessionsList() {
                       </button>
                     </div>
                   </div>
+                  ) : (
+                    <span style={{ color: '#999', fontSize: '12px' }}>-</span>
+                  )}
                 </td>
               </tr>
             ))}
