@@ -87,10 +87,8 @@ async function checkUsersCollection() {
         issues.push(`required=${actual.required} (expected ${expected.required})`);
       }
       
-      // Check unique (only for string types)
-      if (expected.type === 'string' && actual.unique !== expected.unique) {
-        issues.push(`unique=${actual.unique} (expected ${expected.unique})`);
-      }
+      // Note: Unique constraint is enforced via Indexes, not attribute property
+      // We'll check indexes separately below
       
       if (issues.length > 0) {
         console.log(`⚠️  ${key}: ${issues.join(', ')}`);
@@ -101,6 +99,46 @@ async function checkUsersCollection() {
     }
     
     console.log('\n' + '─'.repeat(60));
+    
+    // Check for unique indexes
+    console.log('\n🔍 Checking unique indexes...');
+    try {
+      const indexes = await databases.listIndexes(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_USERS_COLLECTION_ID
+      );
+      
+      const indexMap = {};
+      indexes.indexes.forEach(idx => {
+        idx.attributes.forEach(attr => {
+          if (!indexMap[attr.key]) {
+            indexMap[attr.key] = [];
+          }
+          indexMap[attr.key].push({ type: idx.type, name: idx.key });
+        });
+      });
+      
+      // Check if userId has unique index
+      if (!indexMap['userId'] || !indexMap['userId'].some(i => i.type === 'unique')) {
+        console.log('⚠️  userId: Missing unique index');
+        console.log('   Create index: Name=idx_userId_unique, Attribute=userId, Type=Unique');
+        hasErrors = true;
+      } else {
+        console.log('✅ userId: Has unique index');
+      }
+      
+      // Check if email has unique index
+      if (!indexMap['email'] || !indexMap['email'].some(i => i.type === 'unique')) {
+        console.log('⚠️  email: Missing unique index');
+        console.log('   Create index: Name=idx_email_unique, Attribute=email, Type=Unique');
+        hasErrors = true;
+      } else {
+        console.log('✅ email: Has unique index');
+      }
+    } catch (idxErr) {
+      console.warn('⚠️  Could not check indexes:', idxErr.message);
+    }
+    
     return hasErrors;
     
   } catch (err) {
