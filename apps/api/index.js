@@ -350,6 +350,33 @@ async function ensureUserRecord(userId, { email, name }) {
           }
         );
         console.log(`✅ Successfully created user with document ID: ${docId}`);
+        
+        // Add delay to allow index sync, then verify user exists
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+        // Verify the user exists by querying (with fallback to list)
+        try {
+          const verifyUser = await getUserById(userId) || await getUserByEmail(email);
+          if (verifyUser) {
+            return verifyUser;
+          }
+          // Fallback: list all users and find by document ID
+          const allUsers = await awDatabases.listDocuments(
+            APPWRITE_DATABASE_ID,
+            APPWRITE_USERS_COLLECTION_ID,
+            [],
+            100
+          );
+          const foundDoc = allUsers.documents.find(d => d.$id === docId);
+          if (foundDoc) {
+            console.log(`✅ Verified user exists via list query after creation`);
+            return foundDoc;
+          }
+        } catch (verifyErr) {
+          console.warn(`⚠️  Could not verify user after creation, but creation succeeded:`, verifyErr.message);
+          // Return the doc anyway since creation succeeded
+        }
+        
         return doc;
       } catch (e) {
         // Check if it's a unique constraint violation (email or userId already exists)
@@ -395,6 +422,28 @@ async function ensureUserRecord(userId, { email, name }) {
             return foundUser;
           }
           
+          // If still not found, wait longer and try one more comprehensive list check
+          console.warn(`⚠️  User not found after conflict, waiting for index sync...`);
+          await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second for index sync
+          
+          try {
+            const finalListCheck = await awDatabases.listDocuments(
+              APPWRITE_DATABASE_ID,
+              APPWRITE_USERS_COLLECTION_ID,
+              [],
+              100
+            );
+            const finalMatch = finalListCheck.documents.find(doc => 
+              (doc.email && doc.email === email) || (doc.userId && doc.userId === userId)
+            );
+            if (finalMatch) {
+              console.log(`✅ Found user after extended wait (index sync delay)`);
+              return finalMatch;
+            }
+          } catch (finalListErr) {
+            // Ignore
+          }
+          
           // If still not found, this is a real conflict - log and return null
           console.error(`❌ Unique constraint violation: User with email "${email}" or userId "${userId}" may already exist but cannot be found`);
           console.error(`   This might indicate a database synchronization issue.`);
@@ -423,6 +472,31 @@ async function ensureUserRecord(userId, { email, name }) {
               createData
             );
             console.log(`✅ Successfully created user (without datetime) with document ID: ${docId}`);
+            
+            // Add delay to allow index sync, then verify user exists
+            await new Promise(resolve => setTimeout(resolve, 200));
+            
+            // Verify the user exists
+            try {
+              const verifyUser = await getUserById(userId) || await getUserByEmail(email);
+              if (verifyUser) {
+                return verifyUser;
+              }
+              // Fallback: list all users and find by document ID
+              const allUsers = await awDatabases.listDocuments(
+                APPWRITE_DATABASE_ID,
+                APPWRITE_USERS_COLLECTION_ID,
+                [],
+                100
+              );
+              const foundDoc = allUsers.documents.find(d => d.$id === docId);
+              if (foundDoc) {
+                return foundDoc;
+              }
+            } catch (verifyErr) {
+              // Return doc anyway since creation succeeded
+            }
+            
             return doc;
           } catch (e2) {
             // Check if roles attribute is wrong type
@@ -568,6 +642,33 @@ async function ensureUserRecord(userId, { email, name }) {
           }
         );
         console.log(`✅ Successfully created user with final attempt (document ID: ${finalDocId})`);
+        
+        // Add delay to allow index sync, then verify user exists
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        // Verify the user exists
+        try {
+          const verifyUser = await getUserById(userId) || await getUserByEmail(email);
+          if (verifyUser) {
+            return verifyUser;
+          }
+          // Fallback: list all users and find by document ID
+          const allUsers = await awDatabases.listDocuments(
+            APPWRITE_DATABASE_ID,
+            APPWRITE_USERS_COLLECTION_ID,
+            [],
+            100
+          );
+          const foundDoc = allUsers.documents.find(d => d.$id === finalDocId);
+          if (foundDoc) {
+            console.log(`✅ Verified user exists via list query after final creation`);
+            return foundDoc;
+          }
+        } catch (verifyErr) {
+          console.warn(`⚠️  Could not verify user after final creation, but creation succeeded`);
+          // Return doc anyway since creation succeeded
+        }
+        
         return finalDoc;
       } catch (finalErr) {
         // If final attempt fails, it's definitely a unique constraint issue
@@ -623,9 +724,31 @@ async function setUserRoles(userId, rolesArray) {
     return false;
   }
   try {
-    const user = await getUserById(userId);
+    let user = await getUserById(userId);
+    
+    // If not found, wait a bit for index sync and try again
     if (!user) {
-      console.warn(`User ${userId} not found`);
+      await new Promise(resolve => setTimeout(resolve, 300));
+      user = await getUserById(userId);
+    }
+    
+    // If still not found, try listing all users
+    if (!user) {
+      try {
+        const allUsers = await awDatabases.listDocuments(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_USERS_COLLECTION_ID,
+          [],
+          100
+        );
+        user = allUsers.documents.find(doc => doc.userId === userId);
+      } catch (listErr) {
+        // Ignore
+      }
+    }
+    
+    if (!user) {
+      console.warn(`User ${userId} not found after multiple attempts`);
       return false;
     }
     
