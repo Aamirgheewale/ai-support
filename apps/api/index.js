@@ -1342,6 +1342,19 @@ function notifyAgentIfOnline(agentId, payload) {
 io.on('connection', (socket) => {
   console.log(`📱 Client connected: ${socket.id}`);
 
+  // Handle admin/widget joining session room for real-time updates
+  socket.on('join_session', (data) => {
+    const { sessionId } = data || {};
+    if (sessionId && typeof sessionId === 'string') {
+      socket.join(sessionId);
+      const room = io.sockets.adapter.rooms.get(sessionId);
+      const roomSize = room ? room.size : 0;
+      console.log(`📱 Socket ${socket.id} joined session room: ${sessionId} (${roomSize} socket(s) total)`);
+    } else {
+      console.warn(`⚠️  Invalid join_session request from ${socket.id}:`, data);
+    }
+  });
+
   // Handle session start
   socket.on('start_session', async (data) => {
     const sessionId = data?.sessionId || socket.id;
