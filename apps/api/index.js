@@ -1884,12 +1884,19 @@ Always be polite, patient, and solution-oriented. If you cannot resolve an issue
     try {
       await assignAgentToSession(sessionId, agentId);
       socket.join(sessionId);
-      io.to(sessionId).emit('agent_joined', { agentId });
+      
+      // CRITICAL: Notify all sockets in session room (widget and admin) that agent joined
+      io.to(sessionId).emit('agent_joined', { agentId, sessionId });
       console.log(`👤 Agent ${agentId} took over session ${sessionId}`);
       
       // Notify agent socket if online
       notifyAgentIfOnline(agentId, { type: 'assignment', sessionId });
       socket.emit('agent_takeover_success', { sessionId, agentId });
+      
+      // Ensure widget is in room - send a reminder to join if needed
+      const room = io.sockets.adapter.rooms.get(sessionId);
+      const roomSize = room ? room.size : 0;
+      console.log(`   📊 Session room size after agent takeover: ${roomSize} socket(s)`);
     } catch (err) {
       console.error(`❌ Failed to assign agent:`, err?.message || err);
       console.error(`   Error details:`, err);

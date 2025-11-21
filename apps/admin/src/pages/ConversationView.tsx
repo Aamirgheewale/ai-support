@@ -91,19 +91,85 @@ export default function ConversationView() {
       }
     })
     
-    // Listen for agent's own messages
+    // Listen for agent messages (from any agent, not just current user)
     sock.on('agent_message', (data: any) => {
-      if (data.sessionId === sessionId) {
-        setMessages(prev => [...prev, { sender: 'agent', text: data.text, timestamp: new Date().toISOString(), agentId: data.agentId }])
+      console.log('📨 Received agent_message:', data)
+      if (data.sessionId === sessionId || !data.sessionId) {
+        setMessages(prev => {
+          // Check if message already exists to avoid duplicates
+          const exists = prev.some(m => 
+            m.sender === 'agent' && 
+            m.text === data.text && 
+            Math.abs(new Date(m.timestamp).getTime() - (data.ts || Date.now())) < 2000
+          )
+          if (exists) {
+            console.log('   ⚠️  Duplicate agent message, skipping')
+            return prev
+          }
+          console.log('   ✅ Adding agent message to UI')
+          return [...prev, { 
+            sender: 'agent', 
+            text: data.text, 
+            timestamp: new Date(data.ts || Date.now()).toISOString(), 
+            agentId: data.agentId 
+          }]
+        })
+      } else {
+        console.log(`   ⚠️  Agent message for different session: ${data.sessionId} (current: ${sessionId})`)
       }
+    })
+    
+    // Listen for user messages (from widget) for real-time updates
+    sock.on('user_message', (data: any) => {
+      console.log('📨 Received user_message (real-time):', data)
+      if (data.sessionId === sessionId || !data.sessionId) {
+        setMessages(prev => {
+          const exists = prev.some(m => 
+            m.sender === 'user' && 
+            m.text === data.text && 
+            Math.abs(new Date(m.timestamp).getTime() - (data.ts || Date.now())) < 2000
+          )
+          if (exists) {
+            console.log('   ⚠️  Duplicate user message, skipping')
+            return prev
+          }
+          console.log('   ✅ Adding user message to UI (real-time)')
+          return [...prev, { 
+            sender: 'user', 
+            text: data.text, 
+            timestamp: new Date(data.ts || Date.now()).toISOString() 
+          }]
+        })
+      }
+    })
+    
+    // Listen for bot messages for real-time updates
+    sock.on('bot_message', (data: any) => {
+      console.log('📨 Received bot_message (real-time):', data)
+      setMessages(prev => {
+        const exists = prev.some(m => 
+          m.sender === 'bot' && 
+          m.text === data.text && 
+          Math.abs(new Date(m.timestamp).getTime() - Date.now()) < 2000
+        )
+        if (exists) {
+          console.log('   ⚠️  Duplicate bot message, skipping')
+          return prev
+        }
+        console.log('   ✅ Adding bot message to UI (real-time)')
+        return [...prev, { 
+          sender: 'bot', 
+          text: data.text, 
+          timestamp: new Date().toISOString(),
+          confidence: data.confidence
+        }]
+      })
     })
     
     // Listen for assignment notifications
     sock.on('assignment', (data: any) => {
       console.log('📨 Assignment notification:', data)
     })
-    
-    setSocket(sock)
     
     setSocket(sock)
     
