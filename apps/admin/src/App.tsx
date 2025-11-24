@@ -5,6 +5,7 @@ import ConversationView from './pages/ConversationView'
 import AnalyticsPage from './pages/AnalyticsPage'
 import UsersPage from './pages/UsersPage'
 import AccuracyPage from './pages/AccuracyPage'
+import EncryptionPage from './pages/EncryptionPage'
 
 function Navigation() {
   const { hasRole } = useAuth()
@@ -48,6 +49,15 @@ function Navigation() {
                   Users
                 </Link>
               )}
+              {/* Encryption link - only visible to super_admin */}
+              {hasRole('super_admin') && (
+                <Link
+                  to="/encryption"
+                  className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
+                >
+                  Encryption
+                </Link>
+              )}
             </div>
           </div>
         </div>
@@ -69,6 +79,7 @@ function App() {
             <Route path="/analytics" element={<AnalyticsPage />} />
             <Route path="/accuracy" element={<AccuracyPage />} />
             <Route path="/users" element={<UsersPage />} />
+            <Route path="/encryption" element={<EncryptionPage />} />
           </Routes>
         </div>
       </BrowserRouter>

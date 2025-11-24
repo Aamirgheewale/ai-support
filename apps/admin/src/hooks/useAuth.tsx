@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
+// IMPORTANT: This must match ADMIN_SHARED_SECRET in backend .env
 const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET || 'dev-secret-change-me';
 
 interface User {

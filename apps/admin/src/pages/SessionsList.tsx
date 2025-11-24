@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
+import PaginationControls from '../components/common/PaginationControls'
 
 const API_BASE = 'http://localhost:4000'
 const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET || 'dev-secret-change-me'
@@ -30,13 +31,26 @@ export default function SessionsList() {
   const [exporting, setExporting] = useState<string | null>(null)
   const [bulkExporting, setBulkExporting] = useState(false)
   const [showBulkModal, setShowBulkModal] = useState(false)
+  
+  // Pagination state
+  const [limit, setLimit] = useState(20)
+  const [offset, setOffset] = useState(0)
+  const [total, setTotal] = useState(0)
+  const [hasMore, setHasMore] = useState(false)
+  
   const navigate = useNavigate()
 
   useEffect(() => {
-    loadSessions()
+    // Reset to first page when filters change
+    setOffset(0)
+    loadSessions(0)
   }, [statusFilter, search, agentFilter, startDate, endDate, fullTextSearch])
 
-  async function loadSessions() {
+  useEffect(() => {
+    loadSessions(offset)
+  }, [offset, limit])
+
+  async function loadSessions(currentOffset: number = offset) {
     setLoading(true)
     try {
       const params = new URLSearchParams()
@@ -46,7 +60,8 @@ export default function SessionsList() {
       if (startDate) params.append('startDate', startDate)
       if (endDate) params.append('endDate', endDate)
       if (fullTextSearch) params.append('fullTextSearch', fullTextSearch)
-      params.append('limit', '100')
+      params.append('limit', limit.toString())
+      params.append('offset', currentOffset.toString())
 
       const res = await fetch(`${API_BASE}/admin/sessions?${params}`, {
         headers: {
@@ -54,9 +69,13 @@ export default function SessionsList() {
         }
       })
       const data = await res.json()
-      let sessions = data.sessions || []
       
-      console.log(`📊 Received ${sessions.length} session(s) from backend`)
+      // Handle both old format (sessions) and new format (items)
+      let sessions = data.items || data.sessions || []
+      const totalCount = data.total || sessions.length
+      const hasMoreData = data.hasMore !== undefined ? data.hasMore : (currentOffset + sessions.length < totalCount)
+      
+      console.log(`📊 Received ${sessions.length} session(s) from backend (total: ${totalCount}, offset: ${currentOffset})`)
       
       // Log status distribution for debugging
       const statusCounts: Record<string, number> = {}
@@ -87,11 +106,17 @@ export default function SessionsList() {
       
       console.log('📊 Displaying sessions:', sessions.length, 'Status filter:', statusFilter || 'none')
       setSessions(sessions)
+      setTotal(totalCount)
+      setHasMore(hasMoreData)
     } catch (err) {
       console.error('Failed to load sessions:', err)
     } finally {
       setLoading(false)
     }
+  }
+
+  function handlePageChange(newOffset: number) {
+    setOffset(newOffset)
   }
 
   // Helper: Download file from blob
@@ -523,11 +548,19 @@ export default function SessionsList() {
       )}
       
       {!loading && sessions.length > 0 && (
-        <div style={{ marginTop: '10px', padding: '10px', background: '#f8f9fa', borderRadius: '4px', fontSize: '14px', color: '#666' }}>
-          Showing {sessions.length} session{sessions.length !== 1 ? 's' : ''}
-          {statusFilter && ` with status: ${statusFilter}`}
-          {selectedSessions.size > 0 && ` • ${selectedSessions.size} selected`}
-        </div>
+        <>
+          <div style={{ marginTop: '10px', padding: '10px', background: '#f8f9fa', borderRadius: '4px', fontSize: '14px', color: '#666' }}>
+            Showing {sessions.length} session{sessions.length !== 1 ? 's' : ''} of {total}
+            {statusFilter && ` with status: ${statusFilter}`}
+            {selectedSessions.size > 0 && ` • ${selectedSessions.size} selected`}
+          </div>
+          <PaginationControls
+            total={total}
+            limit={limit}
+            offset={offset}
+            onPageChange={handlePageChange}
+          />
+        </>
       )}
 
       {/* Bulk Export Modal */}

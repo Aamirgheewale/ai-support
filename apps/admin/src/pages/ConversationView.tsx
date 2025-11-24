@@ -26,6 +26,12 @@ export default function ConversationView() {
   const [assignedAgentId, setAssignedAgentId] = useState<string>('')
   const [exporting, setExporting] = useState(false)
   const [showExportMenu, setShowExportMenu] = useState(false)
+  
+  // Message pagination state
+  const [messageLimit, setMessageLimit] = useState(100) // Default: load all
+  const [messageOffset, setMessageOffset] = useState(0)
+  const [messageTotal, setMessageTotal] = useState(0)
+  const [loadingOlder, setLoadingOlder] = useState(false)
 
   // Close export menu when clicking outside
   useEffect(() => {
@@ -226,12 +232,28 @@ export default function ConversationView() {
     }
   }
 
-  async function loadMessages() {
+  async function loadMessages(loadOlder: boolean = false) {
     if (!sessionId) return
-    setLoading(true)
+    
+    if (loadOlder) {
+      setLoadingOlder(true)
+    } else {
+      setLoading(true)
+      setMessageOffset(0) // Reset to start when loading fresh
+    }
+    
     try {
-      console.log(`📨 Loading messages for session: ${sessionId}`)
-      const res = await fetch(`${API_BASE}/admin/sessions/${sessionId}/messages`, {
+      const currentOffset = loadOlder ? messageOffset + messageLimit : 0
+      console.log(`📨 Loading messages for session: ${sessionId}, offset: ${currentOffset}, limit: ${messageLimit}`)
+      
+      const params = new URLSearchParams()
+      if (messageLimit < 10000) {
+        params.append('limit', messageLimit.toString())
+        params.append('offset', currentOffset.toString())
+        params.append('order', 'asc') // Oldest first for pagination
+      }
+      
+      const res = await fetch(`${API_BASE}/admin/sessions/${sessionId}/messages?${params}`, {
         headers: {
           'Authorization': `Bearer ${ADMIN_SECRET}`
         }
@@ -243,10 +265,13 @@ export default function ConversationView() {
       }
       
       const data = await res.json()
-      console.log(`📨 Received ${data.messages?.length || 0} message(s) from backend`)
+      const messages = data.items || data.messages || []
+      const total = data.total || messages.length
+      
+      console.log(`📨 Received ${messages.length} message(s) from backend (total: ${total}, offset: ${currentOffset})`)
       
       // Transform Appwrite messages to UI format - includes user, bot, and agent messages
-      const transformedMessages = (data.messages || []).map((msg: any) => {
+      const transformedMessages = messages.map((msg: any) => {
         // Parse metadata if it's a string
         let metadata = {}
         if (msg.metadata) {
@@ -268,13 +293,39 @@ export default function ConversationView() {
       console.log(`📊 Transformed ${transformedMessages.length} message(s)`)
       console.log(`📊 Message senders:`, [...new Set(transformedMessages.map((m: Message) => m.sender))])
       
-      setMessages(transformedMessages)
+      if (loadOlder) {
+        // Prepend older messages to existing messages
+        setMessages(prev => {
+          // Merge and sort by timestamp to avoid duplicates
+          const merged = [...transformedMessages, ...prev]
+          merged.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+          // Remove duplicates based on text and timestamp
+          const unique = merged.filter((msg, idx, arr) => {
+            return idx === 0 || !arr.slice(0, idx).some(m => 
+              m.text === msg.text && 
+              m.sender === msg.sender && 
+              Math.abs(new Date(m.timestamp).getTime() - new Date(msg.timestamp).getTime()) < 1000
+            )
+          })
+          return unique
+        })
+        setMessageOffset(currentOffset)
+      } else {
+        // Replace all messages (initial load)
+        setMessages(transformedMessages)
+        setMessageOffset(0)
+      }
+      
+      setMessageTotal(total)
     } catch (err) {
       console.error('❌ Failed to load messages:', err)
-      alert('Failed to load messages: ' + (err instanceof Error ? err.message : 'Unknown error'))
-      setMessages([]) // Set empty array on error
+      if (!loadOlder) {
+        alert('Failed to load messages: ' + (err instanceof Error ? err.message : 'Unknown error'))
+        setMessages([]) // Set empty array on error
+      }
     } finally {
       setLoading(false)
+      setLoadingOlder(false)
     }
   }
 
@@ -554,6 +605,26 @@ export default function ConversationView() {
           <div>Loading messages...</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {/* Load older messages button */}
+            {messageTotal > messages.length && messageLimit < 10000 && (
+              <div style={{ textAlign: 'center', padding: '10px' }}>
+                <button
+                  onClick={() => loadMessages(true)}
+                  disabled={loadingOlder}
+                  style={{
+                    padding: '8px 16px',
+                    background: loadingOlder ? '#ccc' : '#667eea',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: loadingOlder ? 'not-allowed' : 'pointer',
+                    fontSize: '13px'
+                  }}
+                >
+                  {loadingOlder ? 'Loading...' : `Load Older Messages (${messageTotal - messages.length} remaining)`}
+                </button>
+              </div>
+            )}
             {messages.map((msg, i) => (
               <div
                 key={i}

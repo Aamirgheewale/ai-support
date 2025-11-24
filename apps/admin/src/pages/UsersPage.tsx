@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import UserRoleEditor from '../components/UserRoleEditor';
+import PaginationControls from '../components/common/PaginationControls';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
 const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET || 'dev-secret-change-me';
@@ -22,6 +23,12 @@ export default function UsersPage() {
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newUser, setNewUser] = useState({ email: '', name: '', roles: [] as string[] });
+  
+  // Pagination state
+  const [limit, setLimit] = useState(20);
+  const [offset, setOffset] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
 
   // Check if user has super_admin role
   if (!hasRole('super_admin')) {
@@ -36,13 +43,18 @@ export default function UsersPage() {
 
   useEffect(() => {
     loadUsers();
-  }, []);
+  }, [offset, limit]);
 
   const loadUsers = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/admin/users`, {
+      const params = new URLSearchParams({
+        limit: limit.toString(),
+        offset: offset.toString()
+      });
+      
+      const res = await fetch(`${API_BASE}/admin/users?${params}`, {
         headers: {
           'Authorization': `Bearer ${ADMIN_SECRET}`
         }
@@ -53,7 +65,9 @@ export default function UsersPage() {
       }
 
       const data = await res.json();
-      setUsers(data.users || []);
+      setUsers(data.items || data.users || []);
+      setTotal(data.total || 0);
+      setHasMore(data.hasMore !== undefined ? data.hasMore : (offset + (data.items || data.users || []).length < data.total));
     } catch (err: any) {
       setError(err?.message || 'Failed to load users');
     } finally {
@@ -237,6 +251,33 @@ export default function UsersPage() {
               )}
             </tbody>
           </table>
+          
+          {/* Pagination */}
+          {!loading && users.length > 0 && (
+            <div className="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
+              <div className="flex items-center gap-4">
+                <label className="text-sm text-gray-700">Items per page:</label>
+                <select
+                  value={limit}
+                  onChange={(e) => {
+                    setLimit(Number(e.target.value));
+                    setOffset(0);
+                  }}
+                  className="border border-gray-300 rounded-md px-2 py-1 text-sm"
+                >
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+              </div>
+              <PaginationControls
+                total={total}
+                limit={limit}
+                offset={offset}
+                onPageChange={(newOffset) => setOffset(newOffset)}
+              />
+            </div>
+          )}
         </div>
       )}
 

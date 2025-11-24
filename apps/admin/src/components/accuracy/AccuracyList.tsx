@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import AccuracyDetail from './AccuracyDetail';
+import PaginationControls from '../common/PaginationControls';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
 const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET || 'dev-secret-change-me';
@@ -24,8 +25,10 @@ const AccuracyList: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedRecord, setSelectedRecord] = useState<AccuracyRecord | null>(null);
-  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(20);
+  const [offset, setOffset] = useState(0);
   const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
   const [filters, setFilters] = useState({
     sessionId: '',
     from: '',
@@ -33,15 +36,13 @@ const AccuracyList: React.FC = () => {
     mark: ''
   });
 
-  const limit = 20;
-
   const fetchRecords = async () => {
     setLoading(true);
     setError(null);
     try {
       const params = new URLSearchParams({
         limit: limit.toString(),
-        offset: ((page - 1) * limit).toString()
+        offset: offset.toString()
       });
       if (filters.sessionId) params.append('sessionId', filters.sessionId);
       if (filters.from) params.append('from', filters.from);
@@ -60,8 +61,9 @@ const AccuracyList: React.FC = () => {
       }
 
       const data = await res.json();
-      setRecords(data.records || []);
+      setRecords(data.items || data.records || []);
       setTotal(data.total || 0);
+      setHasMore(data.hasMore !== undefined ? data.hasMore : (offset + (data.items || data.records || []).length < data.total));
     } catch (err: any) {
       setError(err.message || 'Failed to load records');
     } finally {
@@ -70,8 +72,12 @@ const AccuracyList: React.FC = () => {
   };
 
   useEffect(() => {
+    setOffset(0); // Reset to first page when filters change
+  }, [filters]);
+
+  useEffect(() => {
     fetchRecords();
-  }, [page, filters]);
+  }, [offset, limit, filters]);
 
   const getConfidenceColor = (confidence: number | null) => {
     if (confidence === null) return 'bg-gray-100 text-gray-800';
@@ -238,49 +244,27 @@ const AccuracyList: React.FC = () => {
 
         {/* Pagination */}
         <div className="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
-          <div className="flex-1 flex justify-between sm:hidden">
-            <button
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page === 1}
-              className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+          <div className="flex items-center gap-4">
+            <label className="text-sm text-gray-700">Items per page:</label>
+            <select
+              value={limit}
+              onChange={(e) => {
+                setLimit(Number(e.target.value));
+                setOffset(0);
+              }}
+              className="border border-gray-300 rounded-md px-2 py-1 text-sm"
             >
-              Previous
-            </button>
-            <button
-              onClick={() => setPage(p => p + 1)}
-              disabled={page * limit >= total}
-              className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
-            >
-              Next
-            </button>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
           </div>
-          <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm text-gray-700">
-                Showing <span className="font-medium">{(page - 1) * limit + 1}</span> to{' '}
-                <span className="font-medium">{Math.min(page * limit, total)}</span> of{' '}
-                <span className="font-medium">{total}</span> results
-              </p>
-            </div>
-            <div>
-              <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
-                <button
-                  onClick={() => setPage(p => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                  className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
-                >
-                  Previous
-                </button>
-                <button
-                  onClick={() => setPage(p => p + 1)}
-                  disabled={page * limit >= total}
-                  className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
-                >
-                  Next
-                </button>
-              </nav>
-            </div>
-          </div>
+          <PaginationControls
+            total={total}
+            limit={limit}
+            offset={offset}
+            onPageChange={(newOffset) => setOffset(newOffset)}
+          />
         </div>
       </div>
 

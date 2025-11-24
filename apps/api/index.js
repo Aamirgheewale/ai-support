@@ -7,7 +7,38 @@ const archiver = require('archiver');
 const { stringify } = require('csv-stringify');
 const { LRUCache } = require('lru-cache');
 
+// Encryption library
+let encryption = null;
+try {
+  encryption = require('./lib/encryption');
+  console.log('✅ Encryption library loaded');
+} catch (e) {
+  console.warn('⚠️  Encryption library not available:', e?.message || e);
+}
+
+// Pagination helper
+const { parsePaginationParams, validatePaginationParams, calculatePaginationMeta } = require('./lib/parsePaginationParams');
+
+// Security headers (helmet)
+let helmet = null;
+try {
+  helmet = require('helmet');
+  console.log('✅ Helmet security middleware loaded');
+} catch (e) {
+  console.warn('⚠️  Helmet not available (run: pnpm add helmet):', e?.message || e);
+}
+
 const app = express();
+
+// Security headers (helmet)
+if (helmet) {
+  app.use(helmet({
+    contentSecurityPolicy: false, // Disable CSP for Socket.IO compatibility
+    crossOriginEmbedderPolicy: false
+  }));
+  console.log('✅ Security headers enabled (helmet)');
+}
+
 app.use(cors());
 app.use(express.json());
 const server = http.createServer(app);
@@ -31,6 +62,27 @@ const APPWRITE_ACCURACY_AUDIT_COLLECTION_ID = 'accuracy_audit'; // Collection na
 const ACCURACY_RETENTION_DAYS = parseInt(process.env.ACCURACY_RETENTION_DAYS || '365', 10);
 const ACCURACY_MAX_SCAN_ROWS = parseInt(process.env.ACCURACY_MAX_SCAN_ROWS || '200000', 10);
 const REDACT_PII = process.env.REDACT_PII === 'true';
+
+// Encryption configuration
+const MASTER_KEY_BASE64 = process.env.MASTER_KEY_BASE64;
+const ENCRYPTION_ENABLED = !!MASTER_KEY_BASE64 && !!encryption;
+
+if (ENCRYPTION_ENABLED) {
+  try {
+    const keyBuffer = Buffer.from(MASTER_KEY_BASE64, 'base64');
+    if (keyBuffer.length !== 32) {
+      console.warn('⚠️  MASTER_KEY_BASE64 must be 32 bytes (256 bits) when decoded');
+    } else {
+      console.log('✅ Encryption enabled (MASTER_KEY_BASE64 present)');
+      console.log('   ⚠️  PRODUCTION: Use KMS (AWS KMS/GCP KMS/HashiCorp Vault) instead of plaintext key');
+    }
+  } catch (e) {
+    console.warn('⚠️  Invalid MASTER_KEY_BASE64 format:', e?.message || e);
+  }
+} else {
+  console.warn('⚠️  Encryption disabled (MASTER_KEY_BASE64 not set or encryption library missing)');
+  console.warn('   Sensitive data will be stored in plaintext');
+}
 
 // Import Query at module level for use in queries
 let Query = null;
@@ -980,22 +1032,78 @@ function requireAdminAuth(req, res, next) {
 // END OF RBAC IMPLEMENTATION
 // ============================================================================
 
-// Appwrite helper: Ensure session exists
-async function ensureSessionInAppwrite(sessionId, userMeta = {}) {
-  if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_SESSIONS_COLLECTION_ID) {
-    return;
+// Encryption helper: Encrypt sensitive field
+function encryptField(plaintext) {
+  if (!ENCRYPTION_ENABLED || !plaintext) {
+    return null;
+  }
+  try {
+    const encrypted = encryption.encryptPayload(plaintext, MASTER_KEY_BASE64);
+    return encryption.formatForStorage(encrypted);
+  } catch (err) {
+    console.error('❌ Encryption failed:', err.message);
+    return null;
+  }
+}
+
+// Decryption helper: Decrypt sensitive field
+function decryptField(encryptedField) {
+  if (!encryption || !encryptedField) {
+    return null;
+  }
+  
+  // Check if field is encrypted
+  if (!encryption.isEncrypted(encryptedField)) {
+    // Legacy plaintext - return as-is (for backward compatibility)
+    return typeof encryptedField === 'string' ? encryptedField : null;
+  }
+  
+  if (!MASTER_KEY_BASE64) {
+    console.warn('⚠️  Cannot decrypt: MASTER_KEY_BASE64 not set');
+    return '[ENCRYPTED]';
   }
   
   try {
+    const parsed = encryption.parseFromStorage(encryptedField);
+    return encryption.decryptPayload(parsed, MASTER_KEY_BASE64);
+  } catch (err) {
+    console.error('❌ Decryption failed:', err.message);
+    return '[DECRYPTION_FAILED]';
+  }
+}
+
+// Appwrite helper: Ensure session exists
+async function ensureSessionInAppwrite(sessionId, userMeta = {}) {
+  if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_SESSIONS_COLLECTION_ID) {
+    console.error(`❌ Cannot create session: Appwrite not configured`);
+    console.error(`   awDatabases: ${!!awDatabases}, DB_ID: ${!!APPWRITE_DATABASE_ID}, SESSIONS_COLL_ID: ${!!APPWRITE_SESSIONS_COLLECTION_ID}`);
+    return false;
+  }
+  
+  console.log(`🔍 ensureSessionInAppwrite called: sessionId=${sessionId}`);
+  
+  try {
     const now = new Date().toISOString();
+    const userMetaStr = typeof userMeta === 'object' ? JSON.stringify(userMeta) : (userMeta || '{}');
+    
     const sessionDoc = {
       sessionId: sessionId,
       status: 'active',
       lastSeen: now,
       startTime: now,
-      userMeta: typeof userMeta === 'object' ? JSON.stringify(userMeta) : userMeta,
-      theme: '{}'
+      theme: '{}',
+      userMeta: userMetaStr
     };
+    
+    // Remove any null/undefined values
+    Object.keys(sessionDoc).forEach(key => {
+      if (sessionDoc[key] === null || sessionDoc[key] === undefined) {
+        delete sessionDoc[key];
+      }
+    });
+    
+    console.log(`📤 Creating session document: ${sessionId}`);
+    console.log(`📤 Document keys: ${Object.keys(sessionDoc).join(', ')}`);
     
     await awDatabases.createDocument(
       APPWRITE_DATABASE_ID,
@@ -1004,9 +1112,11 @@ async function ensureSessionInAppwrite(sessionId, userMeta = {}) {
       sessionDoc
     );
     console.log(`✅ Created session in Appwrite: ${sessionId}`);
+    return true;
   } catch (err) {
     if (err.code === 409) {
       // Session exists, update lastSeen only (don't overwrite userMeta to preserve assignedAgent)
+      console.log(`ℹ️  Session already exists [${sessionId}], updating lastSeen...`);
       try {
         await awDatabases.updateDocument(
           APPWRITE_DATABASE_ID,
@@ -1018,12 +1128,58 @@ async function ensureSessionInAppwrite(sessionId, userMeta = {}) {
           }
         );
         console.log(`✅ Updated session lastSeen in Appwrite: ${sessionId}`);
+        return true;
       } catch (updateErr) {
-        console.warn(`⚠️  Failed to update session ${sessionId}:`, updateErr?.message || updateErr);
+        console.error(`❌ Failed to update session ${sessionId}:`, updateErr?.message || updateErr);
+        console.error(`   Error code: ${updateErr?.code}, Type: ${updateErr?.type}`);
+        return false;
       }
-    } else {
-      console.warn(`⚠️  Failed to ensure session ${sessionId}:`, err?.message || err);
-    }
+      } else {
+        // Log detailed error information
+        console.error(`❌ Failed to create session [${sessionId}]:`, err?.message || err);
+        console.error(`   Error code: ${err?.code}, Type: ${err?.type}`);
+        
+        // Provide helpful error messages
+        if (err?.code === 400) {
+          console.error(`   💡 Bad request - Check collection attributes:`);
+          console.error(`      Required: sessionId (string), status (string), lastSeen (datetime), startTime (datetime), userMeta (string), theme (string)`);
+          if (err?.message?.includes('Unknown attribute')) {
+            console.error(`   🔧 Fix: Remove unknown attributes or add them to collection schema in Appwrite Console`);
+            // Try creating with minimal fields only
+            console.log(`   🔄 Retrying with minimal fields only...`);
+            try {
+              const minimalDoc = {
+                sessionId: sessionId,
+                status: 'active',
+                lastSeen: new Date().toISOString(),
+                startTime: new Date().toISOString(),
+                userMeta: '{}',
+                theme: '{}'
+              };
+              await awDatabases.createDocument(
+                APPWRITE_DATABASE_ID,
+                APPWRITE_SESSIONS_COLLECTION_ID,
+                sessionId,
+                minimalDoc
+              );
+              console.log(`✅ Created session with minimal fields: ${sessionId}`);
+              return true;
+            } catch (retryErr) {
+              console.error(`   ❌ Retry also failed:`, retryErr?.message || retryErr);
+            }
+          }
+        } else if (err?.code === 401) {
+          console.error(`   💡 Authentication failed - Check API key scopes`);
+        } else if (err?.code === 403) {
+          console.error(`   💡 Permission denied - Check API key has write access`);
+        } else if (err?.code === 404) {
+          console.error(`   💡 Collection or Database not found - Check IDs are correct`);
+          console.error(`      APPWRITE_DATABASE_ID: ${APPWRITE_DATABASE_ID ? '✅ Set' : '❌ Missing'}`);
+          console.error(`      APPWRITE_SESSIONS_COLLECTION_ID: ${APPWRITE_SESSIONS_COLLECTION_ID ? '✅ Set' : '❌ Missing'}`);
+        }
+        
+        return false;
+      }
   }
 }
 
@@ -1051,30 +1207,94 @@ async function getSessionDoc(sessionId) {
 
 // Appwrite helper: Save message
 async function saveMessageToAppwrite(sessionId, sender, text, metadata = {}) {
+  console.log(`🔍 saveMessageToAppwrite called: sessionId=${sessionId}, sender=${sender}, textLength=${text?.length || 0}`);
+  console.log(`🔍 Appwrite check: awDatabases=${!!awDatabases}, DB_ID=${!!APPWRITE_DATABASE_ID}, MSG_COLL_ID=${!!APPWRITE_MESSAGES_COLLECTION_ID}`);
+  
   if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_MESSAGES_COLLECTION_ID) {
     if (!APPWRITE_DATABASE_ID) {
-      console.warn(`⚠️  Cannot save message: APPWRITE_DATABASE_ID is not set in .env`);
+      console.error(`❌ Cannot save message: APPWRITE_DATABASE_ID is not set in .env`);
     } else if (!APPWRITE_MESSAGES_COLLECTION_ID) {
-      console.warn(`⚠️  Cannot save message: APPWRITE_MESSAGES_COLLECTION_ID is not set in .env`);
+      console.error(`❌ Cannot save message: APPWRITE_MESSAGES_COLLECTION_ID is not set in .env`);
     } else if (!awDatabases) {
-      console.warn(`⚠️  Cannot save message: Appwrite client not initialized`);
+      console.error(`❌ Cannot save message: Appwrite client not initialized`);
     }
     return false;
   }
   
   try {
-    // Ensure session exists before saving message
-    await ensureSessionInAppwrite(sessionId);
+    // Ensure session exists before saving message - CRITICAL for admin panel visibility
+    console.log(`🔍 Ensuring session exists before saving message: ${sessionId}`);
+    let sessionEnsured = await ensureSessionInAppwrite(sessionId);
+    if (!sessionEnsured) {
+      console.error(`❌ CRITICAL: Failed to ensure session [${sessionId}] - retrying with minimal fields...`);
+      // Retry with absolute minimal fields - this MUST succeed for admin panel to work
+      try {
+        const minimalSession = {
+          sessionId: sessionId,
+          status: 'active',
+          lastSeen: new Date().toISOString(),
+          startTime: new Date().toISOString(),
+          userMeta: '{}',
+          theme: '{}'
+        };
+        await awDatabases.createDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_SESSIONS_COLLECTION_ID,
+          sessionId,
+          minimalSession
+        );
+        console.log(`✅ Created session with minimal fields (retry): ${sessionId}`);
+        sessionEnsured = true;
+      } catch (retryErr) {
+        if (retryErr.code === 409) {
+          // Session exists now (race condition), that's fine
+          console.log(`ℹ️  Session exists (race condition): ${sessionId}`);
+          sessionEnsured = true;
+        } else {
+          console.error(`❌ CRITICAL: Retry also failed - session [${sessionId}] will NOT appear in admin panel!`);
+          console.error(`   Error: ${retryErr?.message || retryErr}`);
+          // Continue anyway - save the message even if session creation failed
+        }
+      }
+    }
     
     const now = new Date().toISOString();
+    const metadataStr = typeof metadata === 'object' ? JSON.stringify(metadata) : metadata;
+    
     const messageDoc = {
       sessionId: sessionId,
       sender: sender,
-      text: text,
       createdAt: now,
-      metadata: typeof metadata === 'object' ? JSON.stringify(metadata) : metadata,
       confidence: metadata.confidence || null
     };
+    
+    // Always set text and metadata (required fields)
+    // Ensure text is a non-empty string (Appwrite requirement)
+    if (!text || typeof text !== 'string' || text.trim().length === 0) {
+      console.error(`❌ Invalid text for message: text must be a non-empty string`);
+      return false;
+    }
+    
+    messageDoc.text = text;
+    messageDoc.metadata = metadataStr || '{}'; // Ensure metadata is always a string
+    
+    // NOTE: Encrypted fields are NOT added by default to avoid schema errors
+    // Only add encrypted fields if:
+    // 1. Encryption is enabled AND
+    // 2. The collection schema has been updated to include 'encrypted' and 'encrypted_metadata' attributes
+    // To enable encryption, first run the migration script to add these attributes to your collection
+    // For now, we save only plaintext to ensure compatibility with existing schema
+    
+    // Remove any null/undefined values that might cause Appwrite validation errors
+    Object.keys(messageDoc).forEach(key => {
+      if (messageDoc[key] === null || messageDoc[key] === undefined) {
+        delete messageDoc[key];
+      }
+    });
+    
+    console.log(`📤 Creating document in Appwrite: DB=${APPWRITE_DATABASE_ID}, COLL=${APPWRITE_MESSAGES_COLLECTION_ID}`);
+    console.log(`📤 Document data keys: ${Object.keys(messageDoc).join(', ')}`);
+    console.log(`📤 Text field present: ${!!messageDoc.text}, Text length: ${messageDoc.text?.length || 0}`);
     
     const result = await awDatabases.createDocument(
       APPWRITE_DATABASE_ID,
@@ -1083,6 +1303,9 @@ async function saveMessageToAppwrite(sessionId, sender, text, metadata = {}) {
       messageDoc
     );
     console.log(`✅ Saved message to Appwrite: ${sessionId} (${sender}) [Doc ID: ${result.$id}]`);
+    if (ENCRYPTION_ENABLED && messageDoc.encrypted) {
+      console.log(`   🔒 Message encrypted (encrypted field present)`);
+    }
     return true;
   } catch (err) {
     const errorDetails = {
@@ -1093,6 +1316,9 @@ async function saveMessageToAppwrite(sessionId, sender, text, metadata = {}) {
     };
     
     console.error(`❌ Failed to save message to Appwrite [${sessionId}]:`, errorDetails);
+    console.error(`   Message text (first 50 chars): ${text ? text.substring(0, 50) : '(empty)'}`);
+    console.error(`   Sender: ${sender}`);
+    console.error(`   Encryption enabled: ${ENCRYPTION_ENABLED}`);
     
     // Provide helpful error messages
     if (err?.code === 404) {
@@ -1114,9 +1340,21 @@ async function saveMessageToAppwrite(sessionId, sender, text, metadata = {}) {
     } else if (err?.code === 400) {
       console.error(`   💡 Bad request. Check collection attributes match:`);
       console.error(`      Required: sessionId (string), sender (string), text (string), createdAt (datetime), metadata (string), confidence (double)`);
+      console.error(`   Full error message: ${err?.message || 'No message'}`);
+      console.error(`   Error response: ${JSON.stringify(err?.response || {})}`);
       if (err?.message?.includes('createdAt')) {
         console.error(`   🔧 Fix: Add createdAt attribute to messages collection in Appwrite Console`);
       }
+      if (err?.message?.includes('text')) {
+        console.error(`   🔧 Fix: Check 'text' attribute exists and is of type 'string' in messages collection`);
+      }
+      if (err?.message?.includes('Unknown attribute') || err?.message?.includes('Invalid document structure')) {
+        console.error(`   🔧 Fix: Remove 'encrypted' or 'encrypted_metadata' fields from messageDoc if they don't exist in collection schema`);
+        console.error(`   🔧 Or add these attributes to the messages collection in Appwrite Console`);
+      }
+    } else {
+      console.error(`   💡 Unexpected error code: ${err?.code}`);
+      console.error(`   Full error: ${JSON.stringify(err, Object.getOwnPropertyNames(err))}`);
     }
     
     return false;
@@ -1160,7 +1398,6 @@ async function saveAccuracyRecord(sessionId, messageId, aiText, confidence, late
     truncatedText = redactPII(truncatedText);
     
     const accuracyDoc = {
-      messageId: messageId || null,
       sessionId: sessionId,
       aiText: truncatedText,
       confidence: confidence !== undefined && confidence !== null ? confidence : null,
@@ -1172,6 +1409,19 @@ async function saveAccuracyRecord(sessionId, messageId, aiText, confidence, late
       createdAt: new Date().toISOString(),
       metadata: typeof metadata === 'object' ? JSON.stringify(metadata) : metadata
     };
+    
+    // Only add messageId if it's provided and the collection supports it
+    // (messageId is optional - collection may not have this attribute)
+    if (messageId) {
+      accuracyDoc.messageId = messageId;
+    }
+    
+    // Remove any null/undefined values that might cause Appwrite validation errors
+    Object.keys(accuracyDoc).forEach(key => {
+      if (accuracyDoc[key] === null || accuracyDoc[key] === undefined) {
+        delete accuracyDoc[key];
+      }
+    });
     
     const { ID } = require('node-appwrite');
     const result = await awDatabases.createDocument(
@@ -1186,9 +1436,33 @@ async function saveAccuracyRecord(sessionId, messageId, aiText, confidence, late
   } catch (err) {
     // Gracefully handle errors - don't crash the app
     console.warn(`⚠️  Failed to save accuracy record:`, err.message || err);
-    // Check if collection exists
+    // Check if collection exists or has schema issues
     if (err.code === 404) {
       console.warn(`   💡 Run migration: node migrate_create_ai_accuracy_collection.js`);
+    } else if (err.code === 400 && (err.message?.includes('Unknown attribute') || err.message?.includes('messageId'))) {
+      console.warn(`   💡 Collection doesn't have 'messageId' attribute - retrying without it`);
+      // Retry without messageId
+      try {
+        const retryDoc = { ...accuracyDoc };
+        delete retryDoc.messageId;
+        // Remove nulls again
+        Object.keys(retryDoc).forEach(key => {
+          if (retryDoc[key] === null || retryDoc[key] === undefined) {
+            delete retryDoc[key];
+          }
+        });
+        const { ID } = require('node-appwrite');
+        const result = await awDatabases.createDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_AI_ACCURACY_COLLECTION_ID,
+          ID.unique(),
+          retryDoc
+        );
+        console.log(`📊 Accuracy record saved (without messageId): ${sessionId}`);
+        return result.$id;
+      } catch (retryErr) {
+        console.warn(`   ⚠️  Retry also failed:`, retryErr.message);
+      }
     }
     return null;
   }
@@ -1360,7 +1634,13 @@ io.on('connection', (socket) => {
     const sessionId = data?.sessionId || socket.id;
     const userMeta = data?.userMeta || {};
     
-    await ensureSessionInAppwrite(sessionId, userMeta);
+    console.log(`📝 start_session event received: sessionId=${sessionId}`);
+    const sessionCreated = await ensureSessionInAppwrite(sessionId, userMeta);
+    if (!sessionCreated) {
+      console.error(`❌ CRITICAL: Failed to create session [${sessionId}] - session will not appear in admin panel!`);
+      // Still continue - messages might still work, but session won't be visible
+    }
+    
     // Join session room - this is critical for receiving agent messages
     socket.join(sessionId);
     
@@ -1374,9 +1654,15 @@ io.on('connection', (socket) => {
     socket.emit('bot_message', { text: welcomeMsg, confidence: 1 });
     
     const welcomeStart = process.hrtime.bigint();
-    await saveMessageToAppwrite(sessionId, 'bot', welcomeMsg, { confidence: 1 });
+    console.log(`💾 Attempting to save welcome message to Appwrite...`);
+    const welcomeSaveResult = await saveMessageToAppwrite(sessionId, 'bot', welcomeMsg, { confidence: 1 });
     const welcomeEnd = process.hrtime.bigint();
     const welcomeLatencyMs = Number(welcomeEnd - welcomeStart) / 1000000;
+    if (!welcomeSaveResult) {
+      console.error(`❌ CRITICAL: Failed to save welcome message [${sessionId}] - saveMessageToAppwrite returned false`);
+    } else {
+      console.log(`✅ Welcome message saved successfully [${sessionId}]`);
+    }
     
     // Save accuracy record for welcome message
     await saveAccuracyRecord(
@@ -1421,7 +1707,14 @@ io.on('connection', (socket) => {
     console.log(`💬 Message received [${sessionId}]: "${trimmedText.substring(0, 50)}${trimmedText.length > 50 ? '...' : ''}"`);
 
     // Always save user message to Appwrite
-    await saveMessageToAppwrite(sessionId, 'user', trimmedText);
+    console.log(`💾 Attempting to save user message to Appwrite...`);
+    const saveResult = await saveMessageToAppwrite(sessionId, 'user', trimmedText);
+    if (!saveResult) {
+      console.error(`❌ CRITICAL: Failed to save user message [${sessionId}] - saveMessageToAppwrite returned false`);
+      // Still continue with AI response even if save fails
+    } else {
+      console.log(`✅ User message saved successfully [${sessionId}]`);
+    }
 
     // Check if session has assigned agent or AI is paused
     // First check in-memory cache (fastest)
@@ -2090,12 +2383,21 @@ Always be polite, patient, and solution-oriented. If you cannot resolve an issue
 
 // Admin REST endpoints
 
-// GET /admin/sessions - List sessions with advanced filtering
+// GET /admin/sessions - List sessions with advanced filtering and pagination
 app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
   try {
+    // Validate pagination params
+    try {
+      validatePaginationParams(req);
+    } catch (validationErr) {
+      return res.status(400).json({ error: validationErr.message });
+    }
+    
+    // Parse pagination params
+    const { limit, offset } = parsePaginationParams(req, { defaultLimit: 20, maxLimit: 100 });
+    
     const { 
       status, 
-      limit = 50, 
       search, 
       agentId, 
       startDate, 
@@ -2104,7 +2406,7 @@ app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
     } = req.query;
     
     if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_SESSIONS_COLLECTION_ID) {
-      return res.json({ sessions: [], message: 'Appwrite not configured' });
+      return res.json({ items: [], total: 0, limit, offset, hasMore: false, message: 'Appwrite not configured' });
     }
     
     let queries = [];
@@ -2136,28 +2438,48 @@ app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
       }
     }
     
-    console.log(`📋 Fetching sessions with ${queries.length} query filter(s)`);
+    console.log(`📋 Fetching sessions with ${queries.length} query filter(s), limit=${limit}, offset=${offset}`);
+    
+    // Add ordering: newest first (createdAt desc)
+    // NOTE: For production, add index on createdAt (desc) in Appwrite Console for better performance
+    // Index configuration: Attribute: $createdAt, Type: key, Order: desc
+    if (Query && queries.length > 0) {
+      queries.push(Query.orderDesc('$createdAt'));
+    } else if (Query) {
+      queries = [Query.orderDesc('$createdAt')];
+    }
     
     let result;
+    let totalCount = 0;
     try {
+      // First, get total count (for pagination metadata)
+      // Appwrite listDocuments returns total in the response
       result = await awDatabases.listDocuments(
         APPWRITE_DATABASE_ID,
         APPWRITE_SESSIONS_COLLECTION_ID,
         queries.length > 0 ? queries : undefined,
-        parseInt(limit) * 10 // Fetch more for client-side filtering
+        limit,
+        offset
       );
-      console.log(`✅ Backend returned ${result.total} total session(s), ${result.documents.length} in this page`);
+      totalCount = result.total;
+      console.log(`✅ Backend returned ${result.total} total session(s), ${result.documents.length} in this page (offset=${offset})`);
     } catch (queryErr) {
       console.error(`❌ Query error:`, queryErr?.message || queryErr);
       // If query fails, try fetching all and filtering client-side
       console.log(`⚠️  Falling back to fetch-all-then-filter approach`);
-      result = await awDatabases.listDocuments(
-        APPWRITE_DATABASE_ID,
-        APPWRITE_SESSIONS_COLLECTION_ID,
-        undefined,
-        parseInt(limit) * 10 // Fetch more to ensure we get filtered results
-      );
-      console.log(`✅ Fetched ${result.total} session(s) for client-side filtering`);
+      try {
+        result = await awDatabases.listDocuments(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_SESSIONS_COLLECTION_ID,
+          undefined,
+          10000 // Large limit to get all for filtering
+        );
+        totalCount = result.total;
+        console.log(`✅ Fetched ${result.total} session(s) for client-side filtering`);
+      } catch (fallbackErr) {
+        console.error(`❌ Fallback also failed:`, fallbackErr?.message || fallbackErr);
+        return res.json({ items: [], total: 0, limit, offset, hasMore: false, error: 'Failed to fetch sessions' });
+      }
     }
     
     // Transform sessions to extract assignedAgent from userMeta if needed
@@ -2285,41 +2607,94 @@ app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
       console.log(`🔍 Backend client-side filter: ${beforeFilter} → ${transformedSessions.length} sessions with status="${status}"`);
     }
     
-    // Limit results
-    transformedSessions = transformedSessions.slice(0, parseInt(limit));
+    // Apply pagination to filtered results (if we did client-side filtering)
+    // If we used server-side pagination, result.documents already has the right slice
+    let paginatedSessions;
+    if (result.documents.length === transformedSessions.length && offset === 0) {
+      // Server-side pagination worked, use as-is
+      paginatedSessions = transformedSessions;
+      totalCount = result.total; // Use server total
+    } else {
+      // Client-side filtering happened, apply pagination manually
+      totalCount = transformedSessions.length;
+      paginatedSessions = transformedSessions.slice(offset, offset + limit);
+    }
     
-    console.log(`📤 Sending ${transformedSessions.length} session(s) to frontend`);
-    res.json({ sessions: transformedSessions });
+    const paginationMeta = calculatePaginationMeta(totalCount, limit, offset);
+    
+    console.log(`📤 Sending ${paginatedSessions.length} session(s) to frontend (page ${paginationMeta.currentPage} of ${paginationMeta.totalPages})`);
+    res.json({
+      items: paginatedSessions,
+      total: totalCount,
+      limit,
+      offset,
+      hasMore: paginationMeta.hasMore,
+      currentPage: paginationMeta.currentPage,
+      totalPages: paginationMeta.totalPages
+    });
   } catch (err) {
     console.error('Error listing sessions:', err);
     res.status(500).json({ error: err?.message || 'Failed to list sessions' });
   }
 });
 
-// GET /admin/sessions/:sessionId/messages - List messages for a session
+// GET /admin/sessions/:sessionId/messages - List messages for a session with pagination
 app.get('/admin/sessions/:sessionId/messages', requireAdminAuth, async (req, res) => {
   try {
     const { sessionId } = req.params;
+    const { order = 'asc' } = req.query; // 'asc' (oldest first) or 'desc' (newest first)
     
-    if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_MESSAGES_COLLECTION_ID) {
-      return res.json({ messages: [], message: 'Appwrite not configured' });
+    // Parse pagination params (default: load all for backward compatibility)
+    // If no limit specified, load all messages (backward compatible)
+    let limit = parseInt(req.query.limit, 10);
+    let offset = parseInt(req.query.offset, 10) || 0;
+    
+    if (isNaN(limit) || limit <= 0) {
+      // No limit = load all (backward compatible)
+      limit = 10000;
+    } else if (limit > 1000) {
+      limit = 1000; // Max limit for messages
     }
     
-    console.log(`📨 Fetching messages for session: ${sessionId}`);
+    if (isNaN(offset) || offset < 0) {
+      offset = 0;
+    }
+    
+    if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_MESSAGES_COLLECTION_ID) {
+      return res.json({ items: [], total: 0, limit, offset, hasMore: false, message: 'Appwrite not configured' });
+    }
+    
+    console.log(`📨 Fetching messages for session: ${sessionId}, limit=${limit}, offset=${offset}, order=${order}`);
     
     let result;
+    const messageQueries = [];
+    
+    // Add sessionId filter
+    if (Query) {
+      messageQueries.push(Query.equal('sessionId', sessionId));
+      
+      // Add ordering
+      // NOTE: For production, add index on sessionId + createdAt for better performance
+      // Index configuration: Attributes: sessionId (string), createdAt (datetime), Order: asc
+      if (order === 'desc') {
+        messageQueries.push(Query.orderDesc('createdAt'));
+      } else {
+        messageQueries.push(Query.orderAsc('createdAt'));
+      }
+    }
     
     // Try Query class first if available
-    if (Query) {
+    if (Query && messageQueries.length > 0) {
       try {
-        console.log(`🔍 Using Query class for messages query`);
+        console.log(`🔍 Using Query class for messages query with pagination`);
         result = await awDatabases.listDocuments(
           APPWRITE_DATABASE_ID,
           APPWRITE_MESSAGES_COLLECTION_ID,
-          [Query.equal('sessionId', sessionId)],
-          1000
+          messageQueries,
+          limit,
+          offset
         );
-        console.log(`✅ Found ${result.total} message(s) for session ${sessionId} using Query class`);
+        console.log(`✅ Found ${result.total} total message(s) for session ${sessionId}, ${result.documents.length} in this page`);
       } catch (queryErr) {
         console.error(`❌ Query class failed:`, queryErr?.message || queryErr);
         // Fall through to fallback
@@ -2339,11 +2714,23 @@ app.get('/admin/sessions/:sessionId/messages', requireAdminAuth, async (req, res
         
         // Filter client-side by sessionId
         const filteredDocs = allResult.documents.filter(doc => doc.sessionId === sessionId);
+        
+        // Sort
+        filteredDocs.sort((a, b) => {
+          const timeA = new Date(a.createdAt || a.$createdAt || 0).getTime();
+          const timeB = new Date(b.createdAt || b.$createdAt || 0).getTime();
+          return order === 'desc' ? timeB - timeA : timeA - timeB;
+        });
+        
+        // Apply pagination
+        const total = filteredDocs.length;
+        const paginated = filteredDocs.slice(offset, offset + limit);
+        
         result = {
-          documents: filteredDocs,
-          total: filteredDocs.length
+          documents: paginated,
+          total: total
         };
-        console.log(`✅ Found ${result.total} message(s) for session ${sessionId} using client-side filtering (from ${allResult.total} total messages)`);
+        console.log(`✅ Found ${result.total} message(s) for session ${sessionId} using client-side filtering and pagination`);
       } catch (fallbackErr) {
         console.error(`❌ Failed to fetch messages:`, fallbackErr?.message || fallbackErr);
         console.error(`   Error code:`, fallbackErr?.code);
@@ -2352,21 +2739,73 @@ app.get('/admin/sessions/:sessionId/messages', requireAdminAuth, async (req, res
       }
     }
     
-    // Sort by createdAt ascending (oldest first) - includes all sender types: user, bot, agent
-    const sortedMessages = result.documents.sort((a, b) => {
-      const timeA = new Date(a.createdAt || a.$createdAt || 0).getTime();
-      const timeB = new Date(b.createdAt || b.$createdAt || 0).getTime();
-      return timeA - timeB;
+    // Sort by createdAt (if not already sorted by query)
+    let sortedMessages = result.documents;
+    if (!Query || messageQueries.length === 0) {
+      sortedMessages = result.documents.sort((a, b) => {
+        const timeA = new Date(a.createdAt || a.$createdAt || 0).getTime();
+        const timeB = new Date(b.createdAt || b.$createdAt || 0).getTime();
+        return order === 'desc' ? timeB - timeA : timeA - timeB;
+      });
+    }
+    
+    // Decrypt messages if encrypted
+    const decryptedMessages = sortedMessages.map(msg => {
+      const decrypted = { ...msg };
+      
+      // Decrypt text field
+      if (msg.encrypted && encryption) {
+        const decryptedText = decryptField(msg.encrypted);
+        if (decryptedText) {
+          decrypted.text = decryptedText;
+        }
+      } else if (!msg.text && msg.encrypted) {
+        decrypted.text = '[ENCRYPTED]';
+      }
+      
+      // Decrypt metadata field
+      if (msg.encrypted_metadata && encryption) {
+        const decryptedMetadata = decryptField(msg.encrypted_metadata);
+        if (decryptedMetadata) {
+          try {
+            decrypted.metadata = JSON.parse(decryptedMetadata);
+          } catch {
+            decrypted.metadata = decryptedMetadata;
+          }
+        }
+      } else if (msg.metadata && typeof msg.metadata === 'string') {
+        try {
+          decrypted.metadata = JSON.parse(msg.metadata);
+        } catch {
+          decrypted.metadata = msg.metadata;
+        }
+      }
+      
+      return decrypted;
     });
     
     // Log message types for debugging
-    const messageTypes = sortedMessages.reduce((acc, msg) => {
+    const messageTypes = decryptedMessages.reduce((acc, msg) => {
       acc[msg.sender || 'unknown'] = (acc[msg.sender || 'unknown'] || 0) + 1;
       return acc;
     }, {});
     console.log(`📊 Message types:`, messageTypes);
     
-    res.json({ messages: sortedMessages });
+    // Calculate pagination metadata
+    const total = result.total || decryptedMessages.length;
+    const paginationMeta = calculatePaginationMeta(total, limit, offset);
+    
+    // Return paginated response (backward compatible: also include 'messages' key)
+    res.json({
+      items: decryptedMessages,
+      messages: decryptedMessages, // Backward compatibility
+      total,
+      limit,
+      offset,
+      hasMore: paginationMeta.hasMore,
+      currentPage: paginationMeta.currentPage,
+      totalPages: paginationMeta.totalPages
+    });
   } catch (err) {
     console.error('Error listing messages:', err);
     res.status(500).json({ error: err?.message || 'Failed to list messages' });
@@ -3581,17 +4020,33 @@ app.get('/me', requireAuth, async (req, res) => {
 // GET /admin/users - List all users (super_admin only)
 app.get('/admin/users', requireAuth, requireRole(['super_admin']), async (req, res) => {
   try {
-    if (!awDatabases || !APPWRITE_DATABASE_ID) {
-      return res.status(503).json({ error: 'Appwrite not configured' });
+    // Validate pagination params
+    try {
+      validatePaginationParams(req);
+    } catch (validationErr) {
+      return res.status(400).json({ error: validationErr.message });
     }
     
-    const limit = parseInt(req.query.limit) || 50;
-    const offset = parseInt(req.query.offset) || 0;
+    // Parse pagination params
+    const { limit, offset } = parsePaginationParams(req, { defaultLimit: 20, maxLimit: 100 });
+    
+    if (!awDatabases || !APPWRITE_DATABASE_ID) {
+      return res.json({ items: [], total: 0, limit, offset, hasMore: false, error: 'Appwrite not configured' });
+    }
+    
+    // NOTE: For production, add index on email for better performance
+    // Index configuration: Attribute: email, Type: key
+    const queries = [];
+    if (Query) {
+      queries.push(Query.orderDesc('$createdAt')); // Newest first
+    }
+    
+    console.log(`📋 Fetching users: limit=${limit}, offset=${offset}`);
     
     const result = await awDatabases.listDocuments(
       APPWRITE_DATABASE_ID,
       APPWRITE_USERS_COLLECTION_ID,
-      [],
+      queries.length > 0 ? queries : undefined,
       limit,
       offset
     );
@@ -3605,11 +4060,19 @@ app.get('/admin/users', requireAuth, requireRole(['super_admin']), async (req, r
       updatedAt: doc.updatedAt || doc.$updatedAt
     }));
     
+    const paginationMeta = calculatePaginationMeta(result.total, limit, offset);
+    
+    console.log(`✅ Found ${result.total} total user(s), ${users.length} in this page`);
+    
     res.json({
-      users,
+      items: users,
+      users, // Backward compatibility
       total: result.total,
       limit,
-      offset
+      offset,
+      hasMore: paginationMeta.hasMore,
+      currentPage: paginationMeta.currentPage,
+      totalPages: paginationMeta.totalPages
     });
   } catch (err) {
     console.error('Error listing users:', err);
@@ -3811,14 +4274,24 @@ app.get('/admin/accuracy/:accuracyId', requireAuth, requireRole(['admin', 'super
   }
 });
 
-// GET /admin/accuracy - List accuracy records with filtering
+// GET /admin/accuracy - List accuracy records with filtering and pagination
 app.get('/admin/accuracy', requireAuth, requireRole(['admin', 'super_admin']), async (req, res) => {
   try {
-    if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_AI_ACCURACY_COLLECTION_ID) {
-      return res.status(503).json({ error: 'Appwrite not configured' });
+    // Validate pagination params
+    try {
+      validatePaginationParams(req);
+    } catch (validationErr) {
+      return res.status(400).json({ error: validationErr.message });
     }
     
-    const { sessionId, from, to, mark, limit = 50, offset = 0 } = req.query;
+    // Parse pagination params
+    const { limit, offset } = parsePaginationParams(req, { defaultLimit: 20, maxLimit: 100 });
+    
+    if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_AI_ACCURACY_COLLECTION_ID) {
+      return res.json({ items: [], total: 0, limit, offset, hasMore: false, error: 'Appwrite not configured' });
+    }
+    
+    const { sessionId, from, to, mark, sortBy = 'createdAt', order = 'desc' } = req.query;
     const queries = [];
     
     if (sessionId) {
@@ -3835,21 +4308,43 @@ app.get('/admin/accuracy', requireAuth, requireRole(['admin', 'super_admin']), a
       queries.push(Query.equal('humanMark', mark));
     }
     
-    queries.push(Query.orderDesc('createdAt'));
-    queries.push(Query.limit(parseInt(limit, 10)));
-    queries.push(Query.offset(parseInt(offset, 10)));
+    // Add ordering
+    // NOTE: For production, add indexes on createdAt, sessionId, humanMark for better performance
+    // Index configuration:
+    //   - Attribute: createdAt, Type: key, Order: desc
+    //   - Attribute: sessionId, Type: key
+    //   - Attribute: humanMark, Type: key
+    if (sortBy === 'createdAt') {
+      if (order === 'desc') {
+        queries.push(Query.orderDesc('createdAt'));
+      } else {
+        queries.push(Query.orderAsc('createdAt'));
+      }
+    }
+    
+    console.log(`📋 Fetching accuracy records: limit=${limit}, offset=${offset}, filters: sessionId=${sessionId || 'none'}, from=${from || 'none'}, to=${to || 'none'}, mark=${mark || 'none'}`);
     
     const result = await awDatabases.listDocuments(
       APPWRITE_DATABASE_ID,
       APPWRITE_AI_ACCURACY_COLLECTION_ID,
-      queries
+      queries,
+      limit,
+      offset
     );
     
+    const paginationMeta = calculatePaginationMeta(result.total, limit, offset);
+    
+    console.log(`✅ Found ${result.total} total accuracy record(s), ${result.documents.length} in this page`);
+    
     res.json({
-      records: result.documents,
+      items: result.documents,
+      records: result.documents, // Backward compatibility
       total: result.total,
-      limit: parseInt(limit, 10),
-      offset: parseInt(offset, 10)
+      limit,
+      offset,
+      hasMore: paginationMeta.hasMore,
+      currentPage: paginationMeta.currentPage,
+      totalPages: paginationMeta.totalPages
     });
   } catch (err) {
     console.error('Error listing accuracy records:', err);
@@ -4223,8 +4718,219 @@ app.post('/admin/accuracy/cleanup', requireAuth, requireRole(['super_admin']), a
 // END OF ACCURACY LOGGING ENDPOINTS
 // ============================================================================
 
+// ============================================================================
+// ENCRYPTION MANAGEMENT ENDPOINTS (super_admin only)
+// ============================================================================
+
+const APPWRITE_ENCRYPTION_AUDIT_COLLECTION_ID = 'encryption_audit';
+
+// Helper: Log encryption action to audit collection
+async function logEncryptionAction(action, adminId, stats = {}) {
+  if (!awDatabases || !APPWRITE_DATABASE_ID) {
+    return;
+  }
+  
+  try {
+    await awDatabases.createDocument(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_ENCRYPTION_AUDIT_COLLECTION_ID,
+      'unique()',
+      {
+        action,
+        adminId: adminId || 'system',
+        stats: typeof stats === 'object' ? JSON.stringify(stats) : stats,
+        ts: new Date().toISOString()
+      }
+    );
+  } catch (err) {
+    // Ignore errors (collection might not exist)
+    console.warn('Failed to log encryption action:', err.message);
+  }
+}
+
+// GET /admin/encryption/status - Get encryption status
+app.get('/admin/encryption/status', requireAuth, requireRole(['super_admin']), async (req, res) => {
+  try {
+    const status = {
+      encryptionEnabled: ENCRYPTION_ENABLED,
+      masterKeyPresent: !!MASTER_KEY_BASE64,
+      redactPII: REDACT_PII,
+      collections: {}
+    };
+    
+    if (!awDatabases || !APPWRITE_DATABASE_ID) {
+      return res.json({ ...status, message: 'Appwrite not configured' });
+    }
+    
+    // Sample scan to count encrypted vs plaintext docs
+    const collections = [
+      { id: APPWRITE_MESSAGES_COLLECTION_ID, name: 'messages', field: 'encrypted' },
+      { id: APPWRITE_SESSIONS_COLLECTION_ID, name: 'sessions', field: 'encrypted_userMeta' },
+      { id: APPWRITE_USERS_COLLECTION_ID, name: 'users', field: 'encrypted_notes' },
+      { id: APPWRITE_AI_ACCURACY_COLLECTION_ID, name: 'ai_accuracy', field: 'encrypted_aiText' }
+    ];
+    
+    for (const coll of collections) {
+      if (!coll.id) continue;
+      
+      try {
+        const sample = await awDatabases.listDocuments(
+          APPWRITE_DATABASE_ID,
+          coll.id,
+          [],
+          100
+        );
+        
+        let encryptedCount = 0;
+        let plaintextCount = 0;
+        
+        sample.documents.forEach(doc => {
+          if (doc[coll.field] && encryption && encryption.isEncrypted(doc[coll.field])) {
+            encryptedCount++;
+          } else if (doc[coll.field] || doc.text || doc.userMeta || doc.sensitiveNotes || doc.aiText) {
+            plaintextCount++;
+          }
+        });
+        
+        status.collections[coll.name] = {
+          encrypted: encryptedCount,
+          plaintext: plaintextCount,
+          total: sample.total
+        };
+      } catch (err) {
+        status.collections[coll.name] = { error: err.message };
+      }
+    }
+    
+    await logEncryptionAction('status_check', req.user?.userId || 'unknown', status);
+    res.json(status);
+  } catch (err) {
+    console.error('Error getting encryption status:', err);
+    res.status(500).json({ error: err?.message || 'Failed to get status' });
+  }
+});
+
+// POST /admin/encryption/reencrypt - Trigger key rotation (synchronous for small sets)
+app.post('/admin/encryption/reencrypt', requireAuth, requireRole(['super_admin']), async (req, res) => {
+  try {
+    const { newMasterKeyBase64 } = req.body;
+    
+    if (!newMasterKeyBase64) {
+      return res.status(400).json({ error: 'newMasterKeyBase64 required in request body' });
+    }
+    
+    // Validate key length
+    const keyBuffer = Buffer.from(newMasterKeyBase64, 'base64');
+    if (keyBuffer.length !== 32) {
+      return res.status(400).json({ error: 'newMasterKeyBase64 must decode to 32 bytes' });
+    }
+    
+    // For large datasets, return 202 and suggest using migration script
+    res.status(202).json({
+      message: 'Key rotation should be performed using migration script: node migrations/rotate_master_key.js',
+      jobId: `rotation_${Date.now()}`,
+      instructions: [
+        '1. Set NEW_MASTER_KEY_BASE64 environment variable',
+        '2. Run: node migrations/rotate_master_key.js --preview (to preview)',
+        '3. Run: node migrations/rotate_master_key.js (to execute)',
+        '4. Update MASTER_KEY_BASE64 in environment after rotation'
+      ]
+    });
+    
+    await logEncryptionAction('reencrypt_requested', req.user?.userId || 'unknown', { newKeySet: true });
+  } catch (err) {
+    console.error('Error requesting reencrypt:', err);
+    res.status(500).json({ error: err?.message || 'Failed to request reencrypt' });
+  }
+});
+
+// POST /admin/encryption/cleanup-plaintext - Remove plaintext backup fields
+app.post('/admin/encryption/cleanup-plaintext', requireAuth, requireRole(['super_admin']), async (req, res) => {
+  try {
+    if (!awDatabases || !APPWRITE_DATABASE_ID) {
+      return res.status(503).json({ error: 'Appwrite not configured' });
+    }
+    
+    const { collection, confirm } = req.body;
+    
+    if (confirm !== 'yes') {
+      return res.status(400).json({ 
+        error: 'Must confirm with { "confirm": "yes" } to remove plaintext backups' 
+      });
+    }
+    
+    // This is a dangerous operation - recommend using migration script
+    res.status(400).json({
+      error: 'Use migration script for cleanup',
+      instructions: [
+        'Run migration script to encrypt existing data first',
+        'Then manually remove text_plain_removed_at fields via Appwrite Console',
+        'Or create a custom cleanup script'
+      ]
+    });
+    
+    await logEncryptionAction('cleanup_requested', req.user?.userId || 'unknown', { collection });
+  } catch (err) {
+    console.error('Error requesting cleanup:', err);
+    res.status(500).json({ error: err?.message || 'Failed to request cleanup' });
+  }
+});
+
+// GET /admin/encryption/audit - Get encryption audit log
+app.get('/admin/encryption/audit', requireAuth, requireRole(['super_admin']), async (req, res) => {
+  try {
+    if (!awDatabases || !APPWRITE_DATABASE_ID) {
+      return res.json({ logs: [], message: 'Appwrite not configured' });
+    }
+    
+    const limit = parseInt(req.query.limit) || 50;
+    
+    try {
+      const result = await awDatabases.listDocuments(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_ENCRYPTION_AUDIT_COLLECTION_ID,
+        [],
+        limit
+      );
+      
+      res.json({ logs: result.documents });
+    } catch (err) {
+      // Collection might not exist
+      res.json({ logs: [], message: 'Audit collection not found' });
+    }
+  } catch (err) {
+    console.error('Error getting encryption audit:', err);
+    res.status(500).json({ error: err?.message || 'Failed to get audit log' });
+  }
+});
+
+// ============================================================================
+// END OF ENCRYPTION MANAGEMENT ENDPOINTS
+// ============================================================================
+
 const PORT = process.env.PORT || 4000;
+const FORCE_TLS = process.env.FORCE_TLS === 'true';
+
 server.listen(PORT, () => {
   console.log(`🚀 Socket.IO API server listening on port ${PORT}`);
-  console.log(`📋 Environment: Gemini=${geminiClient ? '✅' : '❌'}, Appwrite=${awDatabases ? '✅' : '❌'}`);
+  console.log(`📋 Environment: Gemini=${geminiClient ? '✅' : '❌'}, Appwrite=${awDatabases ? '✅' : '❌'}, Encryption=${ENCRYPTION_ENABLED ? '✅' : '❌'}`);
+  
+  // TLS check
+  if (FORCE_TLS) {
+    console.log('🔒 TLS enforcement enabled (FORCE_TLS=true)');
+    console.log('   ⚠️  Ensure server is behind TLS proxy (nginx, cloudflare, etc.)');
+  } else {
+    console.warn('⚠️  TLS not enforced (set FORCE_TLS=true in production)');
+    console.warn('   In production, use HTTPS/WSS and set FORCE_TLS=true');
+  }
+  
+  // Security recommendations
+  if (!ENCRYPTION_ENABLED) {
+    console.warn('⚠️  Encryption disabled - sensitive data stored in plaintext');
+    console.warn('   Set MASTER_KEY_BASE64 to enable encryption');
+  }
+  
+  if (MASTER_KEY_BASE64 && !process.env.NODE_ENV?.includes('prod')) {
+    console.warn('⚠️  PRODUCTION: Use KMS (AWS KMS/GCP KMS/HashiCorp Vault) instead of plaintext MASTER_KEY_BASE64');
+  }
 });
