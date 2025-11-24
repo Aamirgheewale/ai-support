@@ -104,6 +104,7 @@ if (APPWRITE_ENDPOINT && APPWRITE_PROJECT_ID && APPWRITE_API_KEY) {
     console.log(`   Database ID: ${APPWRITE_DATABASE_ID ? '✅ Set' : '❌ Missing'}`);
     console.log(`   Sessions Collection: ${APPWRITE_SESSIONS_COLLECTION_ID ? '✅ Set' : '❌ Missing'}`);
     console.log(`   Messages Collection: ${APPWRITE_MESSAGES_COLLECTION_ID ? '✅ Set' : '❌ Missing'}`);
+    console.log(`   Ai Accuracy: ${APPWRITE_AI_ACCURACY_COLLECTION_ID ? '✅ Set' : '❌ Missing'}`);
     
     if (!APPWRITE_DATABASE_ID || !APPWRITE_MESSAGES_COLLECTION_ID) {
       console.warn('⚠️  Messages will NOT be saved until APPWRITE_DATABASE_ID and APPWRITE_MESSAGES_COLLECTION_ID are set');
@@ -1387,31 +1388,35 @@ async function saveAccuracyRecord(sessionId, messageId, aiText, confidence, late
     return null;
   }
   
+  // Prepare data outside try block so it's accessible in catch block for retry
+  let truncatedText = aiText || '';
+  if (truncatedText.length > 10000) {
+    truncatedText = truncatedText.substring(0, 10000) + '...[truncated]';
+  }
+  truncatedText = redactPII(truncatedText);
+  
+  const metadataStr = typeof metadata === 'object' ? JSON.stringify(metadata) : metadata;
+  
   try {
-    // Truncate aiText if needed (max 10000 chars)
-    let truncatedText = aiText || '';
-    if (truncatedText.length > 10000) {
-      truncatedText = truncatedText.substring(0, 10000) + '...[truncated]';
-    }
     
-    // Redact PII if enabled
-    truncatedText = redactPII(truncatedText);
-    
+    // Build accuracy document with only required fields first
+    // Optional fields (responseType, messageId) will be added only if collection supports them
     const accuracyDoc = {
       sessionId: sessionId,
       aiText: truncatedText,
       confidence: confidence !== undefined && confidence !== null ? confidence : null,
       tokens: tokens !== undefined && tokens !== null ? tokens : null,
       latencyMs: latencyMs !== undefined && latencyMs !== null ? latencyMs : null,
-      responseType: responseType || 'ai', // "ai" | "fallback" | "stub"
       humanMark: null, // Will be set via feedback endpoints
       evaluation: null, // Will be set via admin evaluation
       createdAt: new Date().toISOString(),
-      metadata: typeof metadata === 'object' ? JSON.stringify(metadata) : metadata
+      metadata: metadataStr
     };
     
-    // Only add messageId if it's provided and the collection supports it
-    // (messageId is optional - collection may not have this attribute)
+    // Only add optional fields if provided (collection may not have these attributes)
+    if (responseType) {
+      accuracyDoc.responseType = responseType; // "ai" | "fallback" | "stub"
+    }
     if (messageId) {
       accuracyDoc.messageId = messageId;
     }
@@ -1431,26 +1436,69 @@ async function saveAccuracyRecord(sessionId, messageId, aiText, confidence, late
       accuracyDoc
     );
     
-    console.log(`📊 Accuracy record saved: ${sessionId} (${responseType}, ${latencyMs}ms, conf: ${confidence})`);
+    console.log(`📊 Accuracy record saved: ${sessionId} (${responseType || 'ai'}, ${latencyMs}ms, conf: ${confidence})`);
     return result.$id;
   } catch (err) {
     // Gracefully handle errors - don't crash the app
-    console.warn(`⚠️  Failed to save accuracy record:`, err.message || err);
+    const errorMsg = err.message || String(err);
+    console.warn(`⚠️  Failed to save accuracy record:`, errorMsg);
     // Check if collection exists or has schema issues
     if (err.code === 404) {
       console.warn(`   💡 Run migration: node migrate_create_ai_accuracy_collection.js`);
-    } else if (err.code === 400 && (err.message?.includes('Unknown attribute') || err.message?.includes('messageId'))) {
-      console.warn(`   💡 Collection doesn't have 'messageId' attribute - retrying without it`);
-      // Retry without messageId
+    } else if (err.code === 400 && errorMsg.includes('Unknown attribute')) {
+      // Extract the attribute name from error message (try multiple formats)
+      let unknownAttr = errorMsg.match(/Unknown attribute: "([^"]+)"/)?.[1] ||
+                       errorMsg.match(/Unknown attribute: '([^']+)'/)?.[1] ||
+                       errorMsg.match(/Unknown attribute: (\w+)/)?.[1];
+      
+      if (!unknownAttr) {
+        // Fallback: check which optional fields we tried to add
+        if (responseType && errorMsg.includes('responseType')) unknownAttr = 'responseType';
+        else if (messageId && errorMsg.includes('messageId')) unknownAttr = 'messageId';
+      }
+      
+      if (unknownAttr) {
+        console.warn(`   💡 Collection doesn't have '${unknownAttr}' attribute - retrying without it`);
+      } else {
+        console.warn(`   💡 Unknown attribute error detected - retrying with minimal fields only`);
+      }
+      
+      // Retry without the unknown attribute
       try {
-        const retryDoc = { ...accuracyDoc };
-        delete retryDoc.messageId;
-        // Remove nulls again
+        // Rebuild document from scratch without the problematic field
+        const retryDoc = {
+          sessionId: sessionId,
+          aiText: truncatedText,
+          confidence: confidence !== undefined && confidence !== null ? confidence : null,
+          tokens: tokens !== undefined && tokens !== null ? tokens : null,
+          latencyMs: latencyMs !== undefined && latencyMs !== null ? latencyMs : null,
+          humanMark: null,
+          evaluation: null,
+          createdAt: new Date().toISOString(),
+          metadata: metadataStr
+        };
+        
+        // Only add optional fields if they're not the problematic one
+        if (unknownAttr) {
+          // Explicitly exclude the problematic attribute
+          if (responseType && unknownAttr !== 'responseType') {
+            retryDoc.responseType = responseType;
+          }
+          if (messageId && unknownAttr !== 'messageId') {
+            retryDoc.messageId = messageId;
+          }
+        } else {
+          // If we couldn't identify the attribute, don't add any optional fields
+          // (safest approach - only use required fields)
+        }
+        
+        // Remove nulls
         Object.keys(retryDoc).forEach(key => {
           if (retryDoc[key] === null || retryDoc[key] === undefined) {
             delete retryDoc[key];
           }
         });
+        
         const { ID } = require('node-appwrite');
         const result = await awDatabases.createDocument(
           APPWRITE_DATABASE_ID,
@@ -1458,7 +1506,7 @@ async function saveAccuracyRecord(sessionId, messageId, aiText, confidence, late
           ID.unique(),
           retryDoc
         );
-        console.log(`📊 Accuracy record saved (without messageId): ${sessionId}`);
+        console.log(`📊 Accuracy record saved (without ${unknownAttr || 'optional fields'}): ${sessionId}`);
         return result.$id;
       } catch (retryErr) {
         console.warn(`   ⚠️  Retry also failed:`, retryErr.message);
@@ -3644,6 +3692,34 @@ app.get('/admin/metrics/agent-performance', requireAdminAuth, async (req, res) =
   
   try {
     const agentStats = new Map(); // agentId -> { sessionsHandled, messagesHandled, responseTimes, sessionStartTimes }
+    const sessionAgentMap = new Map(); // sessionId -> agentId (for fallback mapping)
+    
+    const resolveAgentIdFromMessage = (msg) => {
+      let agentId = null;
+      let metadataRaw = msg?.metadata || null;
+      
+      if ((!metadataRaw || metadataRaw === '[REDACTED]') && msg?.encrypted_metadata) {
+        const decrypted = decryptField(msg.encrypted_metadata);
+        if (decrypted && decrypted !== '[ENCRYPTED]' && decrypted !== '[DECRYPTION_FAILED]') {
+          metadataRaw = decrypted;
+        }
+      }
+      
+      if (metadataRaw) {
+        try {
+          const metadataObj = typeof metadataRaw === 'string' ? JSON.parse(metadataRaw) : metadataRaw;
+          agentId = metadataObj?.agentId || metadataObj?.agent_id || metadataObj?.agent || null;
+        } catch (e) {
+          // Ignore parse errors
+        }
+      }
+      
+      if (!agentId && msg?.sessionId) {
+        agentId = sessionAgentMap.get(msg.sessionId) || null;
+      }
+      
+      return agentId;
+    };
     
     // Process sessions
     for await (const session of streamAllSessions(start, end)) {
@@ -3668,19 +3744,14 @@ app.get('/admin/metrics/agent-performance', requireAdminAuth, async (req, res) =
         stats.sessionsHandled++;
         const sessionStart = new Date(session.startTime || session.$createdAt || Date.now());
         stats.sessionStartTimes.push(sessionStart);
+        sessionAgentMap.set(session.sessionId, assignedAgent);
       }
     }
     
     // Process messages for agents
     for await (const msg of streamAllMessages(start, end)) {
       if (msg.sender === 'agent') {
-        let agentId = null;
-        if (msg.metadata) {
-          try {
-            const metadata = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata;
-            agentId = metadata?.agentId;
-          } catch (e) {}
-        }
+        let agentId = resolveAgentIdFromMessage(msg);
         
         if (agentId) {
           if (!agentStats.has(agentId)) {
@@ -3705,7 +3776,9 @@ app.get('/admin/metrics/agent-performance', requireAdminAuth, async (req, res) =
       sessionMessages.get(msg.sessionId).push({
         sender: msg.sender,
         createdAt: new Date(msg.createdAt || msg.$createdAt || Date.now()),
-        metadata: msg.metadata
+        sessionId: msg.sessionId,
+        metadata: msg.metadata,
+        agentId: msg.sender === 'agent' ? resolveAgentIdFromMessage(msg) : null
       });
     }
     
@@ -3716,13 +3789,7 @@ app.get('/admin/metrics/agent-performance', requireAdminAuth, async (req, res) =
           // Find next agent message
           for (let j = i + 1; j < sorted.length; j++) {
             if (sorted[j].sender === 'agent') {
-              let agentId = null;
-              if (sorted[j].metadata) {
-                try {
-                  const metadata = typeof sorted[j].metadata === 'string' ? JSON.parse(sorted[j].metadata) : sorted[j].metadata;
-                  agentId = metadata?.agentId;
-                } catch (e) {}
-              }
+              let agentId = sorted[j].agentId || resolveAgentIdFromMessage(sorted[j]);
               if (agentId && agentStats.has(agentId)) {
                 const responseTime = sorted[j].createdAt - sorted[i].createdAt;
                 if (responseTime > 0 && responseTime < 300000) {
@@ -3751,17 +3818,7 @@ app.get('/admin/metrics/agent-performance', requireAdminAuth, async (req, res) =
         if (assignedAgent === agentId) {
           const sessionStart = new Date(session.startTime || session.$createdAt || Date.now());
           const sessionMsgs = sessionMessages.get(session.sessionId) || [];
-          const agentMsgs = sessionMsgs.filter(m => {
-            if (m.sender !== 'agent') return false;
-            let msgAgentId = null;
-            if (m.metadata) {
-              try {
-                const metadata = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : m.metadata;
-                msgAgentId = metadata?.agentId;
-              } catch (e) {}
-            }
-            return msgAgentId === agentId;
-          });
+          const agentMsgs = sessionMsgs.filter(m => m.sender === 'agent' && (m.agentId || resolveAgentIdFromMessage(m)) === agentId);
           
           if (agentMsgs.length > 0) {
             const lastAgentMsg = agentMsgs[agentMsgs.length - 1];
@@ -4250,30 +4307,6 @@ const accuracyStatsCache = new LRUCache({
   ttl: 60000 // 60 seconds
 });
 
-// GET /admin/accuracy/:accuracyId - Get single accuracy record
-app.get('/admin/accuracy/:accuracyId', requireAuth, requireRole(['admin', 'super_admin']), async (req, res) => {
-  try {
-    if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_AI_ACCURACY_COLLECTION_ID) {
-      return res.status(503).json({ error: 'Appwrite not configured' });
-    }
-    
-    const { accuracyId } = req.params;
-    const doc = await awDatabases.getDocument(
-      APPWRITE_DATABASE_ID,
-      APPWRITE_AI_ACCURACY_COLLECTION_ID,
-      accuracyId
-    );
-    
-    res.json(doc);
-  } catch (err) {
-    if (err.code === 404) {
-      return res.status(404).json({ error: 'Accuracy record not found' });
-    }
-    console.error('Error fetching accuracy record:', err);
-    res.status(500).json({ error: err?.message || 'Failed to fetch accuracy record' });
-  }
-});
-
 // GET /admin/accuracy - List accuracy records with filtering and pagination
 app.get('/admin/accuracy', requireAuth, requireRole(['admin', 'super_admin']), async (req, res) => {
   try {
@@ -4441,6 +4474,30 @@ app.get('/admin/accuracy/stats', requireAuth, requireRole(['admin', 'super_admin
   } catch (err) {
     console.error('Error computing accuracy stats:', err);
     res.status(500).json({ error: err?.message || 'Failed to compute stats' });
+  }
+});
+
+// GET /admin/accuracy/:accuracyId - Get single accuracy record
+app.get('/admin/accuracy/:accuracyId', requireAuth, requireRole(['admin', 'super_admin']), async (req, res) => {
+  try {
+    if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_AI_ACCURACY_COLLECTION_ID) {
+      return res.status(503).json({ error: 'Appwrite not configured' });
+    }
+    
+    const { accuracyId } = req.params;
+    const doc = await awDatabases.getDocument(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_AI_ACCURACY_COLLECTION_ID,
+      accuracyId
+    );
+    
+    res.json(doc);
+  } catch (err) {
+    if (err.code === 404) {
+      return res.status(404).json({ error: 'Accuracy record not found' });
+    }
+    console.error('Error fetching accuracy record:', err);
+    res.status(500).json({ error: err?.message || 'Failed to fetch accuracy record' });
   }
 });
 
