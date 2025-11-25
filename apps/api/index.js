@@ -1070,14 +1070,9 @@ async function logRoleChange(userId, changedBy, oldRoles, newRoles) {
 async function authorizeSocketToken(token) {
   // For dev: if token matches ADMIN_SHARED_SECRET, map to super_admin
   if (token === ADMIN_SHARED_SECRET) {
-    // Create or get dev super_admin user
-    const devUserId = 'dev-admin';
-    await ensureUserRecord(devUserId, { email: 'dev@admin.local', name: 'Dev Admin' });
-    const user = await getUserById(devUserId);
-    if (user && (!user.roles || user.roles.length === 0)) {
-      await setUserRoles(devUserId, ['super_admin']);
-    }
-    return { userId: devUserId, email: 'dev@admin.local' };
+    // In dev mode we no longer auto-create the dev-admin record in Appwrite.
+    // Instead return an in-memory super_admin user so the DB isn't mutated implicitly.
+    return { userId: 'dev-admin', email: 'dev@admin.local', roles: ['super_admin'] };
   }
   
   // TODO: For production, validate Appwrite session token here
@@ -1100,17 +1095,8 @@ async function requireAuth(req, res, next) {
   
   // For dev: map ADMIN_SHARED_SECRET to super_admin
   if (token === ADMIN_SHARED_SECRET) {
-    const devUserId = 'dev-admin';
-    // Try to ensure user record, but don't fail if collection doesn't exist
-    const userRecord = await ensureUserRecord(devUserId, { email: 'dev@admin.local', name: 'Dev Admin' });
-    if (userRecord) {
-      const user = await getUserById(devUserId);
-      if (user && (!user.roles || user.roles.length === 0)) {
-        await setUserRoles(devUserId, ['super_admin']);
-      }
-    }
-    // Always set req.user for dev mode, even if collection doesn't exist yet
-    req.user = { userId: devUserId, email: 'dev@admin.local', roles: ['super_admin'] };
+    // Dev mode: just set an in-memory super_admin user. Do not auto-create in Appwrite.
+    req.user = { userId: 'dev-admin', email: 'dev@admin.local', roles: ['super_admin'] };
     return next();
   }
   
