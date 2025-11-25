@@ -395,9 +395,10 @@ async function ensureUserRecord(userId, { email, name }) {
       
       // Try creating document - handle missing attributes gracefully
       try {
-        // Use userId as document ID so we can retrieve it later if we get a 409 conflict
-        // This allows us to get the document by ID even if indexes aren't synced
-        const docId = userId; // Use userId as document ID for easy retrieval
+        // First try with all fields including datetime
+        // Use ID.unique() to generate a unique document ID
+        // IMPORTANT: Always use ID.unique() to avoid document ID conflicts
+        const docId = ID.unique();
         const doc = await awDatabases.createDocument(
           APPWRITE_DATABASE_ID,
           APPWRITE_USERS_COLLECTION_ID,
@@ -440,50 +441,18 @@ async function ensureUserRecord(userId, { email, name }) {
       } catch (e) {
         // Check if it's a unique constraint violation (email or userId already exists)
         if (e.code === 409 || e.message?.includes('already exists') || e.message?.includes('unique')) {
-          console.log(`⚠️  Conflict detected during creation (409), user may already exist. Trying to retrieve by document ID...`);
+          console.log(`⚠️  Conflict detected during creation, performing comprehensive search...`);
           
-          // Since we use userId as document ID, we can try to get it directly by document ID
-          // This works even if indexes aren't synced
-          try {
-            const existingDoc = await awDatabases.getDocument(
-              APPWRITE_DATABASE_ID,
-              APPWRITE_USERS_COLLECTION_ID,
-              userId // userId is the document ID
-            );
-            if (existingDoc) {
-              console.log(`✅ Found existing user by document ID (userId): ${userId}`);
-              return existingDoc;
-            }
-          } catch (getErr) {
-            console.warn(`   ⚠️  Could not get document by ID ${userId}:`, getErr.message);
-          }
-          
-          // If direct get failed, try searching with delays
           // When we get a 409, the user likely WAS created but indexes haven't synced
+          // Try multiple times with increasing delays
           let foundUser = null;
-          const maxRetries = 3; // Reduced retries since we can get by ID
-          const delays = [1000, 2000, 3000]; // Progressive delays
+          const maxRetries = 5; // Increased retries
+          const delays = [500, 1000, 2000, 3000, 5000]; // Longer progressive delays
           
           for (let attempt = 0; attempt < maxRetries && !foundUser; attempt++) {
             if (attempt > 0) {
               console.log(`   Retry ${attempt}/${maxRetries - 1}: Waiting ${delays[attempt - 1]}ms for index sync...`);
               await new Promise(resolve => setTimeout(resolve, delays[attempt - 1]));
-            }
-            
-            // Try getting by document ID again (indexes might have synced)
-            try {
-              const existingDoc = await awDatabases.getDocument(
-                APPWRITE_DATABASE_ID,
-                APPWRITE_USERS_COLLECTION_ID,
-                userId
-              );
-              if (existingDoc) {
-                console.log(`✅ Found user by document ID after ${attempt + 1} attempt(s)`);
-                foundUser = existingDoc;
-                break;
-              }
-            } catch (getErr) {
-              // Ignore and try other methods
             }
             
             // Try all search methods
@@ -520,7 +489,7 @@ async function ensureUserRecord(userId, { email, name }) {
                   1000 // Get more documents
                 );
                 foundUser = allUsers.documents.find(doc => 
-                  (doc.email && doc.email === email) || (doc.userId && doc.userId === userId) || (doc.$id === userId)
+                  (doc.email && doc.email === email) || (doc.userId && doc.userId === userId)
                 );
                 if (foundUser) {
                   console.log(`✅ Found user via unfiltered list query after ${attempt + 1} attempt(s)`);
@@ -537,27 +506,80 @@ async function ensureUserRecord(userId, { email, name }) {
             return foundUser;
           }
           
-          // If still not found, try one final direct get by document ID
-          console.warn(`⚠️  User not found after ${maxRetries} attempts, trying final direct get by document ID...`);
+          // If still not found, the user exists (409 conflict confirms it) but indexes haven't synced
+          // Wait one final time (longer) and do one more comprehensive search
+          // DO NOT try to create again - 409 means user already exists
+          console.warn(`⚠️  User not found after ${maxRetries} attempts`);
+          console.warn(`   User exists (409 conflict confirmed) but indexes not synced. Waiting 5s for final sync...`);
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          
+          // Final comprehensive search - list ALL documents without any filters (no index dependency)
           try {
-            const finalDoc = await awDatabases.getDocument(
+            const finalSearch = await awDatabases.listDocuments(
               APPWRITE_DATABASE_ID,
               APPWRITE_USERS_COLLECTION_ID,
-              userId
+              [], // No queries = no index dependency
+              1000 // Get as many as possible
             );
-            if (finalDoc) {
-              console.log(`✅ Found user via final direct get by document ID`);
-              return finalDoc;
+            
+            const finalMatch = finalSearch.documents.find(doc => 
+              (doc.email && doc.email === email) || (doc.userId && doc.userId === userId)
+            );
+            
+            if (finalMatch) {
+              console.log(`✅ Found user after extended wait (5s) - indexes have synced`);
+              return finalMatch;
             }
           } catch (finalErr) {
-            console.warn(`   ⚠️  Final direct get failed:`, finalErr.message);
+            console.warn(`   ⚠️  Final search also failed:`, finalErr.message);
           }
           
-          // If we still can't find it, the 409 might be for a different reason
-          // Return null so caller can handle it
-          console.error(`❌ User with email "${email}" or userId "${userId}" not found after all attempts`);
-          console.error(`   The 409 conflict suggests the user exists, but it cannot be retrieved.`);
-          console.error(`   This may indicate: 1) Document ID mismatch, 2) User was deleted, or 3) Database inconsistency`);
+          // If still not found after extended wait, try one more time with even longer wait
+          // and paginate through ALL documents to find the user
+          console.warn(`⚠️  User confirmed to exist (409 conflict) but not queryable after extended wait`);
+          console.warn(`   Trying one final search with pagination through all documents...`);
+          await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 more seconds
+          
+          // Paginate through ALL documents to find the user
+          let allDocs = [];
+          let offset = 0;
+          const pageSize = 100;
+          let hasMore = true;
+          
+          while (hasMore && allDocs.length < 10000) { // Safety limit
+            try {
+              const page = await awDatabases.listDocuments(
+                APPWRITE_DATABASE_ID,
+                APPWRITE_USERS_COLLECTION_ID,
+                [],
+                pageSize,
+                offset
+              );
+              allDocs = allDocs.concat(page.documents);
+              hasMore = page.documents.length === pageSize;
+              offset += pageSize;
+              
+              // Check if we found the user in this page
+              const found = page.documents.find(doc => 
+                (doc.email && doc.email === email) || (doc.userId && doc.userId === userId)
+              );
+              if (found) {
+                console.log(`✅ Found user via paginated search after ${allDocs.length} documents scanned`);
+                return found;
+              }
+            } catch (pageErr) {
+              console.warn(`   ⚠️  Error paginating:`, pageErr.message);
+              break;
+            }
+          }
+          
+          // If we've scanned all documents and still can't find it, the user truly doesn't exist
+          // This means the 409 was a false positive or the user was deleted
+          // Return null so the caller knows the user doesn't exist
+          console.error(`❌ User with email "${email}" or userId "${userId}" not found after scanning ${allDocs.length} documents`);
+          console.error(`   The 409 conflict suggests the user exists, but it cannot be found in the database.`);
+          console.error(`   This may indicate: 1) Appwrite index sync issue, 2) User was deleted, or 3) Database inconsistency`);
+          console.error(`   Recommendation: Check Appwrite Console manually for this user`);
           return null;
         }
         
@@ -572,8 +594,9 @@ async function ensureUserRecord(userId, { email, name }) {
         // If datetime attributes don't exist, try without them
         if (e.message?.includes('createdAt') || e.message?.includes('updatedAt') || e.message?.includes('Unknown attribute')) {
           try {
-            // Use userId as document ID so we can retrieve it later if we get a 409 conflict
-            const docId = userId; // Use userId as document ID for easy retrieval
+            // Use ID.unique() to generate a unique document ID
+            // IMPORTANT: Always use ID.unique() to avoid document ID conflicts
+            const docId = ID.unique();
             const doc = await awDatabases.createDocument(
               APPWRITE_DATABASE_ID,
               APPWRITE_USERS_COLLECTION_ID,
@@ -734,8 +757,9 @@ async function ensureUserRecord(userId, { email, name }) {
       
       try {
         const { ID } = require('node-appwrite');
-        // Use userId as document ID so we can retrieve it later if we get a 409 conflict
-        const finalDocId = userId; // Use userId as document ID for easy retrieval
+        // Generate a completely unique document ID
+        // IMPORTANT: Always use ID.unique() - if this fails, it's likely a unique constraint on userId/email
+        const finalDocId = ID.unique();
         console.log(`🔄 Final creation attempt with document ID: ${finalDocId}, userId: ${userId}, email: ${email}`);
         const finalDoc = await awDatabases.createDocument(
           APPWRITE_DATABASE_ID,
