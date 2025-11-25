@@ -442,72 +442,144 @@ async function ensureUserRecord(userId, { email, name }) {
         // Check if it's a unique constraint violation (email or userId already exists)
         if (e.code === 409 || e.message?.includes('already exists') || e.message?.includes('unique')) {
           console.log(`⚠️  Conflict detected during creation, performing comprehensive search...`);
-          // Comprehensive search for existing user
+          
+          // When we get a 409, the user likely WAS created but indexes haven't synced
+          // Try multiple times with increasing delays
           let foundUser = null;
+          const maxRetries = 5; // Increased retries
+          const delays = [500, 1000, 2000, 3000, 5000]; // Longer progressive delays
           
-          // Try all search methods
-          try {
-            foundUser = await getUserByEmail(email);
-          } catch (err) {
-            // Ignore
-          }
-          
-          if (!foundUser) {
+          for (let attempt = 0; attempt < maxRetries && !foundUser; attempt++) {
+            if (attempt > 0) {
+              console.log(`   Retry ${attempt}/${maxRetries - 1}: Waiting ${delays[attempt - 1]}ms for index sync...`);
+              await new Promise(resolve => setTimeout(resolve, delays[attempt - 1]));
+            }
+            
+            // Try all search methods
             try {
-              foundUser = await getUserById(userId);
+              foundUser = await getUserByEmail(email);
+              if (foundUser) {
+                console.log(`✅ Found user by email after ${attempt + 1} attempt(s)`);
+                break;
+              }
             } catch (err) {
               // Ignore
             }
-          }
-          
-          // Last resort: list all and filter
-          if (!foundUser) {
-            try {
-              const allUsers = await awDatabases.listDocuments(
-                APPWRITE_DATABASE_ID,
-                APPWRITE_USERS_COLLECTION_ID,
-                [],
-                100
-              );
-              foundUser = allUsers.documents.find(doc => 
-                (doc.email && doc.email === email) || (doc.userId && doc.userId === userId)
-              );
-            } catch (listErr) {
-              // Ignore
+            
+            if (!foundUser) {
+              try {
+                foundUser = await getUserById(userId);
+                if (foundUser) {
+                  console.log(`✅ Found user by userId after ${attempt + 1} attempt(s)`);
+                  break;
+                }
+              } catch (err) {
+                // Ignore
+              }
+            }
+            
+            // Always try listing all documents (no filters = no index dependency)
+            if (!foundUser) {
+              try {
+                // List without any queries - this should work even if indexes aren't synced
+                const allUsers = await awDatabases.listDocuments(
+                  APPWRITE_DATABASE_ID,
+                  APPWRITE_USERS_COLLECTION_ID,
+                  [], // No queries = no index dependency
+                  1000 // Get more documents
+                );
+                foundUser = allUsers.documents.find(doc => 
+                  (doc.email && doc.email === email) || (doc.userId && doc.userId === userId)
+                );
+                if (foundUser) {
+                  console.log(`✅ Found user via unfiltered list query after ${attempt + 1} attempt(s)`);
+                  break;
+                }
+              } catch (listErr) {
+                console.warn(`   ⚠️  List query failed on attempt ${attempt + 1}:`, listErr.message);
+              }
             }
           }
           
           if (foundUser) {
-            console.log(`✅ User already exists (found via conflict check), returning existing record`);
+            console.log(`✅ User found after conflict resolution, returning existing record`);
             return foundUser;
           }
           
-          // If still not found, wait longer and try one more comprehensive list check
-          console.warn(`⚠️  User not found after conflict, waiting for index sync...`);
-          await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second for index sync
+          // If still not found, the user exists (409 conflict confirms it) but indexes haven't synced
+          // Wait one final time (longer) and do one more comprehensive search
+          // DO NOT try to create again - 409 means user already exists
+          console.warn(`⚠️  User not found after ${maxRetries} attempts`);
+          console.warn(`   User exists (409 conflict confirmed) but indexes not synced. Waiting 5s for final sync...`);
+          await new Promise(resolve => setTimeout(resolve, 5000));
           
+          // Final comprehensive search - list ALL documents without any filters (no index dependency)
           try {
-            const finalListCheck = await awDatabases.listDocuments(
+            const finalSearch = await awDatabases.listDocuments(
               APPWRITE_DATABASE_ID,
               APPWRITE_USERS_COLLECTION_ID,
-              [],
-              100
+              [], // No queries = no index dependency
+              1000 // Get as many as possible
             );
-            const finalMatch = finalListCheck.documents.find(doc => 
+            
+            const finalMatch = finalSearch.documents.find(doc => 
               (doc.email && doc.email === email) || (doc.userId && doc.userId === userId)
             );
+            
             if (finalMatch) {
-              console.log(`✅ Found user after extended wait (index sync delay)`);
+              console.log(`✅ Found user after extended wait (5s) - indexes have synced`);
               return finalMatch;
             }
-          } catch (finalListErr) {
-            // Ignore
+          } catch (finalErr) {
+            console.warn(`   ⚠️  Final search also failed:`, finalErr.message);
           }
           
-          // If still not found, this is a real conflict - log and return null
-          console.error(`❌ Unique constraint violation: User with email "${email}" or userId "${userId}" may already exist but cannot be found`);
-          console.error(`   This might indicate a database synchronization issue.`);
-          console.error(`   Recommendation: Check Appwrite Console manually for users with this email or userId`);
+          // If still not found after extended wait, try one more time with even longer wait
+          // and paginate through ALL documents to find the user
+          console.warn(`⚠️  User confirmed to exist (409 conflict) but not queryable after extended wait`);
+          console.warn(`   Trying one final search with pagination through all documents...`);
+          await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 more seconds
+          
+          // Paginate through ALL documents to find the user
+          let allDocs = [];
+          let offset = 0;
+          const pageSize = 100;
+          let hasMore = true;
+          
+          while (hasMore && allDocs.length < 10000) { // Safety limit
+            try {
+              const page = await awDatabases.listDocuments(
+                APPWRITE_DATABASE_ID,
+                APPWRITE_USERS_COLLECTION_ID,
+                [],
+                pageSize,
+                offset
+              );
+              allDocs = allDocs.concat(page.documents);
+              hasMore = page.documents.length === pageSize;
+              offset += pageSize;
+              
+              // Check if we found the user in this page
+              const found = page.documents.find(doc => 
+                (doc.email && doc.email === email) || (doc.userId && doc.userId === userId)
+              );
+              if (found) {
+                console.log(`✅ Found user via paginated search after ${allDocs.length} documents scanned`);
+                return found;
+              }
+            } catch (pageErr) {
+              console.warn(`   ⚠️  Error paginating:`, pageErr.message);
+              break;
+            }
+          }
+          
+          // If we've scanned all documents and still can't find it, the user truly doesn't exist
+          // This means the 409 was a false positive or the user was deleted
+          // Return null so the caller knows the user doesn't exist
+          console.error(`❌ User with email "${email}" or userId "${userId}" not found after scanning ${allDocs.length} documents`);
+          console.error(`   The 409 conflict suggests the user exists, but it cannot be found in the database.`);
+          console.error(`   This may indicate: 1) Appwrite index sync issue, 2) User was deleted, or 3) Database inconsistency`);
+          console.error(`   Recommendation: Check Appwrite Console manually for this user`);
           return null;
         }
         
@@ -4149,10 +4221,35 @@ app.post('/admin/users', requireAuth, requireRole(['super_admin']), async (req, 
       return res.status(400).json({ error: 'email is required' });
     }
     
-    // Check if user already exists
-    const existing = await getUserByEmail(email);
+    // Check if user already exists (with retry for index sync)
+    let existing = null;
+    try {
+      existing = await getUserByEmail(email);
+    } catch (err) {
+      // If query fails, try listing all users as fallback
+      try {
+        const allUsers = await awDatabases.listDocuments(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_USERS_COLLECTION_ID,
+          [],
+          1000
+        );
+        existing = allUsers.documents.find(doc => doc.email === email);
+      } catch (listErr) {
+        // Ignore
+      }
+    }
+    
     if (existing) {
-      return res.status(409).json({ error: 'User with this email already exists' });
+      return res.status(409).json({ 
+        error: 'User with this email already exists',
+        user: {
+          userId: existing.userId,
+          email: existing.email,
+          name: existing.name,
+          roles: Array.isArray(existing.roles) ? existing.roles : []
+        }
+      });
     }
     
     // Generate userId from email or use provided
@@ -4167,23 +4264,63 @@ app.post('/admin/users', requireAuth, requireRole(['super_admin']), async (req, 
         return res.status(503).json({ error: 'Users collection not found. Please run migration: node migrate_create_users_collection.js' });
       }
       
-      // Check if user exists by email (might have been created despite the error)
-      const existingByEmail = await getUserByEmail(email);
-      if (existingByEmail) {
-        // User exists, return it
-        return res.json({
-          userId: existingByEmail.userId,
-          email: existingByEmail.email,
-          name: existingByEmail.name,
-          roles: Array.isArray(existingByEmail.roles) ? existingByEmail.roles : []
-        });
+      // ensureUserRecord returned null - this means user creation failed or user exists but can't be found
+      // Try one more comprehensive search with longer wait
+      console.log(`⚠️  ensureUserRecord returned null, doing final comprehensive search...`);
+      await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds for index sync
+      
+      // Try listing ALL users and finding by email
+      try {
+        let allUsers = [];
+        let offset = 0;
+        const pageSize = 100;
+        let hasMore = true;
+        
+        while (hasMore && allUsers.length < 1000) {
+          const page = await awDatabases.listDocuments(
+            APPWRITE_DATABASE_ID,
+            APPWRITE_USERS_COLLECTION_ID,
+            [],
+            pageSize,
+            offset
+          );
+          allUsers = allUsers.concat(page.documents);
+          hasMore = page.documents.length === pageSize;
+          offset += pageSize;
+        }
+        
+        const foundUser = allUsers.find(doc => doc.email === email || doc.userId === userId);
+        if (foundUser) {
+          console.log(`✅ Found user via comprehensive search after ensureUserRecord returned null`);
+          const finalUser = foundUser;
+          // Set roles if provided
+          if (roles && Array.isArray(roles)) {
+            await setUserRoles(finalUser.userId, roles);
+            const updated = await getUserById(finalUser.userId);
+            if (updated) {
+              return res.json({
+                userId: updated.userId,
+                email: updated.email,
+                name: updated.name,
+                roles: Array.isArray(updated.roles) ? updated.roles : []
+              });
+            }
+          }
+          return res.json({
+            userId: finalUser.userId,
+            email: finalUser.email,
+            name: finalUser.name,
+            roles: Array.isArray(finalUser.roles) ? finalUser.roles : []
+          });
+        }
+      } catch (searchErr) {
+        console.error(`❌ Comprehensive search failed:`, searchErr.message);
       }
       
-      // Check if roles attribute is wrong type (check recent error logs)
-      // The error should have been logged by ensureUserRecord
+      // If still not found, user creation truly failed
       return res.status(500).json({ 
-        error: 'Failed to create user. Collection may be missing required attributes or have incorrect attribute types.',
-        hint: 'Check server logs for details. Common issue: "roles" attribute must be String Array, not String. Run: node check_attribute_types.js'
+        error: 'Failed to create user. User may exist but cannot be queried due to index sync delays.',
+        hint: 'Wait a few seconds and try again, or check Appwrite Console manually. Check server logs for details.'
       });
     }
     

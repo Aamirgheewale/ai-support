@@ -367,9 +367,15 @@ export default function ConversationView() {
       if (data.success) {
         console.log('✅ Session assigned via API')
         
+        // Update assignedAgentId state immediately so close button appears
+        setAssignedAgentId(agentId)
+        
         // Also emit takeover event
         socket.emit('agent_takeover', { sessionId, agentId })
         console.log('✅ Emitted agent_takeover event')
+        
+        // Reload session info to get latest status and assignment
+        await loadSessionInfo()
         
         // Reload messages to get latest
         loadMessages()
@@ -589,6 +595,17 @@ export default function ConversationView() {
                     Close Conversation
                   </button>
                   <span style={{ fontSize: '13px', color: '#28a745', fontWeight: '500', marginLeft: '10px' }}>✓ Assigned</span>
+                </>
+              ) : assignedAgentId ? (
+                <>
+                  <span style={{ fontSize: '13px', color: '#6c757d', marginLeft: '10px' }}>
+                    Assigned to: {assignedAgentId}
+                  </span>
+                  {agentId && agentId !== assignedAgentId && (
+                    <button onClick={assignToMe} style={{ padding: '8px 16px', background: '#ffc107', color: '#333', border: 'none', borderRadius: '4px', cursor: 'pointer', marginLeft: '10px' }}>
+                      Reassign to Me
+                    </button>
+                  )}
                 </>
               ) : (
                 <button onClick={assignToMe} style={{ padding: '8px 16px', background: '#28a745', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', marginLeft: '10px' }}>
