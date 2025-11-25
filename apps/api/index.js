@@ -4648,6 +4648,8 @@ app.post('/admin/accuracy/:accuracyId/feedback', requireAuth, async (req, res) =
     const { accuracyId } = req.params;
     const { mark, note } = req.body;
     
+    console.log(`📝 Adding feedback to accuracy record ${accuracyId}:`, { mark, note });
+    
     if (!mark || !['up', 'down', 'flag'].includes(mark)) {
       return res.status(400).json({ error: 'mark must be "up", "down", or "flag"' });
     }
@@ -4659,16 +4661,43 @@ app.post('/admin/accuracy/:accuracyId/feedback', requireAuth, async (req, res) =
       accuracyId
     );
     
-    // Update record
-    await awDatabases.updateDocument(
-      APPWRITE_DATABASE_ID,
-      APPWRITE_AI_ACCURACY_COLLECTION_ID,
-      accuracyId,
-      {
-        humanMark: mark,
-        evaluation: note || current.evaluation || null
+    // Update record - handle missing evaluation attribute gracefully
+    const updateData = {
+      humanMark: mark
+    };
+    
+    // Include evaluation if note is provided (even if empty string - convert to null to clear)
+    if (note !== undefined) {
+      updateData.evaluation = note === '' ? null : note;
+    }
+    
+    console.log(`📝 Update data:`, updateData);
+    
+    try {
+      const result = await awDatabases.updateDocument(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_AI_ACCURACY_COLLECTION_ID,
+        accuracyId,
+        updateData
+      );
+      console.log(`✅ Successfully updated accuracy feedback ${accuracyId}:`, result);
+    } catch (updateErr) {
+      // If evaluation attribute doesn't exist, retry without it
+      if (updateErr.message?.includes('evaluation') || updateErr.message?.includes('Unknown attribute')) {
+        console.warn(`⚠️  Collection doesn't have 'evaluation' attribute - retrying without it`);
+        delete updateData.evaluation;
+        const result = await awDatabases.updateDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_AI_ACCURACY_COLLECTION_ID,
+          accuracyId,
+          updateData
+        );
+        console.log(`✅ Successfully updated accuracy feedback (without evaluation) ${accuracyId}:`, result);
+      } else {
+        console.error(`❌ Error updating accuracy feedback:`, updateErr);
+        throw updateErr;
       }
-    );
+    }
     
     // Log audit
     const adminId = req.user?.userId || 'anonymous';
@@ -4749,18 +4778,54 @@ app.post('/admin/accuracy/:accuracyId/evaluate', requireAuth, requireRole(['admi
     const { accuracyId } = req.params;
     const { evaluation, humanMark } = req.body;
     
+    console.log(`📝 Evaluating accuracy record ${accuracyId}:`, { evaluation, humanMark });
+    
     const updateData = {};
-    if (evaluation !== undefined) updateData.evaluation = evaluation;
     if (humanMark !== undefined && ['up', 'down', 'flag', null].includes(humanMark)) {
       updateData.humanMark = humanMark;
     }
+    // Include evaluation if it's provided (even if empty string - to clear it)
+    if (evaluation !== undefined) {
+      // Convert empty string to null to clear evaluation
+      updateData.evaluation = evaluation === '' ? null : evaluation;
+    }
     
-    await awDatabases.updateDocument(
-      APPWRITE_DATABASE_ID,
-      APPWRITE_AI_ACCURACY_COLLECTION_ID,
-      accuracyId,
-      updateData
-    );
+    console.log(`📝 Update data:`, updateData);
+    
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ error: 'No data to update. Provide evaluation or humanMark.' });
+    }
+    
+    try {
+      const result = await awDatabases.updateDocument(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_AI_ACCURACY_COLLECTION_ID,
+        accuracyId,
+        updateData
+      );
+      console.log(`✅ Successfully updated accuracy record ${accuracyId}:`, result);
+    } catch (updateErr) {
+      // If evaluation attribute doesn't exist, retry without it
+      if (updateErr.message?.includes('evaluation') || updateErr.message?.includes('Unknown attribute')) {
+        console.warn(`⚠️  Collection doesn't have 'evaluation' attribute - retrying without it`);
+        delete updateData.evaluation;
+        // Retry with only humanMark if it was provided
+        if (Object.keys(updateData).length > 0) {
+          const result = await awDatabases.updateDocument(
+            APPWRITE_DATABASE_ID,
+            APPWRITE_AI_ACCURACY_COLLECTION_ID,
+            accuracyId,
+            updateData
+          );
+          console.log(`✅ Successfully updated accuracy record (without evaluation) ${accuracyId}:`, result);
+        } else {
+          throw new Error('Cannot update: evaluation attribute missing and no other fields to update');
+        }
+      } else {
+        console.error(`❌ Error updating accuracy record:`, updateErr);
+        throw updateErr;
+      }
+    }
     
     // Log audit
     const adminId = req.user?.userId || 'anonymous';
