@@ -406,13 +406,27 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
           updatedAt: now
         };
       };
+      const deleteDocIfExists = async (docIdToDelete) => {
+        if (!docIdToDelete) return;
+        try {
+          await awDatabases.deleteDocument(
+            APPWRITE_DATABASE_ID,
+            APPWRITE_USERS_COLLECTION_ID,
+            docIdToDelete
+          );
+          console.warn(`   ⚠️  Deleted leftover document with ID ${docIdToDelete} after conflict`);
+        } catch (deleteErr) {
+          // Ignore if document isn't found
+        }
+      };
       
       // Try creating document - handle missing attributes gracefully
+      let docId;
       try {
         // First try with all fields including datetime
         // Use ID.unique() to generate a unique document ID
         // IMPORTANT: Always use ID.unique() to avoid document ID conflicts
-        const docId = ID.unique();
+        docId = ID.unique();
         const doc = await awDatabases.createDocument(
           APPWRITE_DATABASE_ID,
           APPWRITE_USERS_COLLECTION_ID,
@@ -451,6 +465,8 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
       } catch (e) {
         // Check if it's a unique constraint violation (email or userId already exists) or document ID conflict
         if (e.code === 409 || e.message?.includes('already exists') || e.message?.includes('unique') || e.message?.includes('requested ID already exists')) {
+          // Attempt to delete the conflicting document ID in case it was partially created
+          await deleteDocIfExists(typeof docId !== 'undefined' ? docId : null);
           console.log(`⚠️  Conflict detected during creation (409), performing comprehensive search...`);
           console.log(`   Error details: ${e.message}`);
           
@@ -615,6 +631,7 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
             // Return the created doc even if we can't verify it yet
             return retryDoc;
           } catch (retryErr) {
+            await deleteDocIfExists(typeof newDocId !== 'undefined' ? newDocId : null);
             // If retry also fails with 409, it's definitely a unique constraint (email/userId exists)
             if (retryErr.code === 409 && !retryErr.message?.includes('requested ID already exists')) {
               console.warn(`⚠️  Retry also got 409 (not document ID conflict). User likely exists but not queryable.`);
