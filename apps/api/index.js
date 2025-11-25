@@ -206,24 +206,27 @@ async function getUserByEmail(email) {
   }
 }
 
-async function ensureUserRecord(userId, { email, name }) {
+async function ensureUserRecord(requestedUserId, { email, name }) {
   if (!awDatabases || !APPWRITE_DATABASE_ID) {
     console.warn('⚠️  Appwrite not configured, cannot ensure user record');
     return null;
   }
+  const generateUserId = () => `${(email.split('@')[0] || 'user').replace(/[^a-zA-Z0-9_-]/g, '')}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  let targetUserId = requestedUserId || generateUserId();
   try {
+
     // Check for existing user by userId first
-    let existing = await getUserById(userId);
+    let existing = await getUserById(targetUserId);
     
     // Also check by email (in case userId is NULL in database)
     if (!existing) {
       existing = await getUserByEmail(email);
       // If found by email but userId is NULL or different, update it
-      if (existing && (!existing.userId || existing.userId !== userId)) {
-        console.log(`⚠️  Found user by email "${email}" but userId is ${existing.userId || 'NULL'}. Updating userId to "${userId}"...`);
+      if (existing && (!existing.userId || existing.userId !== targetUserId)) {
+        console.log(`⚠️  Found user by email "${email}" but userId is ${existing.userId || 'NULL'}. Updating userId to "${targetUserId}"...`);
         try {
           const updateData = {
-            userId: userId, // Set or update userId
+            userId: targetUserId, // Set or update userId
             email,
             name: name || existing.name || email
           };
@@ -262,8 +265,8 @@ async function ensureUserRecord(userId, { email, name }) {
         name: name || existing.name
       };
       // Ensure userId is set if it was NULL
-      if (!existing.userId || existing.userId !== userId) {
-        updateData.userId = userId;
+      if (!existing.userId || existing.userId !== targetUserId) {
+        updateData.userId = targetUserId;
       }
       // Only add updatedAt if the attribute exists
       try {
@@ -296,11 +299,11 @@ async function ensureUserRecord(userId, { email, name }) {
         existingUser = await getUserByEmail(email);
         if (existingUser) {
           // If userId is NULL or different, update it
-          if (!existingUser.userId || existingUser.userId !== userId) {
-            console.log(`⚠️  Found user by email "${email}" but userId is ${existingUser.userId || 'NULL'}. Updating userId to "${userId}"...`);
+          if (!existingUser.userId || existingUser.userId !== targetUserId) {
+            console.log(`⚠️  Found user by email "${email}" but userId is ${existingUser.userId || 'NULL'}. Updating userId to "${targetUserId}"...`);
             try {
               const updateData = {
-                userId: userId,
+                userId: targetUserId,
                 email,
                 name: name || existingUser.name || email
               };
@@ -338,9 +341,9 @@ async function ensureUserRecord(userId, { email, name }) {
       
       // Check by userId
       try {
-        existingUser = await getUserById(userId);
+        existingUser = await getUserById(targetUserId);
         if (existingUser) {
-          console.log(`✅ Found existing user by userId "${userId}" before creation, returning existing record`);
+          console.log(`✅ Found existing user by userId "${targetUserId}" before creation, returning existing record`);
           return existingUser;
         }
       } catch (idErr) {
@@ -357,20 +360,20 @@ async function ensureUserRecord(userId, { email, name }) {
           100
         );
         const matchingUser = allUsers.documents.find(doc => 
-          (doc.email && doc.email === email) || (doc.userId && doc.userId === userId)
+          (doc.email && doc.email === email) || (doc.userId && doc.userId === targetUserId)
         );
         if (matchingUser) {
           console.log(`✅ Found existing user via comprehensive list check`);
           // Update userId if needed
-          if (!matchingUser.userId && userId) {
+          if (!matchingUser.userId && targetUserId) {
             try {
               await awDatabases.updateDocument(
                 APPWRITE_DATABASE_ID,
                 APPWRITE_USERS_COLLECTION_ID,
                 matchingUser.$id,
-                { userId: userId }
+                { userId: targetUserId }
               );
-              matchingUser.userId = userId;
+              matchingUser.userId = targetUserId;
             } catch (updateErr) {
               console.warn(`⚠️  Could not update userId:`, updateErr.message);
             }
@@ -386,11 +389,22 @@ async function ensureUserRecord(userId, { email, name }) {
       await new Promise(resolve => setTimeout(resolve, 100));
       
       const { ID } = require('node-appwrite');
-      const createData = {
-        userId,
-        email,
-        name: name || email,
-        roles: []
+      const buildUserDocumentPayload = (includeTimestamps = true) => {
+        const base = {
+          userId: targetUserId,
+          email,
+          name: name || email,
+          roles: []
+        };
+        if (!includeTimestamps) {
+          return base;
+        }
+        const now = new Date().toISOString();
+        return {
+          ...base,
+          createdAt: now,
+          updatedAt: now
+        };
       };
       
       // Try creating document - handle missing attributes gracefully
@@ -403,11 +417,7 @@ async function ensureUserRecord(userId, { email, name }) {
           APPWRITE_DATABASE_ID,
           APPWRITE_USERS_COLLECTION_ID,
           docId,
-          {
-            ...createData,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          }
+          buildUserDocumentPayload()
         );
         console.log(`✅ Successfully created user with document ID: ${docId}`);
         
@@ -416,7 +426,7 @@ async function ensureUserRecord(userId, { email, name }) {
         
         // Verify the user exists by querying (with fallback to list)
         try {
-          const verifyUser = await getUserById(userId) || await getUserByEmail(email);
+          const verifyUser = await getUserById(targetUserId) || await getUserByEmail(email);
           if (verifyUser) {
             return verifyUser;
           }
@@ -439,15 +449,20 @@ async function ensureUserRecord(userId, { email, name }) {
         
         return doc;
       } catch (e) {
-        // Check if it's a unique constraint violation (email or userId already exists)
-        if (e.code === 409 || e.message?.includes('already exists') || e.message?.includes('unique')) {
-          console.log(`⚠️  Conflict detected during creation, performing comprehensive search...`);
+        // Check if it's a unique constraint violation (email or userId already exists) or document ID conflict
+        if (e.code === 409 || e.message?.includes('already exists') || e.message?.includes('unique') || e.message?.includes('requested ID already exists')) {
+          console.log(`⚠️  Conflict detected during creation (409), performing comprehensive search...`);
+          console.log(`   Error details: ${e.message}`);
           
-          // When we get a 409, the user likely WAS created but indexes haven't synced
-          // Try multiple times with increasing delays
+          // When we get a 409, it could be:
+          // 1. Document ID already exists (shouldn't happen with ID.unique() but might due to race condition)
+          // 2. Unique constraint on email/userId (user exists)
+          // 3. Index sync delay (user was created but not queryable yet)
+          
+          // First, try to find existing user by email/userId (this handles case 2 and 3)
           let foundUser = null;
-          const maxRetries = 5; // Increased retries
-          const delays = [500, 1000, 2000, 3000, 5000]; // Longer progressive delays
+          const maxRetries = 3; // Reduced retries - faster response
+          const delays = [300, 500, 1000]; // Shorter delays
           
           for (let attempt = 0; attempt < maxRetries && !foundUser; attempt++) {
             if (attempt > 0) {
@@ -468,7 +483,8 @@ async function ensureUserRecord(userId, { email, name }) {
             
             if (!foundUser) {
               try {
-                foundUser = await getUserById(userId);
+                foundUser = await getUserById(targetUserId);
+                foundUser = await getUserById(targetUserId);
                 if (foundUser) {
                   console.log(`✅ Found user by userId after ${attempt + 1} attempt(s)`);
                   break;
@@ -489,7 +505,7 @@ async function ensureUserRecord(userId, { email, name }) {
                   1000 // Get more documents
                 );
                 foundUser = allUsers.documents.find(doc => 
-                  (doc.email && doc.email === email) || (doc.userId && doc.userId === userId)
+                  (doc.email && doc.email === email) || (doc.userId && doc.userId === targetUserId)
                 );
                 if (foundUser) {
                   console.log(`✅ Found user via unfiltered list query after ${attempt + 1} attempt(s)`);
@@ -523,7 +539,7 @@ async function ensureUserRecord(userId, { email, name }) {
             );
             
             const finalMatch = finalSearch.documents.find(doc => 
-              (doc.email && doc.email === email) || (doc.userId && doc.userId === userId)
+              (doc.email && doc.email === email) || (doc.userId && doc.userId === targetUserId)
             );
             
             if (finalMatch) {
@@ -561,7 +577,7 @@ async function ensureUserRecord(userId, { email, name }) {
               
               // Check if we found the user in this page
               const found = page.documents.find(doc => 
-                (doc.email && doc.email === email) || (doc.userId && doc.userId === userId)
+                (doc.email && doc.email === email) || (doc.userId && doc.userId === targetUserId)
               );
               if (found) {
                 console.log(`✅ Found user via paginated search after ${allDocs.length} documents scanned`);
@@ -573,14 +589,43 @@ async function ensureUserRecord(userId, { email, name }) {
             }
           }
           
-          // If we've scanned all documents and still can't find it, the user truly doesn't exist
-          // This means the 409 was a false positive or the user was deleted
-          // Return null so the caller knows the user doesn't exist
-          console.error(`❌ User with email "${email}" or userId "${userId}" not found after scanning ${allDocs.length} documents`);
-          console.error(`   The 409 conflict suggests the user exists, but it cannot be found in the database.`);
-          console.error(`   This may indicate: 1) Appwrite index sync issue, 2) User was deleted, or 3) Database inconsistency`);
-          console.error(`   Recommendation: Check Appwrite Console manually for this user`);
-          return null;
+          // If we've scanned all documents and still can't find it, the 409 might be a document ID conflict
+          // Try creating again with a fresh document ID (maybe the first attempt partially failed)
+          console.warn(`⚠️  User not found after all searches. 409 might be document ID conflict. Retrying with new document ID...`);
+          try {
+            // Switch to a brand-new userId to avoid unique constraint collisions
+            const oldUserId = targetUserId;
+            targetUserId = generateUserId();
+            console.warn(`   ⚠️  Switching userId from "${oldUserId}" to "${targetUserId}" to avoid conflicts`);
+            const newDocId = ID.unique();
+            const retryDoc = await awDatabases.createDocument(
+              APPWRITE_DATABASE_ID,
+              APPWRITE_USERS_COLLECTION_ID,
+              newDocId,
+              buildUserDocumentPayload()
+            );
+            console.log(`✅ Successfully created user on retry with new document ID: ${newDocId}`);
+            
+            // Wait a bit and verify
+            await new Promise(resolve => setTimeout(resolve, 300));
+            const verifyUser = await getUserById(targetUserId) || await getUserByEmail(email);
+            if (verifyUser) {
+              return verifyUser;
+            }
+            // Return the created doc even if we can't verify it yet
+            return retryDoc;
+          } catch (retryErr) {
+            // If retry also fails with 409, it's definitely a unique constraint (email/userId exists)
+            if (retryErr.code === 409 && !retryErr.message?.includes('requested ID already exists')) {
+              console.warn(`⚠️  Retry also got 409 (not document ID conflict). User likely exists but not queryable.`);
+              console.warn(`   Returning null - caller should handle this gracefully.`);
+              // Return null - the POST endpoint will handle this
+              return null;
+            }
+            // If it's a different error, throw it
+            console.error(`❌ User creation failed after retry:`, retryErr.message);
+            throw retryErr;
+          }
         }
         
         // Check if roles attribute is wrong type (String instead of Array)
@@ -601,7 +646,7 @@ async function ensureUserRecord(userId, { email, name }) {
               APPWRITE_DATABASE_ID,
               APPWRITE_USERS_COLLECTION_ID,
               docId,
-              createData
+              buildUserDocumentPayload(false)
             );
             console.log(`✅ Successfully created user (without datetime) with document ID: ${docId}`);
             
@@ -610,7 +655,7 @@ async function ensureUserRecord(userId, { email, name }) {
             
             // Verify the user exists
             try {
-              const verifyUser = await getUserById(userId) || await getUserByEmail(email);
+              const verifyUser = await getUserById(targetUserId) || await getUserByEmail(email);
               if (verifyUser) {
                 return verifyUser;
               }
@@ -659,7 +704,7 @@ async function ensureUserRecord(userId, { email, name }) {
     
     // Handle document ID conflict (409 error)
     if (err.code === 409 || err.message?.includes('already exists') || err.message?.includes('requested ID already exists')) {
-      console.warn(`⚠️  Document conflict for userId "${userId}". Checking if user already exists...`);
+      console.warn(`⚠️  Document conflict for userId "${targetUserId}". Checking if user already exists...`);
       
       // Try multiple times with increasing delays (index might not be ready)
       for (let attempt = 0; attempt < 3; attempt++) {
@@ -668,9 +713,9 @@ async function ensureUserRecord(userId, { email, name }) {
         }
         
         // Try to get existing user by userId
-        const existing = await getUserById(userId);
+        const existing = await getUserById(targetUserId);
         if (existing) {
-          console.log(`✅ Found existing user for userId "${userId}" (attempt ${attempt + 1}), returning existing record`);
+          console.log(`✅ Found existing user for userId "${targetUserId}" (attempt ${attempt + 1}), returning existing record`);
           return existing;
         }
         
@@ -691,21 +736,21 @@ async function ensureUserRecord(userId, { email, name }) {
           100
         );
         const matchingUsers = allUsers.documents.filter(doc => 
-          (doc.userId && doc.userId === userId) || (doc.email && doc.email === email)
+          (doc.userId && doc.userId === targetUserId) || (doc.email && doc.email === email)
         );
         if (matchingUsers.length > 0) {
           console.log(`✅ Found ${matchingUsers.length} matching user(s) via list query, returning first match`);
           const matched = matchingUsers[0];
           // If userId is NULL, update it
-          if (!matched.userId && userId) {
+          if (!matched.userId && targetUserId) {
             try {
               await awDatabases.updateDocument(
                 APPWRITE_DATABASE_ID,
                 APPWRITE_USERS_COLLECTION_ID,
                 matched.$id,
-                { userId: userId }
+                { userId: targetUserId }
               );
-              matched.userId = userId;
+              matched.userId = targetUserId;
             } catch (updateErr) {
               console.warn(`⚠️  Could not update userId:`, updateErr.message);
             }
@@ -729,19 +774,19 @@ async function ensureUserRecord(userId, { email, name }) {
           100
         );
         const finalMatch = finalCheck.documents.find(doc => 
-          (doc.email && doc.email === email) || (doc.userId && doc.userId === userId)
+          (doc.email && doc.email === email) || (doc.userId && doc.userId === targetUserId)
         );
         if (finalMatch) {
           console.log(`✅ Found user in final check before creation attempt`);
-          if (!finalMatch.userId && userId) {
+          if (!finalMatch.userId && targetUserId) {
             try {
               await awDatabases.updateDocument(
                 APPWRITE_DATABASE_ID,
                 APPWRITE_USERS_COLLECTION_ID,
                 finalMatch.$id,
-                { userId: userId }
+                { userId: targetUserId }
               );
-              finalMatch.userId = userId;
+              finalMatch.userId = targetUserId;
             } catch (updateErr) {
               // Ignore update errors
             }
@@ -760,13 +805,13 @@ async function ensureUserRecord(userId, { email, name }) {
         // Generate a completely unique document ID
         // IMPORTANT: Always use ID.unique() - if this fails, it's likely a unique constraint on userId/email
         const finalDocId = ID.unique();
-        console.log(`🔄 Final creation attempt with document ID: ${finalDocId}, userId: ${userId}, email: ${email}`);
+        console.log(`🔄 Final creation attempt with document ID: ${finalDocId}, userId: ${targetUserId}, email: ${email}`);
         const finalDoc = await awDatabases.createDocument(
           APPWRITE_DATABASE_ID,
           APPWRITE_USERS_COLLECTION_ID,
           finalDocId,
           {
-            userId,
+            userId: targetUserId,
             email,
             name: name || email,
             roles: [],
@@ -780,7 +825,7 @@ async function ensureUserRecord(userId, { email, name }) {
         
         // Verify the user exists
         try {
-          const verifyUser = await getUserById(userId) || await getUserByEmail(email);
+        const verifyUser = await getUserById(targetUserId) || await getUserByEmail(email);
           if (verifyUser) {
             return verifyUser;
           }
@@ -804,7 +849,7 @@ async function ensureUserRecord(userId, { email, name }) {
         return finalDoc;
       } catch (finalErr) {
         // If final attempt fails, it's definitely a unique constraint issue
-        console.error(`❌ Persistent conflict: Cannot create user with userId "${userId}" and email "${email}"`);
+        console.error(`❌ Persistent conflict: Cannot create user with userId "${targetUserId}" and email "${email}"`);
         console.error(`   Error: ${finalErr.message || finalErr}`);
         console.error(`   Error code: ${finalErr.code || 'unknown'}`);
         
@@ -817,7 +862,7 @@ async function ensureUserRecord(userId, { email, name }) {
             100
           );
           const lastMatch = lastCheck.documents.find(doc => 
-            (doc.email && doc.email === email) || (doc.userId && doc.userId === userId)
+            (doc.email && doc.email === email) || (doc.userId && doc.userId === targetUserId)
           );
           if (lastMatch) {
             console.log(`✅ Found user after final creation failure, returning existing record`);
@@ -828,7 +873,7 @@ async function ensureUserRecord(userId, { email, name }) {
         }
         
         console.error(`   Possible causes:`);
-        console.error(`   1. Unique index constraint violation (userId "${userId}" or email "${email}" already exists)`);
+        console.error(`   1. Unique index constraint violation (userId "${targetUserId}" or email "${email}" already exists)`);
         console.error(`   2. Database index not fully synchronized`);
         console.error(`   3. Query timing issue - user exists but not queryable yet`);
         console.error(`   Recommendation: Check Appwrite Console manually for users with this email or userId`);
@@ -856,31 +901,60 @@ async function setUserRoles(userId, rolesArray) {
     return false;
   }
   try {
+    console.log(`🔧 Setting roles for user ${userId}:`, rolesArray);
     let user = await getUserById(userId);
     
-    // If not found, wait a bit for index sync and try again
+    // If not found, try multiple times with increasing delays (index sync)
     if (!user) {
-      await new Promise(resolve => setTimeout(resolve, 300));
-      user = await getUserById(userId);
+      const maxRetries = 5;
+      const delays = [300, 500, 1000, 2000, 3000];
+      for (let attempt = 0; attempt < maxRetries && !user; attempt++) {
+        if (attempt > 0) {
+          console.log(`   Retry ${attempt}/${maxRetries - 1}: Waiting ${delays[attempt - 1]}ms for index sync...`);
+          await new Promise(resolve => setTimeout(resolve, delays[attempt - 1]));
+        }
+        user = await getUserById(userId);
+        if (user) {
+          console.log(`✅ Found user after ${attempt + 1} attempt(s)`);
+          break;
+        }
+      }
     }
     
-    // If still not found, try listing all users
+    // If still not found, try listing all users (no index dependency)
     if (!user) {
       try {
-        const allUsers = await awDatabases.listDocuments(
-          APPWRITE_DATABASE_ID,
-          APPWRITE_USERS_COLLECTION_ID,
-          [],
-          100
-        );
-        user = allUsers.documents.find(doc => doc.userId === userId);
+        console.log(`   Trying comprehensive list search...`);
+        let allUsers = [];
+        let offset = 0;
+        const pageSize = 100;
+        let hasMore = true;
+        
+        while (hasMore && allUsers.length < 1000 && !user) {
+          const page = await awDatabases.listDocuments(
+            APPWRITE_DATABASE_ID,
+            APPWRITE_USERS_COLLECTION_ID,
+            [],
+            pageSize,
+            offset
+          );
+          allUsers = allUsers.concat(page.documents);
+          hasMore = page.documents.length === pageSize;
+          offset += pageSize;
+          
+          user = page.documents.find(doc => doc.userId === userId);
+          if (user) {
+            console.log(`✅ Found user via list search after scanning ${allUsers.length} documents`);
+            break;
+          }
+        }
       } catch (listErr) {
-        // Ignore
+        console.warn(`   ⚠️  List search failed:`, listErr.message);
       }
     }
     
     if (!user) {
-      console.warn(`User ${userId} not found after multiple attempts`);
+      console.warn(`❌ User ${userId} not found after multiple attempts and comprehensive search`);
       return false;
     }
     
@@ -4257,6 +4331,7 @@ app.post('/admin/users', requireAuth, requireRole(['super_admin']), async (req, 
     const userId = req.body.userId || email.split('@')[0] + '_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
     
     const user = await ensureUserRecord(userId, { email, name: name || email });
+    const effectiveUserId = user?.userId || userId;
     if (!user) {
       // Check if collection exists
       const collectionExists = await checkUsersCollectionExists();
@@ -4317,18 +4392,71 @@ app.post('/admin/users', requireAuth, requireRole(['super_admin']), async (req, 
         console.error(`❌ Comprehensive search failed:`, searchErr.message);
       }
       
-      // If still not found, user creation truly failed
-      return res.status(500).json({ 
-        error: 'Failed to create user. User may exist but cannot be queried due to index sync delays.',
-        hint: 'Wait a few seconds and try again, or check Appwrite Console manually. Check server logs for details.'
-      });
+      // If still not found after all retries, try one final creation attempt
+      // This handles the case where 409 was a document ID conflict and the user doesn't actually exist
+      console.log(`⚠️  User not found after comprehensive search. Attempting final creation...`);
+      try {
+        const { ID } = require('node-appwrite');
+        const finalDocId = ID.unique();
+        const timestamp = new Date().toISOString();
+        const finalUser = await awDatabases.createDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_USERS_COLLECTION_ID,
+          finalDocId,
+          {
+            userId,
+            email,
+            name: name || email,
+            roles: [],
+            createdAt: timestamp,
+            updatedAt: timestamp
+          }
+        );
+        console.log(`✅ Successfully created user on final attempt with document ID: ${finalDocId}`);
+        
+        // Set roles if provided
+        if (roles && Array.isArray(roles)) {
+        await setUserRoles(effectiveUserId, roles);
+          // Wait a bit for index sync
+          await new Promise(resolve => setTimeout(resolve, 500));
+        const updated = await getUserById(effectiveUserId);
+          if (updated) {
+            return res.json({
+              userId: updated.userId,
+              email: updated.email,
+              name: updated.name,
+              roles: Array.isArray(updated.roles) ? updated.roles : []
+            });
+          }
+        }
+        
+        return res.json({
+          userId: finalUser.userId,
+          email: finalUser.email,
+          name: finalUser.name,
+          roles: Array.isArray(finalUser.roles) ? finalUser.roles : []
+        });
+      } catch (finalErr) {
+        // If final attempt also fails, return error
+        console.error(`❌ Final user creation attempt failed:`, finalErr.message);
+        if (finalErr.code === 409) {
+          return res.status(409).json({ 
+            error: 'User with this email or userId already exists',
+            hint: 'The user exists but cannot be queried due to index sync delays. Wait a few seconds and try again, or check Appwrite Console manually.'
+          });
+        }
+        return res.status(500).json({ 
+          error: 'Failed to create user after multiple attempts',
+          hint: 'Check server logs for details. This may indicate a database configuration issue.'
+        });
+      }
     }
     
     // Set roles if provided
     if (roles && Array.isArray(roles)) {
-      const rolesSet = await setUserRoles(userId, roles);
+      const rolesSet = await setUserRoles(effectiveUserId, roles);
       if (rolesSet) {
-        const updatedUser = await getUserById(userId);
+        const updatedUser = await getUserById(effectiveUserId);
         if (updatedUser) {
           return res.json({
             userId: updatedUser.userId,
@@ -4340,14 +4468,14 @@ app.post('/admin/users', requireAuth, requireRole(['super_admin']), async (req, 
       }
       // Fallback: return user without updated roles
       return res.json({
-        userId: user.userId || userId,
+        userId: user.userId || effectiveUserId,
         email: user.email || email,
         name: user.name || name || email,
         roles: roles
       });
     } else {
       res.json({
-        userId: user.userId || userId,
+        userId: user.userId || effectiveUserId,
         email: user.email || email,
         name: user.name || name || email,
         roles: Array.isArray(user.roles) ? user.roles : []
@@ -4378,9 +4506,41 @@ app.put('/admin/users/:userId/roles', requireAuth, requireRole(['super_admin']),
     }
     
     const changedBy = req.user.userId;
-    const user = await getUserById(userId);
+    console.log(`🔧 Updating roles for user ${userId} by ${changedBy}`);
+    
+    // Try to find user with retries (index sync delays)
+    let user = await getUserById(userId);
     if (!user) {
-      return res.status(404).json({ error: 'User not found' });
+      // Retry with delays
+      const maxRetries = 3;
+      const delays = [300, 500, 1000];
+      for (let attempt = 0; attempt < maxRetries && !user; attempt++) {
+        if (attempt > 0) {
+          await new Promise(resolve => setTimeout(resolve, delays[attempt - 1]));
+        }
+        user = await getUserById(userId);
+        if (user) break;
+      }
+    }
+    
+    // If still not found, try listing all users
+    if (!user) {
+      try {
+        const allUsers = await awDatabases.listDocuments(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_USERS_COLLECTION_ID,
+          [],
+          1000
+        );
+        user = allUsers.documents.find(doc => doc.userId === userId);
+      } catch (listErr) {
+        // Ignore
+      }
+    }
+    
+    if (!user) {
+      console.error(`❌ User ${userId} not found for role update`);
+      return res.status(404).json({ error: 'User not found. User may have been deleted or indexes may not be synced yet.' });
     }
     
     const oldRoles = Array.isArray(user.roles) ? [...user.roles] : [];
