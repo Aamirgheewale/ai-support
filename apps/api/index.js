@@ -57,6 +57,29 @@ const APPWRITE_USERS_COLLECTION_ID = 'users'; // Collection name (not ID)
 const APPWRITE_ROLE_CHANGES_COLLECTION_ID = 'roleChanges'; // Collection name
 const APPWRITE_AI_ACCURACY_COLLECTION_ID = 'ai_accuracy'; // Collection name
 const APPWRITE_ACCURACY_AUDIT_COLLECTION_ID = 'accuracy_audit'; // Collection name
+async function createUserRow(payload) {
+  if (!APPWRITE_ENDPOINT || !APPWRITE_PROJECT_ID || !APPWRITE_API_KEY || !APPWRITE_DATABASE_ID || !APPWRITE_USERS_COLLECTION_ID) {
+    throw new Error('Appwrite table API not configured');
+  }
+  const url = `${APPWRITE_ENDPOINT.replace(/\/$/, '')}/databases/${APPWRITE_DATABASE_ID}/tables/${APPWRITE_USERS_COLLECTION_ID}/rows`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Appwrite-Project': APPWRITE_PROJECT_ID,
+      'X-Appwrite-Key': APPWRITE_API_KEY
+    },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    const err = new Error(text || `Failed to create user row (${res.status})`);
+    err.code = res.status;
+    throw err;
+  }
+  return res.json();
+}
+
 
 // Accuracy logging configuration
 const ACCURACY_RETENTION_DAYS = parseInt(process.env.ACCURACY_RETENTION_DAYS || '365', 10);
