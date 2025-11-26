@@ -8,7 +8,9 @@ export default function EmbedWidget({ initialSessionId }: { initialSessionId?: s
   const [messages, setMessages] = useState<Array<{ sender: string; text: string; ts?: number }>>([]);
   const [text, setText] = useState('');
   const [isConnected, setIsConnected] = useState(false);
+  const [isBotTyping, setIsBotTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const typingTimeoutRef = useRef<number | null>(null);
 
   // Apply theme from CSS variables
   function applyTheme(themeVars: Record<string, string>) {
@@ -33,6 +35,33 @@ export default function EmbedWidget({ initialSessionId }: { initialSessionId?: s
   }, [sessionId]);
 
   useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) {
+        window.clearTimeout(typingTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const startTypingIndicator = () => {
+    if (typingTimeoutRef.current) {
+      window.clearTimeout(typingTimeoutRef.current);
+    }
+    setIsBotTyping(true);
+    typingTimeoutRef.current = window.setTimeout(() => {
+      setIsBotTyping(false);
+      typingTimeoutRef.current = null;
+    }, 20000); // auto-hide after 20s to avoid stuck indicator
+  };
+
+  const stopTypingIndicator = () => {
+    if (typingTimeoutRef.current) {
+      window.clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+    setIsBotTyping(false);
+  };
+
+  useEffect(() => {
     socket.on('connect', () => {
       console.log('ws connected', socket.id);
       setIsConnected(true);
@@ -52,6 +81,7 @@ export default function EmbedWidget({ initialSessionId }: { initialSessionId?: s
       }
     });
     socket.on('bot_message', (m: any) => {
+      stopTypingIndicator();
       console.log('📨 Widget received bot_message:', m);
       setMessages(prev => {
         const exists = prev.some(msg => msg.sender === 'bot' && msg.text === m.text);
@@ -60,6 +90,7 @@ export default function EmbedWidget({ initialSessionId }: { initialSessionId?: s
       });
     });
     socket.on('agent_message', (m: any) => {
+      stopTypingIndicator();
       console.log('📨 Widget received agent_message:', m);
       setMessages(prev => {
         const exists = prev.some(msg => msg.sender === 'agent' && msg.text === m.text);
@@ -81,6 +112,7 @@ export default function EmbedWidget({ initialSessionId }: { initialSessionId?: s
       setMessages(prev => [...prev, { sender: 'system', text: `Agent ${data.agentId} joined the conversation`, ts: Date.now() }]);
     });
     socket.on('session_error', (err: any) => {
+      stopTypingIndicator();
       setMessages(prev => [...prev, { sender: 'system', text: `Error: ${err.error}`, ts: Date.now() }]);
     });
     return () => {
@@ -110,6 +142,7 @@ export default function EmbedWidget({ initialSessionId }: { initialSessionId?: s
     setMessages(prev => [...prev, { sender: 'user', text: text.trim(), ts: Date.now() }]);
     socket.emit('user_message', { sessionId, text: text.trim() });
     setText('');
+    startTypingIndicator();
   }
 
   function handleKeyPress(e: React.KeyboardEvent) {
@@ -214,6 +247,21 @@ export default function EmbedWidget({ initialSessionId }: { initialSessionId?: s
             </div>
           </div>
         ))}
+        {isBotTyping && (
+          <div 
+            style={{ 
+              display: 'flex',
+              justifyContent: 'flex-start',
+              marginBottom: '4px'
+            }}
+          >
+            <div className="typing-bubble" aria-live="polite" aria-label="AI is typing">
+              <span className="typing-dot" />
+              <span className="typing-dot" />
+              <span className="typing-dot" />
+            </div>
+          </div>
+        )}
         <div ref={messagesEndRef} />
       </div>
 
