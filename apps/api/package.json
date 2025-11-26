@@ -15,6 +15,7 @@
     "@google/generative-ai": "^0.24.1",
     "appwrite": "^21.4.0",
     "archiver": "^7.0.1",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "csv-stringify": "^6.6.0",
     "dotenv": "^17.2.3",

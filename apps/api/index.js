@@ -6,6 +6,7 @@ const cors = require('cors');
 const archiver = require('archiver');
 const { stringify } = require('csv-stringify');
 const { LRUCache } = require('lru-cache');
+const cookieParser = require('cookie-parser');
 
 // Encryption library
 let encryption = null;
@@ -39,8 +40,12 @@ if (helmet) {
   console.log('✅ Security headers enabled (helmet)');
 }
 
-app.use(cors());
+app.use(cors({
+  origin: true,
+  credentials: true // Allow cookies
+}));
 app.use(express.json());
+app.use(cookieParser());
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
@@ -1126,12 +1131,18 @@ async function authorizeSocketToken(token) {
 
 // Authentication middleware
 async function requireAuth(req, res, next) {
+  // Check for token in Authorization header or cookie
+  let token = null;
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Missing or invalid authorization header' });
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.substring(7);
+  } else if (req.cookies && req.cookies.sessionToken) {
+    token = req.cookies.sessionToken;
   }
   
-  const token = authHeader.substring(7);
+  if (!token) {
+    return res.status(401).json({ error: 'Missing or invalid authorization' });
+  }
   
   // For dev: map ADMIN_SHARED_SECRET to super_admin
   if (token === ADMIN_SHARED_SECRET) {
@@ -1140,15 +1151,22 @@ async function requireAuth(req, res, next) {
     return next();
   }
   
-  // TODO: For production, validate Appwrite session token
-  // const authResult = await authorizeSocketToken(token);
-  // if (!authResult) {
-  //   return res.status(401).json({ error: 'Invalid token' });
-  // }
-  // req.user = authResult;
-  // return next();
+  // Try to find user by token (token is userId for email-based auth)
+  try {
+    const user = await getUserById(token);
+    if (user) {
+      req.user = {
+        userId: user.userId,
+        email: user.email,
+        roles: Array.isArray(user.roles) ? user.roles : []
+      };
+      return next();
+    }
+  } catch (err) {
+    // Continue to fallback
+  }
   
-  // For now, reject unknown tokens
+  // Reject unknown tokens
   return res.status(401).json({ error: 'Invalid token' });
 }
 
@@ -4199,10 +4217,170 @@ app.post('/admin/metrics/aggregate-request', requireAdminAuth, async (req, res) 
 // ============================================================================
 
 // ============================================================================
+// AUTHENTICATION ENDPOINTS
+// ============================================================================
+
+// POST /auth/signup - Create new user account (email-only, no password)
+app.post('/auth/signup', async (req, res) => {
+  try {
+    const { name, email, role } = req.body;
+    
+    // Validation
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+    
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: 'Invalid email format' });
+    }
+    
+    // Check if email already exists
+    const existing = await getUserByEmail(email);
+    if (existing) {
+      return res.status(409).json({ error: 'Email already registered' });
+    }
+    
+    // Determine role assignment
+    let assignedRole = 'viewer'; // Default
+    const DEV_ALLOW_SIGNUP_ROLE = process.env.DEV_ALLOW_SIGNUP_ROLE === 'true';
+    const authHeader = req.headers.authorization;
+    const isSuperAdmin = authHeader && authHeader.startsWith('Bearer ') && 
+                         authHeader.substring(7) === ADMIN_SHARED_SECRET;
+    
+    if (role && (isSuperAdmin || DEV_ALLOW_SIGNUP_ROLE)) {
+      // Validate role
+      const validRoles = ['super_admin', 'admin', 'agent', 'viewer'];
+      if (validRoles.includes(role)) {
+        assignedRole = role;
+      }
+    }
+    
+    // Generate userId
+    const userId = `${(email.split('@')[0] || 'user').replace(/[^a-zA-Z0-9_-]/g, '')}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    const timestamp = new Date().toISOString();
+    
+    // Create user in Appwrite (no passwordHash)
+    try {
+      const userDoc = await createUserRow({
+        userId,
+        email,
+        name: name || email,
+        roles: [assignedRole],
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        lastSeen: timestamp,
+        userMeta: JSON.stringify({ createdBy: isSuperAdmin ? 'admin' : 'self-signup' })
+      });
+      
+      // Set roles via helper (in case createUserRow doesn't set them)
+      await setUserRoles(userId, [assignedRole]);
+      
+      // Log audit entry
+      console.log(`📝 [AUDIT] User created: ${email} (${userId}) with role: ${assignedRole} by ${isSuperAdmin ? 'admin' : 'self-signup'}`);
+      
+      // Return user info
+      res.status(201).json({
+        userId: userDoc.userId || userId,
+        email: userDoc.email || email,
+        name: userDoc.name || name || email,
+        roles: [assignedRole]
+      });
+    } catch (createErr) {
+      if (createErr.code === 409) {
+        return res.status(409).json({ error: 'User already exists' });
+      }
+      console.error('Error creating user:', createErr);
+      return res.status(500).json({ error: 'Failed to create user account' });
+    }
+  } catch (err) {
+    console.error('Error in signup:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /auth/logout - Logout user (clear session)
+app.post('/auth/logout', (req, res) => {
+  // Clear cookie
+  res.clearCookie('sessionToken', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax'
+  });
+  res.json({ ok: true, message: 'Logged out successfully' });
+});
+
+// POST /auth/login - Authenticate user (email-only, no password)
+app.post('/auth/login', async (req, res) => {
+  try {
+    const { email, remember } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+    
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: 'Invalid email format' });
+    }
+    
+    // Find user by email
+    const user = await getUserByEmail(email);
+    if (!user) {
+      return res.status(401).json({ error: 'User not found with this email' });
+    }
+    
+    // Update lastSeen
+    const timestamp = new Date().toISOString();
+    try {
+      await awDatabases.updateDocument(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_USERS_COLLECTION_ID,
+        user.$id,
+        { lastSeen: timestamp, updatedAt: timestamp }
+      );
+    } catch (updateErr) {
+      // Non-critical, continue
+      console.warn('Failed to update lastSeen:', updateErr.message);
+    }
+    
+    // Generate session token (use userId as token for simplicity)
+    // In production, use JWT or Appwrite session
+    const sessionToken = user.userId; // Use userId as session token
+    
+    // Set HttpOnly Secure cookie (preferred method)
+    const cookieOptions = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production', // HTTPS only in production
+      sameSite: 'lax',
+      maxAge: remember ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000 // 30 days or 1 day
+    };
+    res.cookie('sessionToken', sessionToken, cookieOptions);
+    
+    // Also return token in response for frontend to store in memory if cookies don't work
+    res.json({
+      ok: true,
+      token: sessionToken, // Include for memory fallback
+      user: {
+        userId: user.userId,
+        email: user.email,
+        name: user.name,
+        roles: Array.isArray(user.roles) ? user.roles : []
+      }
+    });
+  } catch (err) {
+    console.error('Error in login:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ============================================================================
 // RBAC USER MANAGEMENT ENDPOINTS
 // ============================================================================
 
-// GET /me - Get current user profile and roles
+// GET /me - Get current user profile and roles (enhanced with createdAt, lastSeen, userMeta)
 app.get('/me', requireAuth, async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -4232,7 +4410,10 @@ app.get('/me', requireAuth, async (req, res) => {
       userId: user.userId,
       email: user.email,
       name: user.name,
-      roles: Array.isArray(user.roles) ? user.roles : []
+      roles: Array.isArray(user.roles) ? user.roles : [],
+      createdAt: user.createdAt || user.$createdAt,
+      lastSeen: user.lastSeen,
+      userMeta: user.userMeta ? (typeof user.userMeta === 'string' ? JSON.parse(user.userMeta) : user.userMeta) : {}
     });
   } catch (err) {
     console.error('Error fetching user profile:', err);
@@ -4241,8 +4422,44 @@ app.get('/me', requireAuth, async (req, res) => {
       userId: req.user.userId,
       email: req.user.email || 'dev@admin.local',
       name: 'Dev Admin',
-      roles: req.user.roles || ['super_admin']
+      roles: req.user.roles || ['super_admin'],
+      createdAt: new Date().toISOString(),
+      lastSeen: new Date().toISOString(),
+      userMeta: {}
     });
+  }
+});
+
+// GET /users/:userId/profile - Get user profile (public info, additional metadata for own profile)
+app.get('/users/:userId/profile', requireAuth, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const currentUserId = req.user.userId;
+    
+    const user = await getUserById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Public profile info
+    const profile = {
+      userId: user.userId,
+      email: user.email,
+      name: user.name,
+      roles: Array.isArray(user.roles) ? user.roles : [],
+      createdAt: user.createdAt || user.$createdAt
+    };
+    
+    // If requesting own profile, include additional metadata
+    if (userId === currentUserId) {
+      profile.lastSeen = user.lastSeen;
+      profile.userMeta = user.userMeta ? (typeof user.userMeta === 'string' ? JSON.parse(user.userMeta) : user.userMeta) : {};
+    }
+    
+    res.json(profile);
+  } catch (err) {
+    console.error('Error fetching user profile:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
