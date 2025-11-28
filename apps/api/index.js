@@ -1450,7 +1450,14 @@ async function saveMessageToAppwrite(sessionId, sender, text, metadata = {}) {
     }
     
     const now = new Date().toISOString();
-    const metadataStr = typeof metadata === 'object' ? JSON.stringify(metadata) : metadata;
+    let metadataStr = typeof metadata === 'object' ? JSON.stringify(metadata) : (metadata || '{}');
+    // Ensure metadata is a string and truncate to 255 chars (Appwrite requirement)
+    if (typeof metadataStr !== 'string') {
+      metadataStr = String(metadataStr);
+    }
+    if (metadataStr.length > 255) {
+      metadataStr = metadataStr.substring(0, 252) + '...'; // 252 + 3 = 255 chars
+    }
     
     const messageDoc = {
       sessionId: sessionId,
@@ -1467,7 +1474,7 @@ async function saveMessageToAppwrite(sessionId, sender, text, metadata = {}) {
     }
     
     messageDoc.text = text;
-    messageDoc.metadata = metadataStr || '{}'; // Ensure metadata is always a string
+    messageDoc.metadata = metadataStr; // Ensure metadata is always a string <= 255 chars
     
     // NOTE: Encrypted fields are NOT added by default to avoid schema errors
     // Only add encrypted fields if:
@@ -1539,6 +1546,10 @@ async function saveMessageToAppwrite(sessionId, sender, text, metadata = {}) {
       if (err?.message?.includes('text')) {
         console.error(`   🔧 Fix: Check 'text' attribute exists and is of type 'string' in messages collection`);
       }
+      if (err?.message?.includes('metadata') && err?.message?.includes('255')) {
+        console.error(`   🔧 Fix: Metadata field exceeded 255 characters - this should be automatically truncated`);
+        console.error(`   🔧 Metadata length was: ${metadataStr?.length || 0} chars`);
+      }
       if (err?.message?.includes('Unknown attribute') || err?.message?.includes('Invalid document structure')) {
         console.error(`   🔧 Fix: Remove 'encrypted' or 'encrypted_metadata' fields from messageDoc if they don't exist in collection schema`);
         console.error(`   🔧 Or add these attributes to the messages collection in Appwrite Console`);
@@ -1585,7 +1596,14 @@ async function saveAccuracyRecord(sessionId, messageId, aiText, confidence, late
   }
   truncatedText = redactPII(truncatedText);
   
-  const metadataStr = typeof metadata === 'object' ? JSON.stringify(metadata) : metadata;
+  let metadataStr = typeof metadata === 'object' ? JSON.stringify(metadata) : (metadata || '{}');
+  // Ensure metadata is a string and truncate to 255 chars (Appwrite requirement)
+  if (typeof metadataStr !== 'string') {
+    metadataStr = String(metadataStr);
+  }
+  if (metadataStr.length > 255) {
+    metadataStr = metadataStr.substring(0, 252) + '...'; // 252 + 3 = 255 chars
+  }
   
   try {
     
@@ -1635,6 +1653,9 @@ async function saveAccuracyRecord(sessionId, messageId, aiText, confidence, late
     // Check if collection exists or has schema issues
     if (err.code === 404) {
       console.warn(`   💡 Run migration: node migrate_create_ai_accuracy_collection.js`);
+    } else if (err.code === 400 && errorMsg.includes('metadata') && errorMsg.includes('255')) {
+      console.warn(`   💡 Metadata field exceeded 255 characters - this should be automatically truncated`);
+      console.warn(`   💡 Metadata length was: ${metadataStr?.length || 0} chars`);
     } else if (err.code === 400 && errorMsg.includes('Unknown attribute')) {
       // Extract the attribute name from error message (try multiple formats)
       let unknownAttr = errorMsg.match(/Unknown attribute: "([^"]+)"/)?.[1] ||
@@ -2058,6 +2079,19 @@ io.on('connection', (socket) => {
     // No agent assigned - proceed with AI flow
     console.log(`🤖 Processing with AI for session ${sessionId}`);
 
+    // Content filtering: Check for adult/inappropriate content
+    const userTextLower = trimmedText.toLowerCase();
+    const adultKeywords = ['sex', 'sexual', 'porn', 'xxx', 'adult', '18+', 'nsfw', 'explicit', 'nude', 'naked', 'erotic'];
+    const hasAdultContent = adultKeywords.some(keyword => userTextLower.includes(keyword));
+    
+    if (hasAdultContent) {
+      const rejectionMsg = "I cannot discuss adult or inappropriate content. I can help with professional questions related to your specified area.";
+      await saveMessageToAppwrite(sessionId, 'bot', rejectionMsg, { confidence: 1, filtered: true });
+      io.to(sessionId).emit('bot_message', { text: rejectionMsg, confidence: 1 });
+      console.log(`🚫 Filtered adult content request from session ${sessionId}`);
+      return;
+    }
+
     // If Gemini isn't configured, return stub
     if (!geminiClient || !geminiModel) {
       const stub = `🧪 Stub reply: received "${trimmedText}" — set GEMINI_API_KEY to enable real responses.`;
@@ -2119,54 +2153,192 @@ io.on('connection', (socket) => {
       let conversationHistory = [];
       if (awDatabases && APPWRITE_DATABASE_ID && APPWRITE_MESSAGES_COLLECTION_ID) {
         try {
-          const result = await awDatabases.listDocuments(
-            APPWRITE_DATABASE_ID,
-            APPWRITE_MESSAGES_COLLECTION_ID,
-            [`equal("sessionId", "${sessionId}")`],
-            10
-          );
+          // Use Query class if available, otherwise fetch all and filter client-side
+          let result;
+          if (Query) {
+            result = await awDatabases.listDocuments(
+              APPWRITE_DATABASE_ID,
+              APPWRITE_MESSAGES_COLLECTION_ID,
+              [Query.equal('sessionId', sessionId), Query.orderAsc('createdAt')],
+              50  // Increased from 10 to 50 to capture more conversation history
+            );
+          } else {
+            // Fallback: fetch all and filter client-side
+            const allResult = await awDatabases.listDocuments(
+              APPWRITE_DATABASE_ID,
+              APPWRITE_MESSAGES_COLLECTION_ID,
+              undefined,
+              1000 // Fetch more to filter
+            );
+            const filtered = allResult.documents
+              .filter(doc => doc.sessionId === sessionId)
+              .sort((a, b) => {
+                const timeA = new Date(a.createdAt || a.timestamp || a.$createdAt || 0).getTime();
+                const timeB = new Date(b.createdAt || b.timestamp || b.$createdAt || 0).getTime();
+                return timeA - timeB;
+              })
+              .slice(-50);  // Increased from 10 to 50 to capture more conversation history
+            result = { documents: filtered, total: filtered.length };
+          }
+          
           conversationHistory = result.documents
-            .sort((a, b) => {
-              const timeA = new Date(a.createdAt || a.timestamp || a.$createdAt || 0).getTime();
-              const timeB = new Date(b.createdAt || b.timestamp || b.$createdAt || 0).getTime();
-              return timeA - timeB;
-            })
-            .slice(-10)
             .map(doc => ({
               sender: doc.sender,
               text: doc.text,
               ts: new Date(doc.createdAt || doc.timestamp || doc.$createdAt || Date.now()).getTime()
             }));
+          console.log(`📚 Loaded ${conversationHistory.length} messages from conversation history for session ${sessionId}`);
         } catch (err) {
           console.warn('Appwrite history load failed:', err?.message || err);
+          // Continue without history - AI will work but without context
         }
       }
       
-      // Build conversation context
-      const systemPrompt = `You are a professional AI Customer Support Assistant. Your role is to:
-- Provide helpful, friendly, and empathetic customer support
-- Answer questions clearly and concisely
-- Escalate complex issues when necessary
-- Maintain a professional yet warm tone
-- Focus on solving customer problems efficiently
+      // Check sequential question flow: Q1 asked -> Q1 answered -> Q2 asked -> Q2 answered -> role taken
+      let question1Asked = false;
+      let question1Answered = false;
+      let question2Asked = false;
+      let question2Answered = false;
+      let userProfession = null;
+      let userOutcome = null;
+      let bothQuestionsAnswered = false;
+      
+      if (conversationHistory.length > 0) {
+        // Track conversation flow chronologically
+        for (let i = 0; i < conversationHistory.length; i++) {
+          const msg = conversationHistory[i];
+          const text = msg.text.toLowerCase();
+          
+          if (msg.sender === 'bot' || msg.sender === 'agent') {
+            // Check for first question (area/profession)
+            if (text.includes('area or profession') || text.includes('profession you are willing') || 
+                text.includes('what is the area') || text.includes('what area') ||
+                (text.includes('area') && text.includes('profession'))) {
+              question1Asked = true;
+            }
+            // Check for second question (outcomes)
+            if (text.includes('outcomes are you expecting') || text.includes('expecting by the end') ||
+                text.includes('what outcomes') || text.includes('outcomes you are') ||
+                (text.includes('outcomes') && text.includes('expecting'))) {
+              question2Asked = true;
+            }
+          } else if (msg.sender === 'user') {
+            // If Q1 was asked but not answered yet, this user message is likely the answer
+            if (question1Asked && !question1Answered) {
+              // Check if this is a substantial response (not just "ok" or "yes")
+              if (msg.text.trim().length > 5) {
+                question1Answered = true;
+                userProfession = msg.text;
+              }
+            }
+            // If Q2 was asked but not answered yet, this user message is likely the answer
+            if (question2Asked && !question2Answered && question1Answered) {
+              if (msg.text.trim().length > 5) {
+                question2Answered = true;
+                userOutcome = msg.text;
+              }
+            }
+          }
+        }
+        
+        bothQuestionsAnswered = question1Answered && question2Answered;
+        
+        console.log(`🔍 Sequential questions: Q1 asked=${question1Asked}, Q1 answered=${question1Answered}, Q2 asked=${question2Asked}, Q2 answered=${question2Answered}, both done=${bothQuestionsAnswered}`);
+      }
+      
+      // Build conversation context with sequential question instructions
+      let systemPrompt = `You are a professional AI Assistant.`;
+      
+      // Sequential question flow logic
+      if (!question1Asked) {
+        // Step 1: Ask first question only
+        systemPrompt += ` After the initial greeting, you MUST ask the user the FIRST question ONLY:
+"What is the area or profession you are willing to ask questions about?" (e.g., customer support, sports, diet, gym training, technology, etc.)
 
-Always be polite, patient, and solution-oriented. If you cannot resolve an issue, offer to connect the customer with a human agent.`;
+Wait for the user to answer this question before asking the second question.`;
+      } else if (question1Asked && !question1Answered) {
+        // Step 2: First question asked, waiting for answer
+        systemPrompt += ` You have asked the first question about area/profession. Wait for the user to answer before proceeding. DO NOT ask the second question yet.`;
+      } else if (question1Answered && !question2Asked) {
+        // Step 3: First question answered, now ask second question
+        systemPrompt += ` The user has answered your first question. Their area/profession: ${userProfession || 'not specified'}.
+Now you MUST ask the SECOND question:
+"What outcomes are you expecting by the end of this conversation?"
+
+Wait for the user to answer this question before taking on the professional role.`;
+      } else if (question2Asked && !question2Answered) {
+        // Step 4: Second question asked, waiting for answer
+        systemPrompt += ` You have asked the second question about expected outcomes. Wait for the user to answer before taking on the professional role. DO NOT answer questions yet - wait for their response.`;
+      } else if (bothQuestionsAnswered) {
+        // Step 5: Both questions answered - now take on the role
+        systemPrompt += ` The user has answered both questions:
+- Area/Profession: ${userProfession || 'not specified'}
+- Expected Outcomes: ${userOutcome || 'not specified'}
+
+NOW you can adopt the role of a professional in: ${userProfession || 'the specified area'}. 
+Provide responses based on this profession/expertise. NEVER ask these questions again - they have already been answered.`;
+      }
+      
+      systemPrompt += `
+
+CRITICAL: You MUST use the previous conversation history provided below to understand context, remember what was discussed, and provide relevant responses based on the ongoing conversation. Always reference previous messages when relevant.
+
+MANDATORY RESPONSE LENGTH RULE - THIS IS CRITICAL:
+- EVERY response MUST be between 20-30 words EXACTLY
+- Count your words before responding
+- Maximum 2-3 short sentences ONLY
+- NEVER exceed 30 words - if you do, your response is TOO LONG
+- If you cannot answer in 20-30 words, provide a brief summary instead
+
+CONTENT FILTERING - CRITICAL RULES:
+- STRICTLY PROHIBITED: Adult content (18+), explicit sexual content, inappropriate material, violence, hate speech, or any content unsuitable for general audiences
+- If user asks about adult/inappropriate content, respond: "I cannot discuss adult or inappropriate content. I can help with professional questions related to [your established profession]." (20-30 words)
+- DO NOT engage with, explain, or provide any information about adult/inappropriate topics, even if asked indirectly
+
+TOPIC RELEVANCE RULES:
+- ONLY answer questions related to the established profession/topic: ${bothQuestionsAnswered ? (userProfession || 'the specified area') : 'wait until both questions are answered'}
+- If user asks questions completely unrelated to the established topic/profession, politely decline: "This question isn't related to [current topic]. I can only help with [relevant topic] questions." (20-30 words)
+- DO NOT answer out-of-topic questions - politely redirect to the established topic
+
+OTHER RULES:
+- Be concise, clear, and professional
+- ALWAYS consider the previous conversation when responding - maintain continuity and context
+- NEVER repeat questions that have already been asked in this conversation - check the conversation history
+- Always stay in character as the professional you've adopted based on their answers (only after both questions are answered)
+- Be helpful, friendly, and solution-oriented
+
+REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use previous conversation context. Never repeat questions already asked. Reject adult content and out-of-topic questions.`;
       
       let conversationContext = systemPrompt + '\n\n';
       
       if (conversationHistory.length > 0) {
-        conversationContext += 'Previous conversation:\n';
-        conversationHistory.forEach(msg => {
+        conversationContext += '=== PREVIOUS CONVERSATION HISTORY ===\n';
+        conversationHistory.forEach((msg, index) => {
           if (msg.sender === 'user') {
-            conversationContext += `Customer: ${msg.text}\n`;
+            conversationContext += `User: ${msg.text}\n`;
           } else if (msg.sender === 'bot' || msg.sender === 'agent') {
-            conversationContext += `Assistant: ${msg.text}\n`;
+            conversationContext += `You (Assistant): ${msg.text}\n`;
           }
         });
-        conversationContext += '\n';
+        conversationContext += '=== END OF PREVIOUS CONVERSATION HISTORY ===\n\n';
+        conversationContext += 'IMPORTANT: Use the conversation history above to understand context. Reference previous messages when relevant.\n\n';
       }
       
-      conversationContext += `Customer: ${trimmedText}\nAssistant:`;
+      // Add instruction based on question status
+      if (!bothQuestionsAnswered) {
+        conversationContext += `Current User Message: ${trimmedText}\n\n`;
+        if (!question1Asked) {
+          conversationContext += `IMPORTANT: Ask the FIRST question about area/profession. DO NOT answer their question yet.\n\nYour Response (20-30 words):`;
+        } else if (question1Asked && !question1Answered) {
+          conversationContext += `IMPORTANT: Wait for user to answer the first question. If this is their answer, acknowledge it and ask the SECOND question. DO NOT answer other questions yet.\n\nYour Response (20-30 words):`;
+        } else if (question1Answered && !question2Asked) {
+          conversationContext += `IMPORTANT: Ask the SECOND question about expected outcomes. DO NOT answer their question yet.\n\nYour Response (20-30 words):`;
+        } else if (question2Asked && !question2Answered) {
+          conversationContext += `IMPORTANT: Wait for user to answer the second question. If this is their answer, acknowledge it. DO NOT answer other questions until both questions are answered.\n\nYour Response (20-30 words):`;
+        }
+      } else {
+        conversationContext += `Current User Question: ${trimmedText}\n\nYour Response (20-30 words, based on conversation history and current question):`;
+      }
       
       let result;
       let response;
@@ -2182,6 +2354,17 @@ Always be polite, patient, and solution-oriented. If you cannot resolve an issue
         result = await geminiModel.generateContent(conversationContext);
         response = await result.response;
         aiText = response.text() || 'Sorry, I could not produce an answer.';
+        
+        // Enforce 20-30 word limit
+        const words = aiText.trim().split(/\s+/);
+        if (words.length > 30) {
+          // Truncate to 30 words and add ellipsis if needed
+          aiText = words.slice(0, 30).join(' ') + '...';
+          console.log(`⚠️  AI response exceeded 30 words (${words.length} words), truncated to 30 words`);
+        } else if (words.length < 20 && words.length > 0) {
+          // If too short, keep as is (minimum is flexible, but prefer 20-30)
+          console.log(`ℹ️  AI response is ${words.length} words (target: 20-30 words)`);
+        }
         
         // Calculate latency
         const latencyEnd = process.hrtime.bigint();
@@ -2243,6 +2426,13 @@ Always be polite, patient, and solution-oriented. If you cannot resolve an issue
               response = await result.response;
               aiText = response.text() || 'Sorry, I could not produce an answer.';
               
+              // Enforce 20-30 word limit for fallback model responses too
+              const words = aiText.trim().split(/\s+/);
+              if (words.length > 30) {
+                aiText = words.slice(0, 30).join(' ') + '...';
+                console.log(`⚠️  Fallback model response exceeded 30 words (${words.length} words), truncated to 30 words`);
+              }
+              
               if (aiText && aiText !== 'Sorry, I could not produce an answer.') {
                 geminiModel = fallbackGeminiModel;
                 geminiModelName = fallbackModel;
@@ -2280,6 +2470,15 @@ Always be polite, patient, and solution-oriented. If you cannot resolve an issue
         code: err?.code,
         status: err?.status
       });
+      
+      // Check for API key expiration
+      const isApiKeyExpired = err?.message?.includes('API key expired') || 
+                              err?.message?.includes('API_KEY_INVALID');
+      if (isApiKeyExpired) {
+        console.error('🔑 Gemini API key has expired or is invalid');
+        console.error('   💡 Fix: Get a new API key from https://aistudio.google.com/app/apikey');
+        console.error('   💡 Then update GEMINI_API_KEY in your .env file and restart the server');
+      }
       
       const isRateLimit = err?.status === 429 || err?.message?.includes('429') || err?.code === 429;
       if (isRateLimit) {
