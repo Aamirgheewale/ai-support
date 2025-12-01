@@ -5,10 +5,12 @@ const socket = io('http://localhost:4000');
 
 export default function EmbedWidget({ initialSessionId }: { initialSessionId?: string }) {
   const [sessionId, setSessionId] = useState<string | null>(initialSessionId || null);
-  const [messages, setMessages] = useState<Array<{ sender: string; text: string; ts?: number }>>([]);
+  const [messages, setMessages] = useState<Array<{ sender: string; text: string; ts?: number; type?: string; options?: Array<{ text: string; value: string }> }>>([]);
   const [text, setText] = useState('');
   const [isConnected, setIsConnected] = useState(false);
   const [isBotTyping, setIsBotTyping] = useState(false);
+  const [isButtonBlinking, setIsButtonBlinking] = useState(false);
+  const [conversationConcluded, setConversationConcluded] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<number | null>(null);
 
@@ -86,8 +88,19 @@ export default function EmbedWidget({ initialSessionId }: { initialSessionId?: s
       setMessages(prev => {
         const exists = prev.some(msg => msg.sender === 'bot' && msg.text === m.text);
         if (exists) return prev;
-        return [...prev, { sender: 'bot', text: m.text, ts: Date.now() }];
+        return [...prev, { 
+          sender: 'bot', 
+          text: m.text, 
+          ts: Date.now(),
+          type: m.type,
+          options: m.options
+        }];
       });
+      
+      // Check if conversation is concluded
+      if (m.type === 'conclusion_final') {
+        setConversationConcluded(true);
+      }
     });
     socket.on('agent_message', (m: any) => {
       stopTypingIndicator();
@@ -134,7 +147,27 @@ export default function EmbedWidget({ initialSessionId }: { initialSessionId?: s
     const sid = sessionId || `s_${Date.now()}`;
     setSessionId(sid);
     setMessages([]);
+    setConversationConcluded(false);
     socket.emit('start_session', { sessionId: sid, userMeta: {} });
+    // Trigger blinking animation
+    setIsButtonBlinking(true);
+    setTimeout(() => setIsButtonBlinking(false), 2000); // Stop after 2 seconds
+  }
+  
+  function handleConclusionOption(optionValue: string, optionText: string) {
+    if (!sessionId || conversationConcluded) return; // Don't allow clicks if conversation is concluded
+    
+    // Send the selected option as a user message
+    setMessages(prev => [...prev, { sender: 'user', text: optionText, ts: Date.now() }]);
+    socket.emit('user_message', { sessionId, text: optionText });
+    
+    if (optionValue === 'thank_you') {
+      // Option 1: Thank you - wait for final message from backend
+      startTypingIndicator();
+    } else if (optionValue === 'continue') {
+      // Option 2: Continue conversation - normal flow
+      startTypingIndicator();
+    }
   }
 
   function send() {
@@ -167,7 +200,7 @@ export default function EmbedWidget({ initialSessionId }: { initialSessionId?: s
     }}>
       {/* Header */}
       <div style={{ 
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        background: '#3E2B3F',
         color: 'white',
         padding: '16px 20px',
         display: 'flex',
@@ -176,25 +209,45 @@ export default function EmbedWidget({ initialSessionId }: { initialSessionId?: s
       }}>
         <div>
           <div style={{ fontWeight: 600, fontSize: '16px' }}>AI Customer Support</div>
-          <div style={{ fontSize: '12px', opacity: 0.9, marginTop: '2px' }}>
-            {isConnected ? '● Online' : '○ Offline'}
+          <div style={{ fontSize: '12px', opacity: 0.9, marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {isConnected ? (
+              <>
+                <span className="online-indicator" style={{
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  backgroundColor: '#4CAF50',
+                  display: 'inline-block'
+                }}></span>
+                <span>Online</span>
+              </>
+            ) : (
+              <>
+                <span style={{ color: '#999' }}>○</span>
+                <span>Offline</span>
+              </>
+            )}
           </div>
         </div>
-        {!sessionId && (
+        {(!sessionId || conversationConcluded) && (
           <button 
             onClick={start}
+            className={isButtonBlinking ? 'start-button-blink' : ''}
             style={{
-              background: 'rgba(255,255,255,0.2)',
-              border: '1px solid rgba(255,255,255,0.3)',
+              background: 'rgba(255,255,255,0.1)',
+              backdropFilter: 'blur(10px)',
+              WebkitBackdropFilter: 'blur(10px)',
+              border: '1px solid rgba(255,255,255,0.2)',
               color: 'white',
               padding: '6px 16px',
               borderRadius: '6px',
               cursor: 'pointer',
               fontWeight: 500,
-              fontSize: '14px'
+              fontSize: '14px',
+              transition: 'all 0.3s ease'
             }}
           >
-            Start Chat
+            {conversationConcluded ? 'Start New Chat' : 'Start Chat'}
           </button>
         )}
       </div>
@@ -224,7 +277,8 @@ export default function EmbedWidget({ initialSessionId }: { initialSessionId?: s
             key={i} 
             style={{ 
               display: 'flex',
-              justifyContent: m.sender === 'user' ? 'flex-end' : 'flex-start',
+              flexDirection: 'column',
+              alignItems: m.sender === 'user' ? 'flex-end' : 'flex-start',
               marginBottom: '4px'
             }}
           >
@@ -245,6 +299,54 @@ export default function EmbedWidget({ initialSessionId }: { initialSessionId?: s
             }}>
               {m.text}
             </div>
+            {m.type === 'conclusion_question' && m.options && !conversationConcluded && (
+              <div style={{
+                marginTop: '8px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+                width: '75%'
+              }}>
+                {m.options.map((option, optIdx) => (
+                  <button
+                    key={optIdx}
+                    onClick={() => handleConclusionOption(option.value, option.text)}
+                    disabled={conversationConcluded}
+                    style={{
+                      padding: '10px 16px',
+                      background: conversationConcluded 
+                        ? 'rgba(200, 200, 200, 0.1)' 
+                        : 'rgba(102, 126, 234, 0.1)',
+                      border: conversationConcluded 
+                        ? '1px solid rgba(200, 200, 200, 0.3)' 
+                        : '1px solid rgba(102, 126, 234, 0.3)',
+                      borderRadius: '8px',
+                      color: conversationConcluded ? '#999' : '#667eea',
+                      fontSize: '14px',
+                      cursor: conversationConcluded ? 'not-allowed' : 'pointer',
+                      fontWeight: 500,
+                      transition: 'all 0.2s',
+                      textAlign: 'left',
+                      opacity: conversationConcluded ? 0.5 : 1
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!conversationConcluded) {
+                        e.currentTarget.style.background = 'rgba(102, 126, 234, 0.2)';
+                        e.currentTarget.style.borderColor = 'rgba(102, 126, 234, 0.5)';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!conversationConcluded) {
+                        e.currentTarget.style.background = 'rgba(102, 126, 234, 0.1)';
+                        e.currentTarget.style.borderColor = 'rgba(102, 126, 234, 0.3)';
+                      }
+                    }}
+                  >
+                    {option.text}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         ))}
         {isBotTyping && (
@@ -277,7 +379,7 @@ export default function EmbedWidget({ initialSessionId }: { initialSessionId?: s
           value={text} 
           onChange={e => setText(e.target.value)}
           onKeyPress={handleKeyPress}
-          disabled={!sessionId}
+          disabled={!sessionId || conversationConcluded}
           style={{ 
             flex: 1, 
             padding: '10px 14px',
@@ -285,22 +387,28 @@ export default function EmbedWidget({ initialSessionId }: { initialSessionId?: s
             borderRadius: '8px',
             fontSize: '14px',
             outline: 'none',
-            background: sessionId ? 'white' : '#f5f5f5'
+            background: (sessionId && !conversationConcluded) ? 'white' : '#f5f5f5'
           }} 
-          placeholder={sessionId ? "Type your message..." : "Click 'Start Chat' to begin"} 
+          placeholder={
+            conversationConcluded 
+              ? "Conversation ended. Click 'Start Chat' for a new session" 
+              : sessionId 
+              ? "Type your message..." 
+              : "Click 'Start Chat' to begin"
+          } 
         />
         <button 
           onClick={send}
-          disabled={!sessionId || !text.trim()}
+          disabled={!sessionId || !text.trim() || conversationConcluded}
           style={{
             padding: '10px 20px',
-            background: sessionId && text.trim() 
+            background: (sessionId && text.trim() && !conversationConcluded)
               ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
               : '#ccc',
             color: 'white',
             border: 'none',
             borderRadius: '8px',
-            cursor: sessionId && text.trim() ? 'pointer' : 'not-allowed',
+            cursor: (sessionId && text.trim() && !conversationConcluded) ? 'pointer' : 'not-allowed',
             fontWeight: 500,
             fontSize: '14px',
             transition: 'opacity 0.2s'
