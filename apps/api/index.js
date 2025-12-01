@@ -1940,19 +1940,20 @@ io.on('connection', (socket) => {
 
   // Handle user messages - CRITICAL: Check for agent assignment before AI
   socket.on('user_message', async (data) => {
-    const { sessionId, text } = data || {};
+    try {
+      const { sessionId, text } = data || {};
 
-    if (!sessionId || typeof sessionId !== 'string') {
-      console.warn(`❌ user_message: missing or invalid sessionId from ${socket.id}`);
-      socket.emit('session_error', { error: 'Invalid session ID' });
-      return;
-    }
+      if (!sessionId || typeof sessionId !== 'string') {
+        console.warn(`❌ user_message: missing or invalid sessionId from ${socket.id}`);
+        socket.emit('session_error', { error: 'Invalid session ID' });
+        return;
+      }
 
-    if (!text || typeof text !== 'string' || text.trim().length === 0) {
-      console.warn(`❌ user_message: missing or empty text from ${socket.id}`);
-      socket.emit('session_error', { error: 'Message text is required' });
-      return;
-    }
+      if (!text || typeof text !== 'string' || text.trim().length === 0) {
+        console.warn(`❌ user_message: missing or empty text from ${socket.id}`);
+        socket.emit('session_error', { error: 'Message text is required' });
+        return;
+      }
 
     // Ensure socket is in session room (in case of reconnection or room loss)
     // This is critical for receiving agent messages
@@ -1965,15 +1966,104 @@ io.on('connection', (socket) => {
     const trimmedText = text.trim();
     console.log(`💬 Message received [${sessionId}]: "${trimmedText.substring(0, 50)}${trimmedText.length > 50 ? '...' : ''}"`);
 
-    // Always save user message to Appwrite
-    console.log(`💾 Attempting to save user message to Appwrite...`);
-    const saveResult = await saveMessageToAppwrite(sessionId, 'user', trimmedText);
-    if (!saveResult) {
-      console.error(`❌ CRITICAL: Failed to save user message [${sessionId}] - saveMessageToAppwrite returned false`);
-      // Still continue with AI response even if save fails
-    } else {
-      console.log(`✅ User message saved successfully [${sessionId}]`);
+    // Check if conversation is concluded - if so, don't process messages
+    let conversationConcluded = false;
+    if (awDatabases && APPWRITE_DATABASE_ID && APPWRITE_SESSIONS_COLLECTION_ID) {
+      try {
+        session = await getSessionDoc(sessionId);
+        if (session) {
+          const userMeta = typeof session.userMeta === 'string' 
+            ? JSON.parse(session.userMeta || '{}') 
+            : (session.userMeta || {});
+          conversationConcluded = userMeta.conversationConcluded === true;
+        }
+      } catch (err) {
+        console.warn('Failed to check conversation concluded status:', err?.message || err);
+      }
     }
+    
+    // Check if conversation is concluded - if so, don't process messages
+    if (conversationConcluded) {
+      // Conversation is concluded, don't reply
+      console.log(`💾 Attempting to save user message to Appwrite...`);
+      await saveMessageToAppwrite(sessionId, 'user', trimmedText);
+      console.log(`⚠️  Conversation concluded for [${sessionId}], ignoring user message`);
+      return; // Don't process - user needs to start new session
+    }
+    
+    // Handle conclusion option selections
+    const trimmedLower = trimmedText.toLowerCase().trim();
+    if (trimmedLower === 'thank you for helping' || trimmedLower === 'thankyou for helping' || 
+        trimmedLower.includes('thank you') && trimmedLower.includes('helping')) {
+      // Option 1: Thank you - conclude conversation
+      const finalMessage = 'All the queries are solved, thank you have a good day';
+      console.log(`💾 Attempting to save user message to Appwrite...`);
+      await saveMessageToAppwrite(sessionId, 'user', trimmedText);
+      await saveMessageToAppwrite(sessionId, 'bot', finalMessage);
+      
+      // Mark conversation as concluded
+      if (awDatabases && APPWRITE_DATABASE_ID && APPWRITE_SESSIONS_COLLECTION_ID) {
+        try {
+          const currentSession = await getSessionDoc(sessionId);
+          if (currentSession) {
+            const userMeta = typeof currentSession.userMeta === 'string' 
+              ? JSON.parse(currentSession.userMeta || '{}') 
+              : (currentSession.userMeta || {});
+            userMeta.conversationConcluded = true;
+            await awDatabases.updateDocument(
+              APPWRITE_DATABASE_ID,
+              APPWRITE_SESSIONS_COLLECTION_ID,
+              sessionId,
+              { userMeta: JSON.stringify(userMeta) }
+            );
+          }
+        } catch (err) {
+          console.warn('Failed to mark conversation as concluded:', err?.message || err);
+        }
+      }
+      
+      io.to(sessionId).emit('bot_message', { text: finalMessage, type: 'conclusion_final' });
+      return; // Don't process further
+    } else if (trimmedLower === 'want to ask more' || trimmedLower === 'continue conversation' ||
+               trimmedLower.includes('want to ask') || trimmedLower.includes('ask more')) {
+      // Option 2: Continue conversation - but check if conversation is already concluded
+      // Refresh conversation state to ensure we have the latest status
+      let isConcluded = conversationConcluded;
+      if (awDatabases && APPWRITE_DATABASE_ID && APPWRITE_SESSIONS_COLLECTION_ID) {
+        try {
+          const currentSession = await getSessionDoc(sessionId);
+          if (currentSession) {
+            const userMeta = typeof currentSession.userMeta === 'string' 
+              ? JSON.parse(currentSession.userMeta || '{}') 
+              : (currentSession.userMeta || {});
+            isConcluded = userMeta.conversationConcluded === true;
+          }
+        } catch (err) {
+          console.warn('Failed to refresh conversation concluded status:', err?.message || err);
+        }
+      }
+      
+      if (isConcluded) {
+        // Conversation already concluded, tell user to start new session
+        const newSessionMsg = 'This conversation has ended. Please click "Start Chat" to begin a new session.';
+        console.log(`💾 Attempting to save user message to Appwrite...`);
+        await saveMessageToAppwrite(sessionId, 'user', trimmedText);
+        await saveMessageToAppwrite(sessionId, 'bot', newSessionMsg);
+        io.to(sessionId).emit('bot_message', { text: newSessionMsg, type: 'conclusion_final' });
+        return; // Don't process further
+      }
+      // Continue conversation - save and continue normally
+      console.log(`💾 Attempting to save user message to Appwrite...`);
+      await saveMessageToAppwrite(sessionId, 'user', trimmedText);
+      // Continue with normal AI processing below
+    } else {
+      // Normal message - save and continue
+      console.log(`💾 Attempting to save user message to Appwrite...`);
+      await saveMessageToAppwrite(sessionId, 'user', trimmedText);
+    }
+    
+    // Verify message was saved
+    console.log(`✅ User message saved successfully [${sessionId}]`);
 
     // Check if session has assigned agent or AI is paused
     // First check in-memory cache (fastest)
@@ -2281,7 +2371,8 @@ Provide responses based on this profession/expertise. NEVER ask these questions 
       
       systemPrompt += `
 
-CRITICAL: You MUST use the previous conversation history provided below to understand context, remember what was discussed, and provide relevant responses based on the ongoing conversation. Always reference previous messages when relevant.
+CRITICAL: You MUST use the previous conversation history provided below to understand context, remember what was discussed, and provide relevant responses based on the ongoing conversation. 
+Always reference previous messages when relevant.
 
 MANDATORY RESPONSE LENGTH RULE - THIS IS CRITICAL:
 - EVERY response MUST be between 20-30 words EXACTLY
@@ -2322,6 +2413,184 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
         });
         conversationContext += '=== END OF PREVIOUS CONVERSATION HISTORY ===\n\n';
         conversationContext += 'IMPORTANT: Use the conversation history above to understand context. Reference previous messages when relevant.\n\n';
+      }
+      
+      // Check if conclusion question should be asked
+      let conclusionQuestionAsked = false;
+      let userMessagesAfterQuestions = 0;
+      if (bothQuestionsAnswered && conversationHistory.length > 0) {
+        // Find when both questions were answered (when Q2 was answered)
+        let q2AnsweredIndex = -1;
+        for (let i = 0; i < conversationHistory.length; i++) {
+          const msg = conversationHistory[i];
+          const text = msg.text.toLowerCase();
+          
+          // Check if conclusion question was already asked
+          if ((msg.sender === 'bot' || msg.sender === 'agent') && 
+              (text.includes('anything else') || text.includes('can help') || 
+               text.includes('anything else that i can') || text.includes('is there anything'))) {
+            conclusionQuestionAsked = true;
+            break; // Found it, no need to continue
+          }
+          
+          // Find when Q2 was answered (first user message after Q2 was asked)
+          if (question2Asked && msg.sender === 'user' && msg.text.trim().length > 5) {
+            // Check if Q2 was asked before this message
+            let q2WasAskedBefore = false;
+            for (let j = 0; j < i; j++) {
+              const prevMsg = conversationHistory[j];
+              const prevText = prevMsg.text.toLowerCase();
+              if ((prevMsg.sender === 'bot' || prevMsg.sender === 'agent') &&
+                  (prevText.includes('outcomes are you expecting') || prevText.includes('expecting by the end'))) {
+                q2WasAskedBefore = true;
+                break;
+              }
+            }
+            if (q2WasAskedBefore && q2AnsweredIndex === -1) {
+              q2AnsweredIndex = i;
+            }
+          }
+        }
+        
+        // Count user messages after Q2 was answered (excluding the current message being processed)
+        // We want to count complete exchanges (user message + bot response), so we count user messages
+        // that have already been responded to (i.e., messages in conversationHistory)
+        if (q2AnsweredIndex >= 0) {
+          for (let i = q2AnsweredIndex + 1; i < conversationHistory.length; i++) {
+            if (conversationHistory[i].sender === 'user') {
+              userMessagesAfterQuestions++;
+            }
+          }
+        }
+        
+        console.log(`🔍 Conclusion check: bothQuestionsAnswered=${bothQuestionsAnswered}, conclusionQuestionAsked=${conclusionQuestionAsked}, userMessagesAfterQuestions=${userMessagesAfterQuestions}, q2AnsweredIndex=${q2AnsweredIndex}`);
+      }
+      
+      // Check if current user message indicates they want to end the chat
+      // Keywords that suggest the user is satisfied and wants to conclude
+      const endingPhrases = [
+        'thank you', 'thankyou', 'thanks', 'thx', 'ty',
+        'no thanks', 'no thank you', 'no thankyou', 'no more', 'nothing else', 'no done',
+        'ok thanks', 'okay thanks', 'ok thank you', 'okay thank you', 'ok thankyou', 'okay thankyou',
+        "i'm done", 'im done', 'all done', "that's all", 'thats all',
+        'got it thanks', 'got it thank you', 'great thanks',
+        'nothing more', 'no more questions', 'no further questions',
+        "that's it", 'thats it', 'that is it', 'thats all i need',
+        'goodbye', 'bye', 'see you', 'see ya'
+      ];
+      
+      const singleWordEndings = ['no', 'ok', 'okay', 'done', 'got it', 'understood', 
+                                  'perfect', 'sure', 'fine', 'alright', 'nothing', 
+                                  'all good', 'all set'];
+      
+      const trimmedLower = trimmedText.toLowerCase().trim();
+      // Remove punctuation and normalize spaces for better matching
+      const cleanedText = trimmedLower.replace(/[.,!?;:]/g, ' ').replace(/\s+/g, ' ').trim();
+      // Also create a version with no spaces at all for matching combined words
+      const noSpaceText = trimmedLower.replace(/[.,!?;:\s]/g, '');
+      let indicatesEnding = false;
+      
+      // First check for multi-word phrases (more specific) - check both with and without spaces
+      indicatesEnding = endingPhrases.some(phrase => {
+        const phraseNoSpace = phrase.replace(/\s+/g, '');
+        const phraseLower = phrase.toLowerCase();
+        
+        // Check exact match (with or without spaces)
+        if (trimmedLower === phraseLower || cleanedText === phraseLower) return true;
+        if (trimmedLower === phraseNoSpace || noSpaceText === phraseNoSpace) return true;
+        
+        // Check if message contains the phrase (with spaces)
+        if (trimmedLower.includes(phraseLower) || cleanedText.includes(phraseLower)) return true;
+        
+        // Check if message contains phrase without spaces (e.g., "thankyou" in "okthankyou")
+        if (trimmedLower.includes(phraseNoSpace) || noSpaceText.includes(phraseNoSpace)) return true;
+        
+        // Check if message starts or ends with phrase
+        if (trimmedLower.startsWith(phraseLower) || trimmedLower.endsWith(phraseLower)) return true;
+        if (trimmedLower.startsWith(phraseNoSpace) || trimmedLower.endsWith(phraseNoSpace)) return true;
+        if (noSpaceText.startsWith(phraseNoSpace) || noSpaceText.endsWith(phraseNoSpace)) return true;
+        
+        return false;
+      });
+      
+      // Also check for combinations like "no thankyou" or "no done" by checking if message contains
+      // both "no" and any ending word/phrase
+      if (!indicatesEnding && trimmedLower.split(/\s+/).length <= 3) {
+        const hasNo = /\bno\b/i.test(trimmedLower) || noSpaceText.includes('no');
+        if (hasNo) {
+          // Check if message also contains any ending word/phrase
+          const allEndingWords = [...endingPhrases, ...singleWordEndings];
+          const hasEndingWord = allEndingWords.some(ending => {
+            const endingLower = ending.toLowerCase().replace(/\s+/g, '');
+            return noSpaceText.includes(endingLower) || trimmedLower.includes(ending.toLowerCase());
+          });
+          if (hasEndingWord) {
+            indicatesEnding = true;
+          }
+        }
+      }
+      
+      // If no phrase match, check for single-word endings (only if message is short)
+      if (!indicatesEnding && trimmedLower.split(/\s+/).length <= 3) {
+        indicatesEnding = singleWordEndings.some(word => {
+          const wordLower = word.toLowerCase();
+          // Match whole word only (not part of another word)
+          const wordRegex = new RegExp(`\\b${wordLower}\\b`, 'i');
+          // Also check if it's the entire message or combined with other ending words
+          if (trimmedLower === wordLower || cleanedText === wordLower) return true;
+          if (wordRegex.test(trimmedLower) || wordRegex.test(cleanedText)) return true;
+          // Check in no-space version (e.g., "ok" in "okthankyou")
+          if (noSpaceText.includes(wordLower)) return true;
+          return false;
+        });
+      }
+      
+      // If user message indicates ending AND both questions are answered
+      // Show options every time, even if conclusion question was asked before
+      // This check happens BEFORE normal AI processing to ensure it always triggers
+      if (bothQuestionsAnswered && indicatesEnding) {
+        console.log(`🔍 Ending keyword detected: "${trimmedText}" -> indicatesEnding=${indicatesEnding}, bothQuestionsAnswered=${bothQuestionsAnswered}`);
+        try {
+          const conclusionQuestion = 'Is there anything else that I can help?';
+          await saveMessageToAppwrite(sessionId, 'bot', conclusionQuestion);
+          io.to(sessionId).emit('bot_message', { 
+            text: conclusionQuestion, 
+            type: 'conclusion_question',
+            options: [
+              { text: 'Thank you for helping', value: 'thank_you' },
+              { text: 'Want to ask more', value: 'continue' }
+            ]
+          });
+          console.log(`✅ Conclusion question sent to [${sessionId}] (triggered by ending keyword: "${trimmedText}")`);
+          return; // Don't process AI response - CRITICAL: This prevents normal AI from responding
+        } catch (err) {
+          console.error(`❌ Error sending conclusion question to [${sessionId}]:`, err?.message || err);
+          // Continue with normal AI processing if conclusion question fails
+        }
+      } else if (bothQuestionsAnswered) {
+        console.log(`🔍 Ending check: "${trimmedText}" -> indicatesEnding=${indicatesEnding}, bothQuestionsAnswered=${bothQuestionsAnswered}, cleanedText="${cleanedText}", noSpaceText="${noSpaceText}"`);
+      }
+      
+      // If it's time to ask conclusion question (after 3+ user messages that have been responded to)
+      // Note: We check >= 3 to ensure there have been meaningful exchanges before asking to conclude
+      if (bothQuestionsAnswered && !conclusionQuestionAsked && userMessagesAfterQuestions >= 3) {
+        try {
+          const conclusionQuestion = 'Is there anything else that I can help?';
+          await saveMessageToAppwrite(sessionId, 'bot', conclusionQuestion);
+          io.to(sessionId).emit('bot_message', { 
+            text: conclusionQuestion, 
+            type: 'conclusion_question',
+            options: [
+              { text: 'Thank you for helping', value: 'thank_you' },
+              { text: 'Want to ask more', value: 'continue' }
+            ]
+          });
+          console.log(`✅ Conclusion question sent to [${sessionId}]`);
+          return; // Don't process AI response
+        } catch (err) {
+          console.error(`❌ Error sending conclusion question to [${sessionId}]:`, err?.message || err);
+          // Continue with normal AI processing if conclusion question fails
+        }
       }
       
       // Add instruction based on question status
@@ -2511,6 +2780,26 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
       );
       
       io.to(sessionId).emit('bot_message', { text: fallbackMsg, confidence: 0 });
+    }
+    } catch (handlerErr) {
+      // Catch any unhandled errors in the entire handler
+      console.error(`❌ Unhandled error in user_message handler:`, {
+        message: handlerErr?.message,
+        stack: handlerErr?.stack,
+        error: handlerErr
+      });
+      
+      // Send error message to user if we have sessionId
+      const errorMsg = 'Sorry, I encountered an error processing your message. Please try again.';
+      try {
+        const errSessionId = data?.sessionId;
+        if (errSessionId) {
+          await saveMessageToAppwrite(errSessionId, 'bot', errorMsg, { confidence: 0, error: handlerErr?.message });
+          io.to(errSessionId).emit('bot_message', { text: errorMsg, confidence: 0 });
+        }
+      } catch (saveErr) {
+        console.error(`❌ Failed to save error message:`, saveErr?.message || saveErr);
+      }
     }
   });
 
