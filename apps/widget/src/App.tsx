@@ -4,6 +4,7 @@ import EmbedWidget from './components/EmbedWidget';
 function App() {
   const [servicesOpen, setServicesOpen] = useState(false);
   const servicesRef = useRef<HTMLDivElement>(null);
+  const [chatWidgetOpen, setChatWidgetOpen] = useState(false);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -23,7 +24,13 @@ function App() {
   }, [servicesOpen]);
 
   return (
-    <div style={{ padding: 20, background: '#554356', minHeight: '100vh' }}>
+    <div style={{ 
+      width: '100%', 
+      minHeight: '100vh', 
+      background: '#000000',
+      position: 'relative',
+      overflow: 'visible'
+    }}>
       {/* Header with glass effect rectangles */}
       <div style={{
         position: 'fixed',
@@ -34,9 +41,11 @@ function App() {
         justifyContent: 'space-between',
         alignItems: 'center',
         padding: '24px 0',
-        zIndex: 1001,
+        zIndex: 100,
         gap: '20px',
-        overflow: 'visible'
+        overflow: 'visible',
+        pointerEvents: 'auto',
+        background: 'transparent'
       }}>
         {/* Wreath background - behind left rectangle only */}
         <div style={{
@@ -253,7 +262,7 @@ function App() {
           </div>
           <div style={{ position: 'relative', display: 'inline-block' }}>
             {/* Particle splash behind logo */}
-            <img 
+            {/* <img 
               src="/particle-splash.png" 
               alt="Particle Splash" 
               style={{ 
@@ -267,7 +276,7 @@ function App() {
                 zIndex: 0,
                 opacity: 0.8
               }} 
-            />
+            /> */}
             {/* Robot Logo */}
             <img 
               src="/cebe-face.png" 
@@ -284,9 +293,14 @@ function App() {
         </div>
       </div>
 
-      <div style={{ maxWidth: 1200, margin: '0 auto', marginTop: '100px' }}>
-        <h1 style={{ marginBottom: '8px', color: '#ffffff' }}>AI Customer Support Chat System</h1>
-        <p style={{ color: '#e0e0e0', marginBottom: '24px' }}>AI-Based Customer Support Chat Assistant - Development Preview</p>
+      <div style={{ 
+        maxWidth: 1200, 
+        margin: '0 auto', 
+        marginTop: '100px',
+        padding: '20px',
+        position: 'relative',
+        zIndex: 1
+      }}>
         {/* Hero Image */}
         <div style={{ 
           display: 'flex', 
@@ -297,7 +311,7 @@ function App() {
           position: 'relative'
         }}>
           {/* Particle splash behind hero */}
-          <img 
+          {/* <img 
             src="/particle-splash.png" 
             alt="Particle Splash" 
             style={{ 
@@ -312,7 +326,22 @@ function App() {
               opacity: 0.8,
               pointerEvents: 'none'
             }} 
-          />
+          /> */}
+          {/* White glowing ellipse behind hero */}
+          <div style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: '550px',
+            height: '400px',
+            borderRadius: '50%',
+            background: 'radial-gradient(ellipse, rgba(255, 255, 255, 0.4) 0%, rgba(59, 130, 246, 0.3) 50%, transparent 100%)',
+            filter: 'blur(40px)',
+            WebkitFilter: 'blur(40px)',
+            zIndex: 0.5,
+            pointerEvents: 'none'
+          }} />
           {/* Hero Image */}
           <img 
             src="/cebe-hero.png" 
@@ -330,7 +359,7 @@ function App() {
           <div style={{
             position: 'absolute',
             bottom: '65px',
-            left: '20%',
+            left: '30%',
             width: '151px',
             zIndex: 3,
             textAlign: 'center'
@@ -349,7 +378,7 @@ function App() {
           <div style={{
             position: 'absolute',
             bottom: '43px',
-            left: '20%',
+            left: '30%',
             width: '151px',
             height: '86px',
             background: 'rgba(255, 255, 255, 0.1)',
@@ -364,15 +393,105 @@ function App() {
           }} />
         </div>
       </div>
-      {/* Widget positioned on the right side */}
-      <div style={{
-        position: 'fixed',
-        bottom: '20px',
-        right: '20px',
-        zIndex: 1000
-      }}>
-        <EmbedWidget />
-      </div>
+      {/* Floating Chat Button - Circular */}
+      {!chatWidgetOpen && (
+        <button
+          onClick={() => setChatWidgetOpen(true)}
+          style={{
+            position: 'fixed',
+            bottom: '30px',
+            right: '30px',
+            width: '70px',
+            height: '70px',
+            borderRadius: '50%',
+            background: 'linear-gradient(135deg, #000000 0%, #ffffff 100%)',
+            border: '2px solid rgba(255, 255, 255, 0.3)',
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3), 0 0 20px rgba(255, 255, 255, 0.1)',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10000,
+            transition: 'all 0.3s ease',
+            color: '#ffffff',
+            fontSize: '24px',
+            fontWeight: 'bold',
+            pointerEvents: 'auto'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'scale(1.1)';
+            e.currentTarget.style.boxShadow = '0 6px 25px rgba(0, 0, 0, 0.4), 0 0 30px rgba(255, 255, 255, 0.2)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.3), 0 0 20px rgba(255, 255, 255, 0.1)';
+          }}
+          aria-label="Open chat"
+        >
+          💬
+        </button>
+      )}
+
+      {/* Chat Widget Popup */}
+      {chatWidgetOpen && (
+        <div style={{
+          position: 'fixed',
+          bottom: '30px',
+          right: '30px',
+          zIndex: 10000,
+          animation: 'slideUp 0.3s ease-out',
+          pointerEvents: 'auto'
+        }}>
+          {/* Close button */}
+          <button
+            onClick={() => setChatWidgetOpen(false)}
+            style={{
+              position: 'absolute',
+              top: '-15px',
+              right: '-15px',
+              width: '40px',
+              height: '40px',
+              borderRadius: '50%',
+              background: 'linear-gradient(135deg, #000000 0%, #ffffff 100%)',
+              border: '2px solid rgba(255, 255, 255, 0.3)',
+              color: '#ffffff',
+              fontSize: '20px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 2px 10px rgba(0, 0, 0, 0.3)',
+              zIndex: 1002,
+              transition: 'all 0.2s ease'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'rotate(90deg) scale(1.1)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'rotate(0deg) scale(1)';
+            }}
+            aria-label="Close chat"
+          >
+            ×
+          </button>
+          {/* Chat widget */}
+          <EmbedWidget />
+        </div>
+      )}
+
+      {/* Add CSS animation for slide up effect */}
+      <style>{`
+        @keyframes slideUp {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+      `}</style>
     </div>
   );
 }
