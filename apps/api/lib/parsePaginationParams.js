@@ -52,8 +52,8 @@ function validatePaginationParams(req) {
 
   if (limit !== undefined) {
     const limitNum = parseInt(limit, 10);
-    if (isNaN(limitNum) || limitNum < 1 || limitNum > 100) {
-      throw new Error('Invalid limit: must be between 1 and 100');
+    if (isNaN(limitNum) || limitNum < 1 || limitNum > 10000) {
+      throw new Error('Invalid limit: must be between 1 and 10000');
     }
   }
 

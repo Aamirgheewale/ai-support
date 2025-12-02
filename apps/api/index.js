@@ -1941,19 +1941,19 @@ io.on('connection', (socket) => {
   // Handle user messages - CRITICAL: Check for agent assignment before AI
   socket.on('user_message', async (data) => {
     try {
-      const { sessionId, text } = data || {};
+    const { sessionId, text } = data || {};
 
-      if (!sessionId || typeof sessionId !== 'string') {
-        console.warn(`❌ user_message: missing or invalid sessionId from ${socket.id}`);
-        socket.emit('session_error', { error: 'Invalid session ID' });
-        return;
-      }
+    if (!sessionId || typeof sessionId !== 'string') {
+      console.warn(`❌ user_message: missing or invalid sessionId from ${socket.id}`);
+      socket.emit('session_error', { error: 'Invalid session ID' });
+      return;
+    }
 
-      if (!text || typeof text !== 'string' || text.trim().length === 0) {
-        console.warn(`❌ user_message: missing or empty text from ${socket.id}`);
-        socket.emit('session_error', { error: 'Message text is required' });
-        return;
-      }
+    if (!text || typeof text !== 'string' || text.trim().length === 0) {
+      console.warn(`❌ user_message: missing or empty text from ${socket.id}`);
+      socket.emit('session_error', { error: 'Message text is required' });
+      return;
+    }
 
     // Ensure socket is in session room (in case of reconnection or room loss)
     // This is critical for receiving agent messages
@@ -1985,7 +1985,7 @@ io.on('connection', (socket) => {
     // Check if conversation is concluded - if so, don't process messages
     if (conversationConcluded) {
       // Conversation is concluded, don't reply
-      console.log(`💾 Attempting to save user message to Appwrite...`);
+    console.log(`💾 Attempting to save user message to Appwrite...`);
       await saveMessageToAppwrite(sessionId, 'user', trimmedText);
       console.log(`⚠️  Conversation concluded for [${sessionId}], ignoring user message`);
       return; // Don't process - user needs to start new session
@@ -2247,8 +2247,8 @@ io.on('connection', (socket) => {
           let result;
           if (Query) {
             result = await awDatabases.listDocuments(
-              APPWRITE_DATABASE_ID,
-              APPWRITE_MESSAGES_COLLECTION_ID,
+            APPWRITE_DATABASE_ID,
+            APPWRITE_MESSAGES_COLLECTION_ID,
               [Query.equal('sessionId', sessionId), Query.orderAsc('createdAt')],
               50  // Increased from 10 to 50 to capture more conversation history
             );
@@ -2262,12 +2262,13 @@ io.on('connection', (socket) => {
             );
             const filtered = allResult.documents
               .filter(doc => doc.sessionId === sessionId)
-              .sort((a, b) => {
-                const timeA = new Date(a.createdAt || a.timestamp || a.$createdAt || 0).getTime();
-                const timeB = new Date(b.createdAt || b.timestamp || b.$createdAt || 0).getTime();
-                return timeA - timeB;
-              })
-              .slice(-50);  // Increased from 10 to 50 to capture more conversation history
+            .sort((a, b) => {
+              const timeA = new Date(a.createdAt || a.timestamp || a.$createdAt || 0).getTime();
+              const timeB = new Date(b.createdAt || b.timestamp || b.$createdAt || 0).getTime();
+              return timeA - timeB;
+            })
+              // Keep only the most recent 20 messages to reduce prompt size and latency
+              .slice(-20);
             result = { documents: filtered, total: filtered.length };
           }
           
@@ -2620,9 +2621,53 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
       };
       
       try {
+        // Prefer streaming responses for lower latency and better UX
+        let usedStreaming = false;
+        aiText = '';
+        
+        if (typeof geminiModel.generateContentStream === 'function') {
+          try {
+            console.log(`🔄 Using streaming Gemini API for session ${sessionId}`);
+            const streamResult = await geminiModel.generateContentStream(conversationContext);
+            usedStreaming = true;
+            
+            for await (const chunk of streamResult.stream) {
+              let chunkText = '';
+              
+              try {
+                if (typeof chunk.text === 'function') {
+                  chunkText = chunk.text() || '';
+                } else if (chunk.candidates && chunk.candidates.length > 0) {
+                  // Fallback extraction in case .text() is not available
+                  chunkText = chunk.candidates
+                    .map(c => (c.content?.parts || []).map(p => p.text || '').join(''))
+                    .join('');
+                }
+              } catch (extractErr) {
+                console.warn('⚠️  Failed to extract text from streaming chunk:', extractErr?.message || extractErr);
+              }
+              
+              if (!chunkText) continue;
+              
+              aiText += chunkText;
+              
+              // Emit partial text to clients that support streaming (e.g., widget)
+              // This does NOT replace the final bot_message used by other clients
+              io.to(sessionId).emit('bot_stream', { text: aiText });
+            }
+          } catch (streamErr) {
+            console.warn('⚠️  Streaming call failed, falling back to non-streaming generateContent:', streamErr?.message || streamErr);
+            usedStreaming = false;
+            aiText = '';
+          }
+        }
+        
+        // Fallback to non-streaming if streaming is unavailable or failed
+        if (!usedStreaming || !aiText) {
         result = await geminiModel.generateContent(conversationContext);
         response = await result.response;
         aiText = response.text() || 'Sorry, I could not produce an answer.';
+        }
         
         // Enforce 20-30 word limit
         const words = aiText.trim().split(/\s+/);
@@ -2642,7 +2687,7 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
         // Try to extract tokens from response (if available)
         let tokens = null;
         try {
-          if (response.usageMetadata) {
+          if (response && response.usageMetadata) {
             tokens = response.usageMetadata.totalTokenCount || null;
           }
         } catch (tokenErr) {
@@ -2667,7 +2712,7 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
           'ai',
           {
             ...accuracyMetadata,
-            aiRequestId: result.response?.promptFeedback?.blockReason || null
+            aiRequestId: result?.response?.promptFeedback?.blockReason || null
           }
         );
       } catch (modelErr) {
@@ -3119,8 +3164,8 @@ app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
       return res.status(400).json({ error: validationErr.message });
     }
     
-    // Parse pagination params
-    const { limit, offset } = parsePaginationParams(req, { defaultLimit: 20, maxLimit: 100 });
+    // Parse pagination params - increased maxLimit to allow fetching all sessions
+    const { limit, offset } = parsePaginationParams(req, { defaultLimit: 20, maxLimit: 10000 });
     
     const { 
       status, 
@@ -3175,30 +3220,79 @@ app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
       queries = [Query.orderDesc('$createdAt')];
     }
     
+    // Ensure queries is always an array (not undefined) for Appwrite SDK
+    let finalQueries = queries.length > 0 ? [...queries] : [];
+    
+    // Add ordering if Query is available
+    if (Query && !finalQueries.some(q => q.toString().includes('orderDesc'))) {
+      finalQueries.push(Query.orderDesc('$createdAt'));
+    }
+    
     let result;
     let totalCount = 0;
     try {
-      // First, get total count (for pagination metadata)
-      // Appwrite listDocuments returns total in the response
+      // Appwrite defaults to 25 documents per request, so we must use Query.limit() in queries array
+      // Appwrite's maximum is 5000 per request
+      const appwriteMaxPerRequest = 5000;
+      // For high limits (like 10000), always fetch in batches starting with 5000
+      const shouldFetchAll = !limit || limit >= 1000; // If limit is high or not specified, fetch all
+      const firstBatchLimit = shouldFetchAll ? appwriteMaxPerRequest : Math.min(limit || 5000, appwriteMaxPerRequest);
+      
+      // CRITICAL: Add Query.limit() to queries array - Appwrite requires this, not just the parameter
+      const queriesWithLimit = Query ? [...finalQueries, Query.limit(firstBatchLimit), Query.offset(offset)] : finalQueries;
+      
+      console.log(`🔍 Appwrite call: firstBatchLimit=${firstBatchLimit}, offset=${offset}, queries=${queriesWithLimit.length}, originalLimit=${limit}, shouldFetchAll=${shouldFetchAll}`);
+      
+      // Always fetch first batch with Query.limit() in queries array to avoid Appwrite's default of 25
       result = await awDatabases.listDocuments(
         APPWRITE_DATABASE_ID,
         APPWRITE_SESSIONS_COLLECTION_ID,
-        queries.length > 0 ? queries : undefined,
-        limit,
-        offset
+        queriesWithLimit // Queries array with Query.limit() and Query.offset()
       );
       totalCount = result.total;
-      console.log(`✅ Backend returned ${result.total} total session(s), ${result.documents.length} in this page (offset=${offset})`);
+      console.log(`✅ First batch: ${result.documents.length} documents, total in DB: ${result.total} (offset=${offset}, limit=${firstBatchLimit})`);
+      
+      // If we need more documents (limit is high or we want all), fetch in batches
+      if (shouldFetchAll && result.documents.length < totalCount) {
+        console.log(`📦 Fetching remaining sessions in batches (got ${result.documents.length}, total=${totalCount})`);
+        const allDocuments = [...result.documents];
+        let currentOffset = offset + result.documents.length;
+        
+        while (allDocuments.length < totalCount) {
+          const batchLimit = Math.min(5000, totalCount - allDocuments.length);
+          const batchQueries = Query ? [...finalQueries, Query.limit(batchLimit), Query.offset(currentOffset)] : finalQueries;
+          const batchResult = await awDatabases.listDocuments(
+            APPWRITE_DATABASE_ID,
+            APPWRITE_SESSIONS_COLLECTION_ID,
+            batchQueries // Use Query.limit() and Query.offset() in queries array
+          );
+          
+          allDocuments.push(...batchResult.documents);
+          
+          if (batchResult.documents.length < batchLimit) {
+            // No more documents available
+            break;
+          }
+          
+          currentOffset += batchResult.documents.length;
+        }
+        
+        result.documents = allDocuments;
+        console.log(`✅ Fetched ${result.documents.length} session(s) total in batches (total in DB: ${totalCount})`);
+      }
     } catch (queryErr) {
       console.error(`❌ Query error:`, queryErr?.message || queryErr);
       // If query fails, try fetching all and filtering client-side
       console.log(`⚠️  Falling back to fetch-all-then-filter approach`);
       try {
+        // Fallback: fetch with explicit limit using Query
+        const fallbackQueries = Query ? [Query.limit(5000)] : [];
         result = await awDatabases.listDocuments(
           APPWRITE_DATABASE_ID,
           APPWRITE_SESSIONS_COLLECTION_ID,
-          undefined,
-          10000 // Large limit to get all for filtering
+          fallbackQueries,
+          5000, // Appwrite max per request
+          0
         );
         totalCount = result.total;
         console.log(`✅ Fetched ${result.total} session(s) for client-side filtering`);
