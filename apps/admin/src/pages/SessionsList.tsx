@@ -32,25 +32,34 @@ export default function SessionsList() {
   const [bulkExporting, setBulkExporting] = useState(false)
   const [showBulkModal, setShowBulkModal] = useState(false)
   
-  // Pagination state
-  const [limit, setLimit] = useState(20)
-  const [offset, setOffset] = useState(0)
+  // Store all sessions fetched from backend
+  const [allSessions, setAllSessions] = useState<Session[]>([])
+  
+  // Client-side pagination state (for displaying 20 per page)
+  const [displayLimit, setDisplayLimit] = useState(20) // Display 20 sessions per page
+  const [currentPage, setCurrentPage] = useState(0) // Current page (0-indexed)
+  
+  // Backend fetch state
+  const [limit, setLimit] = useState(10000) // Fetch all sessions at once from backend
   const [total, setTotal] = useState(0)
-  const [hasMore, setHasMore] = useState(false)
   
   const navigate = useNavigate()
 
   useEffect(() => {
     // Reset to first page when filters change
-    setOffset(0)
+    setCurrentPage(0)
+    // Fetch all sessions when filters change
     loadSessions(0)
   }, [statusFilter, search, agentFilter, startDate, endDate, fullTextSearch])
 
   useEffect(() => {
-    loadSessions(offset)
-  }, [offset, limit])
+    // Fetch all sessions on mount or when limit changes
+    console.log(`🔄 Loading all sessions: limit=${limit}`)
+    loadSessions(0)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [limit])
 
-  async function loadSessions(currentOffset: number = offset) {
+  async function loadSessions(currentOffset: number = 0) { // Always fetch from offset 0 to get all sessions
     setLoading(true)
     try {
       const params = new URLSearchParams()
@@ -60,8 +69,8 @@ export default function SessionsList() {
       if (startDate) params.append('startDate', startDate)
       if (endDate) params.append('endDate', endDate)
       if (fullTextSearch) params.append('fullTextSearch', fullTextSearch)
-      params.append('limit', limit.toString())
-      params.append('offset', currentOffset.toString())
+      params.append('limit', limit.toString()) // Fetch all sessions (10000)
+      params.append('offset', '0') // Always start from 0 to fetch all
 
       const res = await fetch(`${API_BASE}/admin/sessions?${params}`, {
         headers: {
@@ -75,7 +84,7 @@ export default function SessionsList() {
       const totalCount = data.total || sessions.length
       const hasMoreData = data.hasMore !== undefined ? data.hasMore : (currentOffset + sessions.length < totalCount)
       
-      console.log(`📊 Received ${sessions.length} session(s) from backend (total: ${totalCount}, offset: ${currentOffset})`)
+      console.log(`📊 Received ${sessions.length} session(s) from backend (total: ${totalCount}, offset: ${currentOffset}, limit: ${limit})`)
       
       // Log status distribution for debugging
       const statusCounts: Record<string, number> = {}
@@ -86,28 +95,16 @@ export default function SessionsList() {
       console.log('📊 Status distribution:', statusCounts)
       console.log('📊 Filter requested:', statusFilter || 'none')
       
-      // Client-side filtering as fallback (in case backend filter doesn't work)
-      if (statusFilter && statusFilter.trim() !== '') {
-        const beforeFilter = sessions.length
-        sessions = sessions.filter((s: Session) => {
-          const matches = s.status === statusFilter
-          // Special handling for agent_assigned - also check if agent is assigned
-          if (!matches && statusFilter === 'agent_assigned' && s.assignedAgent) {
-            return true
-          }
-          return matches
-        })
-        console.log(`📊 Client-side filter: ${beforeFilter} → ${sessions.length} sessions with status="${statusFilter}"`)
-        
-        // Log what statuses we actually have
-        const actualStatuses = [...new Set(sessions.map((s: Session) => s.status || 'unknown'))]
-        console.log('📊 Actual statuses in filtered results:', actualStatuses)
-      }
+      // IMPORTANT: Don't apply client-side filtering to paginated results!
+      // The backend already handles filtering and pagination.
+      // Client-side filtering should only be used as a fallback if backend filtering fails,
+      // but in that case, we need to fetch ALL sessions first, not paginated ones.
+      // For now, we trust the backend filtering and don't apply client-side filtering to paginated results.
       
-      console.log('📊 Displaying sessions:', sessions.length, 'Status filter:', statusFilter || 'none')
-      setSessions(sessions)
+      console.log('📊 Fetched all sessions:', sessions.length, 'Status filter:', statusFilter || 'none')
+      // Store all sessions for client-side pagination
+      setAllSessions(sessions)
       setTotal(totalCount)
-      setHasMore(hasMoreData)
     } catch (err) {
       console.error('Failed to load sessions:', err)
     } finally {
@@ -116,8 +113,18 @@ export default function SessionsList() {
   }
 
   function handlePageChange(newOffset: number) {
-    setOffset(newOffset)
+    // Convert offset to page number (offset / displayLimit)
+    const newPage = Math.floor(newOffset / displayLimit)
+    console.log(`🔄 Page change: page ${currentPage} → ${newPage}, offset ${newOffset}`)
+    setCurrentPage(newPage)
   }
+  
+  // Calculate paginated sessions to display (20 per page)
+  const startIndex = currentPage * displayLimit
+  const endIndex = startIndex + displayLimit
+  const paginatedSessions = allSessions.slice(startIndex, endIndex)
+  const totalPages = Math.ceil(allSessions.length / displayLimit)
+  const paginationOffset = currentPage * displayLimit
 
   // Helper: Download file from blob
   function downloadFile(blob: Blob, filename: string) {
@@ -391,7 +398,7 @@ export default function SessionsList() {
             </tr>
           </thead>
           <tbody>
-            {sessions.map((session) => (
+            {paginatedSessions.map((session) => (
               <tr
                 key={session.sessionId}
                 onClick={() => navigate(`/sessions/${session.sessionId}`)}
@@ -529,7 +536,7 @@ export default function SessionsList() {
         </table>
       )}
 
-      {!loading && sessions.length === 0 && (
+      {!loading && allSessions.length === 0 && (
         <div style={{ padding: '40px', textAlign: 'center', color: '#666' }}>
           {statusFilter ? (
             <>
@@ -547,17 +554,17 @@ export default function SessionsList() {
         </div>
       )}
       
-      {!loading && sessions.length > 0 && (
+      {!loading && allSessions.length > 0 && (
         <>
           <div style={{ marginTop: '10px', padding: '10px', background: '#f8f9fa', borderRadius: '4px', fontSize: '14px', color: '#666' }}>
-            Showing {sessions.length} session{sessions.length !== 1 ? 's' : ''} of {total}
+            Showing {paginatedSessions.length} session{paginatedSessions.length !== 1 ? 's' : ''} of {allSessions.length} (page {currentPage + 1} of {totalPages})
             {statusFilter && ` with status: ${statusFilter}`}
             {selectedSessions.size > 0 && ` • ${selectedSessions.size} selected`}
           </div>
           <PaginationControls
-            total={total}
-            limit={limit}
-            offset={offset}
+            total={allSessions.length}
+            limit={displayLimit}
+            offset={paginationOffset}
             onPageChange={handlePageChange}
           />
         </>

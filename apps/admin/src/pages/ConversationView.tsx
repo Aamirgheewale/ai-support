@@ -491,10 +491,40 @@ export default function ConversationView() {
     <div style={{ padding: '20px', maxWidth: '1000px', margin: '0 auto' }}>
       <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <button onClick={() => navigate('/')} style={{ padding: '8px 16px', marginRight: '10px', background: '#6c757d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+          <button
+            onClick={() => navigate('/')}
+            style={{
+              padding: '8px 16px',
+              marginRight: '10px',
+              background: '#6c757d',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer'
+            }}
+          >
             ← Back
           </button>
-          <h1 style={{ display: 'inline', marginLeft: '10px' }}>Session: {sessionId}</h1>
+          <h1 style={{ display: 'inline', marginLeft: '10px', marginRight: '10px' }}>Session: {sessionId}</h1>
+          {/* Refresh button to reload messages without full page refresh */}
+          <button
+            onClick={() => {
+              // Reload latest session info and messages
+              loadSessionInfo()
+              loadMessages(false)
+            }}
+            style={{
+              padding: '8px 16px',
+              background: '#007bff',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '13px'
+            }}
+          >
+            Refresh
+          </button>
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
           {sessionStatus && (

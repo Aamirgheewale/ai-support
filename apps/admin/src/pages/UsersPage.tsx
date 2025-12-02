@@ -23,6 +23,7 @@ export default function UsersPage() {
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newUser, setNewUser] = useState({ email: '', name: '', roles: [] as string[] });
+  const [creatingUser, setCreatingUser] = useState(false);
   
   // Pagination state
   const [limit, setLimit] = useState(20);
@@ -128,6 +129,7 @@ export default function UsersPage() {
       return;
     }
 
+    setCreatingUser(true);
     try {
       const res = await fetch(`${API_BASE}/admin/users`, {
         method: 'POST',
@@ -148,6 +150,8 @@ export default function UsersPage() {
       await loadUsers();
     } catch (err: any) {
       alert(`Error: ${err?.message || 'Failed to create user'}`);
+    } finally {
+      setCreatingUser(false);
     }
   };
 
@@ -343,16 +347,52 @@ export default function UsersPage() {
                 onClick={() => {
                   setShowCreateModal(false);
                   setNewUser({ email: '', name: '', roles: [] });
+                  setCreatingUser(false);
                 }}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
+                disabled={creatingUser}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>
               <button
                 onClick={handleCreateUser}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+                disabled={creatingUser}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed relative transition-all"
+                style={{
+                  animation: creatingUser ? 'bounce 0.6s ease-in-out infinite' : 'none',
+                  transform: creatingUser ? 'translateY(0)' : 'none'
+                }}
               >
-                Create
+                {creatingUser ? (
+                  <span className="flex items-center justify-center">
+                    <span className="mr-2">Creating</span>
+                    <span className="flex space-x-1">
+                      <span 
+                        className="inline-block w-2 h-2 bg-white rounded-full"
+                        style={{ 
+                          animation: 'pulse 1.4s ease-in-out infinite',
+                          animationDelay: '0s'
+                        }}
+                      ></span>
+                      <span 
+                        className="inline-block w-2 h-2 bg-white rounded-full"
+                        style={{ 
+                          animation: 'pulse 1.4s ease-in-out infinite',
+                          animationDelay: '0.2s'
+                        }}
+                      ></span>
+                      <span 
+                        className="inline-block w-2 h-2 bg-white rounded-full"
+                        style={{ 
+                          animation: 'pulse 1.4s ease-in-out infinite',
+                          animationDelay: '0.4s'
+                        }}
+                      ></span>
+                    </span>
+                  </span>
+                ) : (
+                  'Create'
+                )}
               </button>
             </div>
           </div>
