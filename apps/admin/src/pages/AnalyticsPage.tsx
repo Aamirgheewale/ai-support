@@ -52,14 +52,9 @@ const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
 
 export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
-  const [fromDate, setFromDate] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 7);
-    return d.toISOString().split('T')[0];
-  });
-  const [toDate, setToDate] = useState(() => {
-    return new Date().toISOString().split('T')[0];
-  });
+  // Initially empty to show ALL data
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const [interval, setInterval] = useState<'day' | 'week' | 'month'>('day');
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   
@@ -82,13 +77,21 @@ export default function AnalyticsPage() {
         'Content-Type': 'application/json'
       };
       
+      // Build query params - only include dates if both are provided
+      const dateParams = fromDate && toDate ? `from=${fromDate}&to=${toDate}` : '';
+      const overviewUrl = `${API_BASE}/admin/metrics/overview${dateParams ? '?' + dateParams : ''}`;
+      const timeSeriesUrl = `${API_BASE}/admin/metrics/messages-over-time?${dateParams ? dateParams + '&' : ''}interval=${interval}`;
+      const histogramUrl = `${API_BASE}/admin/metrics/confidence-histogram${dateParams ? '?' + dateParams + '&bins=10' : '?bins=10'}`;
+      const responseTimesUrl = `${API_BASE}/admin/metrics/response-times${dateParams ? '?' + dateParams + '&percentiles=50,90,99' : '?percentiles=50,90,99'}`;
+      const agentPerfUrl = `${API_BASE}/admin/metrics/agent-performance${dateParams ? '?' + dateParams : ''}`;
+      
       // Fetch all metrics in parallel
       const [overviewRes, timeSeriesRes, histogramRes, responseTimesRes, agentPerfRes] = await Promise.all([
-        fetch(`${API_BASE}/admin/metrics/overview?from=${fromDate}&to=${toDate}`, { headers }),
-        fetch(`${API_BASE}/admin/metrics/messages-over-time?from=${fromDate}&to=${toDate}&interval=${interval}`, { headers }),
-        fetch(`${API_BASE}/admin/metrics/confidence-histogram?from=${fromDate}&to=${toDate}&bins=10`, { headers }),
-        fetch(`${API_BASE}/admin/metrics/response-times?from=${fromDate}&to=${toDate}&percentiles=50,90,99`, { headers }),
-        fetch(`${API_BASE}/admin/metrics/agent-performance?from=${fromDate}&to=${toDate}`, { headers })
+        fetch(overviewUrl, { headers }),
+        fetch(timeSeriesUrl, { headers }),
+        fetch(histogramUrl, { headers }),
+        fetch(responseTimesUrl, { headers }),
+        fetch(agentPerfUrl, { headers })
       ]);
       
       if (!overviewRes.ok || !timeSeriesRes.ok || !histogramRes.ok || !responseTimesRes.ok || !agentPerfRes.ok) {
@@ -149,8 +152,9 @@ export default function AnalyticsPage() {
 
   const handleExportCSV = async () => {
     try {
+      const dateParams = fromDate && toDate ? `from=${fromDate}&to=${toDate}&` : '';
       const response = await fetch(
-        `${API_BASE}/admin/metrics/messages-over-time?from=${fromDate}&to=${toDate}&interval=${interval}&format=csv`,
+        `${API_BASE}/admin/metrics/messages-over-time?${dateParams}interval=${interval}&format=csv`,
         {
           headers: { 'Authorization': `Bearer ${ADMIN_SECRET}` }
         }
@@ -194,7 +198,9 @@ export default function AnalyticsPage() {
         
         <div className="flex flex-wrap items-center gap-4 mb-4">
           <div>
-            <label className="block text-sm font-medium mb-1">From Date</label>
+            <label className="block text-sm font-medium mb-1">
+              From Date {!fromDate && !toDate && <span className="text-gray-500 text-xs">(empty = all data)</span>}
+            </label>
             <input
               type="date"
               value={fromDate}
@@ -204,13 +210,29 @@ export default function AnalyticsPage() {
           </div>
           
           <div>
-            <label className="block text-sm font-medium mb-1">To Date</label>
+            <label className="block text-sm font-medium mb-1">
+              To Date {!fromDate && !toDate && <span className="text-gray-500 text-xs">(empty = all data)</span>}
+            </label>
             <input
               type="date"
               value={toDate}
               onChange={(e) => setToDate(e.target.value)}
               className="border rounded px-3 py-2"
             />
+          </div>
+          
+          <div className="flex items-end">
+            <button
+              onClick={() => {
+                setFromDate('');
+                setToDate('');
+                setTimeout(fetchMetrics, 100);
+              }}
+              className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 text-sm"
+              title="Clear dates to show all data"
+            >
+              Show All
+            </button>
           </div>
           
           <div>

@@ -31,8 +31,8 @@ export default function AuthPage() {
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
   const [showProfileModal, setShowProfileModal] = useState(false)
   
-  // Show role dropdown only if super_admin or DEV_ALLOW_SIGNUP_ROLE
-  const showRoleDropdown = isSuperAdmin() || DEV_ALLOW_SIGNUP_ROLE
+  // Always show role dropdown for new users to choose their role
+  const showRoleDropdown = true
   
   // Redirect if already authenticated (but only after loading is complete)
   // Don't redirect if user is the dev-admin fallback and we're intentionally on auth page
@@ -97,13 +97,12 @@ export default function AuthPage() {
     try {
       const signupData: any = {
         name: signupName.trim(),
-        email: signupEmail.trim()
+        email: signupEmail.trim(),
+        role: signupRole || 'viewer' // Always include role selection, default to viewer if empty
       }
       
-      // Include role only if allowed
-      if (showRoleDropdown) {
-        signupData.role = signupRole
-      }
+      console.log('📤 Signup data being sent:', signupData)
+      console.log('📤 Selected role:', signupRole)
       
       await signup(signupData)
       

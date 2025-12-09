@@ -157,25 +157,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signup = async (signupData: { name: string; email: string; role?: string }) => {
-    // Include role only if provided and user is super_admin
+    // Include role if provided (any user can now select their role)
     const payload: any = {
       name: signupData.name,
-      email: signupData.email
+      email: signupData.email,
+      role: signupData.role || 'viewer' // Always include role, default to viewer
     };
 
-    // If role is provided, include Authorization header (super_admin only)
-    if (signupData.role) {
-      payload.role = signupData.role;
-    }
+    console.log('📤 Signup payload being sent to API:', payload);
 
     const headers: HeadersInit = {
       'Content-Type': 'application/json'
     };
-
-    // If role is being set, include admin auth
-    if (signupData.role) {
-      headers['Authorization'] = `Bearer ${ADMIN_SECRET}`;
-    }
 
     const res = await fetch(`${API_BASE}/auth/signup`, {
       method: 'POST',

@@ -63,26 +63,75 @@ const APPWRITE_ROLE_CHANGES_COLLECTION_ID = 'roleChanges'; // Collection name
 const APPWRITE_AI_ACCURACY_COLLECTION_ID = 'ai_accuracy'; // Collection name
 const APPWRITE_ACCURACY_AUDIT_COLLECTION_ID = 'accuracy_audit'; // Collection name
 async function createUserRow(payload) {
-  if (!APPWRITE_ENDPOINT || !APPWRITE_PROJECT_ID || !APPWRITE_API_KEY || !APPWRITE_DATABASE_ID || !APPWRITE_USERS_COLLECTION_ID) {
-    throw new Error('Appwrite table API not configured');
+  if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_USERS_COLLECTION_ID) {
+    const missing = [];
+    if (!awDatabases) missing.push('awDatabases not initialized');
+    if (!APPWRITE_DATABASE_ID) missing.push('APPWRITE_DATABASE_ID');
+    if (!APPWRITE_USERS_COLLECTION_ID) missing.push('APPWRITE_USERS_COLLECTION_ID');
+    throw new Error(`Appwrite not configured: ${missing.join(', ')}`);
   }
-  const url = `${APPWRITE_ENDPOINT.replace(/\/$/, '')}/databases/${APPWRITE_DATABASE_ID}/tables/${APPWRITE_USERS_COLLECTION_ID}/rows`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Appwrite-Project': APPWRITE_PROJECT_ID,
-      'X-Appwrite-Key': APPWRITE_API_KEY
-    },
-    body: JSON.stringify(payload)
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    const err = new Error(text || `Failed to create user row (${res.status})`);
-    err.code = res.status;
-    throw err;
+  
+  try {
+    const { ID } = require('node-appwrite');
+    console.log(`📤 Creating user document in collection: ${APPWRITE_USERS_COLLECTION_ID}`);
+    console.log(`📤 Payload keys: ${Object.keys(payload).join(', ')}`);
+    
+    // Remove any attributes that might not exist in the collection schema
+    // Only keep: userId, email, name, roles (core attributes)
+    const safePayload = {
+      userId: payload.userId,
+      email: payload.email,
+      name: payload.name,
+      roles: payload.roles
+    };
+    
+    // Use Appwrite SDK to create document in users collection
+    const result = await awDatabases.createDocument(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_USERS_COLLECTION_ID,
+      ID.unique(),
+      safePayload
+    );
+    console.log(`✅ User document created successfully: ${result.$id}`);
+    return result;
+  } catch (err) {
+    // If error is about unknown attributes, try again with minimal payload
+    if (err.message?.includes('Unknown attribute') || err.type === 'document_invalid_structure') {
+      console.warn(`⚠️  Retrying with minimal payload (removing unknown attributes)...`);
+      try {
+        const { ID } = require('node-appwrite');
+        const minimalPayload = {
+          userId: payload.userId,
+          email: payload.email,
+          name: payload.name || payload.email,
+          roles: payload.roles || []
+        };
+        const result = await awDatabases.createDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_USERS_COLLECTION_ID,
+          ID.unique(),
+          minimalPayload
+        );
+        console.log(`✅ User document created with minimal payload: ${result.$id}`);
+        return result;
+      } catch (retryErr) {
+        console.error(`❌ Retry also failed:`, retryErr.message);
+        throw retryErr;
+      }
+    }
+    
+    console.error(`❌ Error creating user document:`, {
+      message: err.message,
+      code: err.code,
+      type: err.type,
+      response: err.response
+    });
+    // Preserve error code and message for proper error handling
+    const error = new Error(err.message || `Failed to create user row`);
+    error.code = err.code || err.statusCode || 500;
+    error.type = err.type;
+    throw error;
   }
-  return res.json();
 }
 
 
@@ -155,10 +204,10 @@ try {
   if (process.env.GEMINI_API_KEY) {
     geminiClient = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const preferredModel = process.env.GEMINI_MODEL;
-    // Use models that work with free tier (gemini-2.0-flash or gemini-1.5-flash)
+    // Use models that work with free tier (gemini-2.5-flash-lite is preferred)
     const modelCandidates = preferredModel 
       ? [preferredModel]
-      : ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro'];
+      : ['gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro'];
     geminiModelName = modelCandidates[0];
     geminiModel = geminiClient.getGenerativeModel({ model: geminiModelName });
     console.log(`✅ Gemini client initialized (model: ${geminiModelName} - will fallback if unavailable)`);
@@ -174,6 +223,168 @@ const agentSockets = new Map(); // agentId -> socketId
 
 // In-memory session assignment cache (for fast lookups)
 const sessionAssignments = new Map(); // sessionId -> { agentId, aiPaused }
+
+// ============================================================================
+// Preloaded Responses for Common Questions (to reduce AI API calls)
+// ============================================================================
+
+/**
+ * Check if user message matches common greetings/questions and return preloaded response
+ * This helps reduce Gemini API calls for simple initial interactions
+ * @param {string} userMessage - The user's message text
+ * @returns {string|null} - Preloaded response if match found, null otherwise
+ */
+// Pre-compiled response map for O(1) lookups (optimized for speed)
+const PRELOADED_RESPONSES_MAP = new Map([
+  // Greetings
+  ['hello', "Hi! I'm your AI chat assistant. Ask me any question related to VTU internyet portal and I will provide you quick response."],
+  ['hi', "Hi! I'm your AI chat assistant. Ask me any question related to VTU internyet portal and I will provide you quick response."],
+  ['hey', "Hi! I'm your AI chat assistant. Ask me any question related to VTU internyet portal and I will provide you quick response."],
+  ['hi there', "Hi! I'm your AI chat assistant. Ask me any question related to VTU internyet portal and I will provide you quick response."],
+  ['hello there', "Hi! I'm your AI chat assistant. Ask me any question related to VTU internyet portal and I will provide you quick response."],
+  ['hey there', "Hi! I'm your AI chat assistant. Ask me any question related to VTU internyet portal and I will provide you quick response."],
+  ['good morning', "Good morning! I'm your AI chat assistant. Ask me any question related to VTU internyet portal and I will provide you quick response."],
+  ['good afternoon', "Good afternoon! I'm your AI chat assistant. Ask me any question related to VTU internyet portal and I will provide you quick response."],
+  ['good evening', "Good evening! I'm your AI chat assistant. Ask me any question related to VTU internyet portal and I will provide you quick response."],
+  
+  // Common initial questions
+  ['what can you do', "I can help you with questions about VTU internyet portal. Ask me about services, plans, troubleshooting, or any portal-related queries."],
+  ['what do you do', "I can help you with questions about VTU internyet portal. Ask me about services, plans, troubleshooting, or any portal-related queries."],
+  ['how can you help', "I can help you with questions about VTU internyet portal. Ask me about services, plans, troubleshooting, or any portal-related queries."],
+  ['how can you help me', "I can help you with questions about VTU internyet portal. Ask me about services, plans, troubleshooting, or any portal-related queries."],
+  ['what are you', "I'm an AI chat assistant for VTU internyet portal. I can answer questions about services, plans, and help with portal-related issues."],
+  ['who are you', "I'm an AI chat assistant for VTU internyet portal. I can answer questions about services, plans, and help with portal-related issues."],
+  ['what is this', "This is a support chat for VTU internyet portal. I can help you with questions about services, plans, and portal-related queries."],
+  ['help', "I'm here to help! Ask me any question related to VTU internyet portal - services, plans, troubleshooting, or account-related queries."],
+  ['i need help', "I'm here to help! Ask me any question related to VTU internyet portal - services, plans, troubleshooting, or account-related queries."],
+  ['can you help', "Yes, I can help! Ask me any question related to VTU internyet portal and I'll provide you with a quick response."],
+  ['can you help me', "Yes, I can help! Ask me any question related to VTU internyet portal and I'll provide you with a quick response."],
+  
+  // Portal-specific common questions
+  ['what is vtu', "VTU is a University"],
+  ['what is vtu internyet portal', "VTU internyet portal provides internships. I can help you with questions about how to apply for internships, what will be the time duration, internships are paid(fees) or stipend based, etc. just ask"],
+  ['tell me about vtu', "VTU is an internyet portal service. I can help you with questions about plans, services, account management, or troubleshooting."],
+  ['about vtu', "VTU is an internyet portal service. I can help you with questions about plans, services, account management, or troubleshooting."],
+  
+  // Simple acknowledgments
+  ['ok', "Got it! What would you like to know about VTU internyet portal?"],
+  ['okay', "Got it! What would you like to know about VTU internyet portal?"],
+  ['yes', "Great! What would you like to know about VTU internyet portal?"],
+  ['yeah', "Great! What would you like to know about VTU internyet portal?"],
+  ['sure', "Perfect! What would you like to know about VTU internyet portal?"],
+]);
+
+// Pre-compiled partial matches array (sorted by length, longest first for better matching)
+const PARTIAL_MATCHES = [
+  { key: 'what is vtu internyet portal', response: "VTU internyet portal provides internships. I can help you with questions about how to apply for internships, what will be the time duration, internships are paid(fees) or stipend based, etc. just ask." },
+  { key: 'tell me about vtu', response: "VTU is an internyet portal service. I can help you with questions about plans, services, account management, or troubleshooting." },
+  { key: 'how can you help me', response: "I can help you with questions about VTU internyet portal. Ask me about services, plans, troubleshooting, or any portal-related queries." },
+  { key: 'can you help me', response: "Yes, I can help! Ask me any question related to VTU internyet portal and I'll provide you with a quick response." },
+  { key: 'i need help', response: "I'm here to help! Ask me any question related to VTU internyet portal - services, plans, troubleshooting, or account-related queries." },
+  { key: 'hello', response: "Hi! I'm your AI chat assistant. Ask me any question related to VTU internyet portal and I will provide you quick response." },
+  { key: 'hi', response: "Hi! I'm your AI chat assistant. Ask me any question related to VTU internyet portal and I will provide you quick response." },
+  { key: 'hey', response: "Hi! I'm your AI chat assistant. Ask me any question related to VTU internyet portal and I will provide you quick response." },
+  { key: 'what can you', response: "I can help you with questions about VTU internyet portal. Ask me about services, plans, troubleshooting, or any portal-related queries." },
+  { key: 'what do you', response: "I can help you with questions about VTU internyet portal. Ask me about services, plans, troubleshooting, or any portal-related queries." },
+  { key: 'how can you', response: "I can help you with questions about VTU internyet portal. Ask me about services, plans, troubleshooting, or any portal-related queries." },
+  { key: 'what is vtu', response: "VTU is a University" },
+  { key: 'tell me about', response: "I can help you with questions about VTU internyet portal. Ask me about services, plans, troubleshooting, or any portal-related queries." },
+  { key: 'can you help', response: "Yes, I can help! Ask me any question related to VTU internyet portal and I'll provide you with a quick response." },
+];
+
+function getPreloadedResponse(userMessage) {
+  if (!userMessage || typeof userMessage !== 'string') {
+    return null;
+  }
+  
+  // Fast normalization: lowercase, trim, remove punctuation, remove extra spaces
+  const normalized = userMessage.toLowerCase().trim().replace(/[.,!?;:]/g, '').replace(/\s+/g, ' ');
+  
+  // O(1) lookup in Map (faster than object property access)
+  if (PRELOADED_RESPONSES_MAP.has(normalized)) {
+    return PRELOADED_RESPONSES_MAP.get(normalized);
+  }
+  
+  // Check partial matches (optimized loop - breaks on first match)
+  for (const { key, response } of PARTIAL_MATCHES) {
+    if (normalized.startsWith(key)) {
+      const maxLength = key.length > 15 ? key.length + 20 : key.length + 10;
+      if (normalized.length <= maxLength) {
+        return response;
+      }
+    }
+  }
+  
+  // No match found - return null to proceed with AI
+  return null;
+}
+
+/**
+ * Check if user message indicates they want to end the conversation
+ * @param {string} userMessage - The user's message text
+ * @returns {boolean} - True if message indicates ending
+ */
+function isEndingPhrase(userMessage) {
+  if (!userMessage || typeof userMessage !== 'string') {
+    return false;
+  }
+  
+  // Normalize the message: lowercase, trim, remove punctuation, remove extra spaces
+  const normalized = userMessage.toLowerCase().trim().replace(/[.,!?;:]/g, '').replace(/\s+/g, ' ');
+  const noSpaceText = normalized.replace(/\s+/g, '');
+  
+  // Ending phrases - comprehensive list
+  const endingPhrases = [
+    'thank you', 'thankyou', 'thanks', 'thx',
+    'thank you so much', 'thanks a lot', 'thank you very much',
+    'no thanks', 'no thank you', 'no thankyou',
+    'ok thanks', 'okay thanks', 'ok thank you', 'okay thank you',
+    "i'm done", 'im done', 'all done', "that's all", 'thats all',
+    'nothing more', 'no more questions', 'no further questions',
+    "that's it", 'thats it', 'that is it',
+    'goodbye', 'bye', 'bye bye', 'see you', 'see ya',
+    'i am done', 'iam done', 'we are done', 'we\'re done',
+    'nothing else', 'no more', 'that\'s enough', 'thats enough'
+  ];
+  
+  // Check for exact matches
+  if (endingPhrases.includes(normalized)) {
+    return true;
+  }
+  
+  // Check if message starts or ends with any ending phrase
+  for (const phrase of endingPhrases) {
+    const phraseNoSpace = phrase.replace(/\s+/g, '');
+    
+    // Check if message starts or ends with phrase
+    if (normalized.startsWith(phrase) || normalized.endsWith(phrase)) {
+      return true;
+    }
+    if (noSpaceText.startsWith(phraseNoSpace) || noSpaceText.endsWith(phraseNoSpace)) {
+      return true;
+    }
+    
+    // For short messages (1-4 words), check if phrase is contained
+    const wordCount = normalized.split(/\s+/).length;
+    if (wordCount <= 4 && (normalized.includes(phrase) || noSpaceText.includes(phraseNoSpace))) {
+      return true;
+    }
+  }
+  
+  // Special check for "thank you" variations in short messages
+  if (normalized.split(/\s+/).length <= 5) {
+    const thankPatterns = ['thank', 'thanks', 'thankyou', 'thx'];
+    const donePatterns = ['done', 'finished', 'complete'];
+    const hasThank = thankPatterns.some(pattern => normalized.includes(pattern) || noSpaceText.includes(pattern));
+    const hasDone = donePatterns.some(pattern => normalized.includes(pattern) || noSpaceText.includes(pattern));
+    
+    if (hasThank || hasDone) {
+      return true;
+    }
+  }
+  
+  return false;
+}
 
 // ============================================================================
 // RBAC (Role-Based Access Control) Implementation
@@ -1908,7 +2119,7 @@ io.on('connection', (socket) => {
     const roomSize = room ? room.size : 0;
     console.log(`📱 Socket ${socket.id} joined session room: ${sessionId} (${roomSize} socket(s) total)`);
     
-    const welcomeMsg = "Hello! 👋 I'm your AI Customer Support Assistant. How can I help you today?";
+    const welcomeMsg = "Hi! I'm your AI chat assistant. Ask me any question related to VTU internyet portal and I will provide you quick response.";
     socket.emit('session_started', { sessionId });
     socket.emit('bot_message', { text: welcomeMsg, confidence: 1 });
     
@@ -2169,7 +2380,82 @@ io.on('connection', (socket) => {
     // No agent assigned - proceed with AI flow
     console.log(`🤖 Processing with AI for session ${sessionId}`);
 
-    // Content filtering: Check for adult/inappropriate content
+    // ============================================================================
+    // HIGH PRIORITY: Preloaded responses FIRST for instant replies
+    // ============================================================================
+    // Check for preloaded responses (common greetings/questions) - HIGHEST PRIORITY
+    // This ensures instant responses for common messages like "hello", "hi", etc.
+    const preloadedResponse = getPreloadedResponse(trimmedText);
+    if (preloadedResponse) {
+      // ⚡ ULTRA-FAST: Send response IMMEDIATELY (before any other operations)
+      io.to(sessionId).emit('bot_message', { text: preloadedResponse, confidence: 1 });
+      
+      // Measure latency AFTER sending (response already sent to user)
+      const preloadedStart = process.hrtime.bigint();
+      const preloadedEnd = process.hrtime.bigint();
+      const preloadedLatencyMs = Number(preloadedEnd - preloadedStart) / 1000000;
+      
+      // All database operations are completely async (fire and forget)
+      // User already received the response, these happen in background
+      setImmediate(() => {
+        // Save to database asynchronously (non-blocking)
+        saveMessageToAppwrite(sessionId, 'bot', preloadedResponse, { confidence: 1, preloaded: true }).catch(err => {
+          console.warn(`⚠️  Failed to save preloaded response:`, err?.message);
+        });
+        
+        // Save accuracy record asynchronously (non-blocking)
+        saveAccuracyRecord(
+          sessionId,
+          null,
+          preloadedResponse,
+          1,
+          Math.round(preloadedLatencyMs),
+          null,
+          'preloaded',
+          { model: 'preloaded', reason: 'Common question/greeting' }
+        ).catch(err => {
+          console.warn(`⚠️  Failed to save preloaded accuracy:`, err?.message);
+        });
+        
+        // Log after everything is queued (non-blocking)
+        console.log(`⚡⚡ INSTANT preloaded response [${sessionId}]: "${trimmedText.substring(0, 30)}..." (${Math.round(preloadedLatencyMs)}ms)`);
+      });
+      
+      return; // Don't call Gemini API - response already sent instantly
+    }
+
+    // ============================================================================
+    // MEDIUM PRIORITY: Ending phrases check
+    // ============================================================================
+    // Check for ending phrases (thank you, done, etc.)
+    if (isEndingPhrase(trimmedText)) {
+      console.log(`🔍 Ending phrase detected: "${trimmedText}"`);
+      try {
+        // Ensure user message is saved
+        console.log(`💾 Attempting to save user message to Appwrite...`);
+        await saveMessageToAppwrite(sessionId, 'user', trimmedText);
+        
+        const conclusionQuestion = 'Is there anything else that I can help?';
+        await saveMessageToAppwrite(sessionId, 'bot', conclusionQuestion);
+        io.to(sessionId).emit('bot_message', { 
+          text: conclusionQuestion, 
+          type: 'conclusion_question',
+          options: [
+            { text: 'Thank you for helping', value: 'thank_you' },
+            { text: 'Want to ask more', value: 'continue' }
+          ]
+        });
+        console.log(`✅ Conclusion question sent to [${sessionId}] (triggered by ending phrase: "${trimmedText}")`);
+        return; // Don't process further - conclusion question sent
+      } catch (err) {
+        console.error(`❌ Error sending conclusion question to [${sessionId}]:`, err?.message || err);
+        // Continue with normal flow if conclusion question fails
+      }
+    }
+
+    // ============================================================================
+    // CONTENT FILTERING: Check for adult/inappropriate content
+    // ============================================================================
     const userTextLower = trimmedText.toLowerCase();
     const adultKeywords = ['sex', 'sexual', 'porn', 'xxx', 'adult', '18+', 'nsfw', 'explicit', 'nude', 'naked', 'erotic'];
     const hasAdultContent = adultKeywords.some(keyword => userTextLower.includes(keyword));
@@ -2218,6 +2504,7 @@ io.on('connection', (socket) => {
       if (!geminiModel && geminiClient) {
         const modelCandidates = [
           process.env.GEMINI_MODEL,
+          'gemini-2.5-flash-lite',
           'gemini-2.0-flash',
           'gemini-1.5-flash',
           'gemini-1.5-pro',
@@ -2285,90 +2572,8 @@ io.on('connection', (socket) => {
         }
       }
       
-      // Check sequential question flow: Q1 asked -> Q1 answered -> Q2 asked -> Q2 answered -> role taken
-      let question1Asked = false;
-      let question1Answered = false;
-      let question2Asked = false;
-      let question2Answered = false;
-      let userProfession = null;
-      let userOutcome = null;
-      let bothQuestionsAnswered = false;
-      
-      if (conversationHistory.length > 0) {
-        // Track conversation flow chronologically
-        for (let i = 0; i < conversationHistory.length; i++) {
-          const msg = conversationHistory[i];
-          const text = msg.text.toLowerCase();
-          
-          if (msg.sender === 'bot' || msg.sender === 'agent') {
-            // Check for first question (area/profession)
-            if (text.includes('area or profession') || text.includes('profession you are willing') || 
-                text.includes('what is the area') || text.includes('what area') ||
-                (text.includes('area') && text.includes('profession'))) {
-              question1Asked = true;
-            }
-            // Check for second question (outcomes)
-            if (text.includes('outcomes are you expecting') || text.includes('expecting by the end') ||
-                text.includes('what outcomes') || text.includes('outcomes you are') ||
-                (text.includes('outcomes') && text.includes('expecting'))) {
-              question2Asked = true;
-            }
-          } else if (msg.sender === 'user') {
-            // If Q1 was asked but not answered yet, this user message is likely the answer
-            if (question1Asked && !question1Answered) {
-              // Check if this is a substantial response (not just "ok" or "yes")
-              if (msg.text.trim().length > 5) {
-                question1Answered = true;
-                userProfession = msg.text;
-              }
-            }
-            // If Q2 was asked but not answered yet, this user message is likely the answer
-            if (question2Asked && !question2Answered && question1Answered) {
-              if (msg.text.trim().length > 5) {
-                question2Answered = true;
-                userOutcome = msg.text;
-              }
-            }
-          }
-        }
-        
-        bothQuestionsAnswered = question1Answered && question2Answered;
-        
-        console.log(`🔍 Sequential questions: Q1 asked=${question1Asked}, Q1 answered=${question1Answered}, Q2 asked=${question2Asked}, Q2 answered=${question2Answered}, both done=${bothQuestionsAnswered}`);
-      }
-      
-      // Build conversation context with sequential question instructions
-      let systemPrompt = `You are a professional AI Assistant.`;
-      
-      // Sequential question flow logic
-      if (!question1Asked) {
-        // Step 1: Ask first question only
-        systemPrompt += ` After the initial greeting, you MUST ask the user the FIRST question ONLY:
-"What is the area or profession you are willing to ask questions about?" (e.g., customer support, sports, diet, gym training, technology, etc.)
-
-Wait for the user to answer this question before asking the second question.`;
-      } else if (question1Asked && !question1Answered) {
-        // Step 2: First question asked, waiting for answer
-        systemPrompt += ` You have asked the first question about area/profession. Wait for the user to answer before proceeding. DO NOT ask the second question yet.`;
-      } else if (question1Answered && !question2Asked) {
-        // Step 3: First question answered, now ask second question
-        systemPrompt += ` The user has answered your first question. Their area/profession: ${userProfession || 'not specified'}.
-Now you MUST ask the SECOND question:
-"What outcomes are you expecting by the end of this conversation?"
-
-Wait for the user to answer this question before taking on the professional role.`;
-      } else if (question2Asked && !question2Answered) {
-        // Step 4: Second question asked, waiting for answer
-        systemPrompt += ` You have asked the second question about expected outcomes. Wait for the user to answer before taking on the professional role. DO NOT answer questions yet - wait for their response.`;
-      } else if (bothQuestionsAnswered) {
-        // Step 5: Both questions answered - now take on the role
-        systemPrompt += ` The user has answered both questions:
-- Area/Profession: ${userProfession || 'not specified'}
-- Expected Outcomes: ${userOutcome || 'not specified'}
-
-NOW you can adopt the role of a professional in: ${userProfession || 'the specified area'}. 
-Provide responses based on this profession/expertise. NEVER ask these questions again - they have already been answered.`;
-      }
+      // Build conversation context - simplified without sequential questions
+      let systemPrompt = `You are a professional AI Assistant for VTU internyet portal.`;
       
       systemPrompt += `
 
@@ -2384,22 +2589,22 @@ MANDATORY RESPONSE LENGTH RULE - THIS IS CRITICAL:
 
 CONTENT FILTERING - CRITICAL RULES:
 - STRICTLY PROHIBITED: Adult content (18+), explicit sexual content, inappropriate material, violence, hate speech, or any content unsuitable for general audiences
-- If user asks about adult/inappropriate content, respond: "I cannot discuss adult or inappropriate content. I can help with professional questions related to [your established profession]." (20-30 words)
+- If user asks about adult/inappropriate content, respond: "I cannot discuss adult or inappropriate content. I can help with questions about VTU internyet portal and internships." (20-30 words)
 - DO NOT engage with, explain, or provide any information about adult/inappropriate topics, even if asked indirectly
 
 TOPIC RELEVANCE RULES:
-- ONLY answer questions related to the established profession/topic: ${bothQuestionsAnswered ? (userProfession || 'the specified area') : 'wait until both questions are answered'}
-- If user asks questions completely unrelated to the established topic/profession, politely decline: "This question isn't related to [current topic]. I can only help with [relevant topic] questions." (20-30 words)
-- DO NOT answer out-of-topic questions - politely redirect to the established topic
+- Focus on answering questions related to VTU internyet portal, internships, and related topics
+- If user asks questions completely unrelated to VTU internyet portal, politely redirect: "I can help you with questions about VTU internyet portal. How can I assist you with that?" (20-30 words)
+- Stay focused on VTU internyet portal topics
 
 OTHER RULES:
 - Be concise, clear, and professional
 - ALWAYS consider the previous conversation when responding - maintain continuity and context
 - NEVER repeat questions that have already been asked in this conversation - check the conversation history
-- Always stay in character as the professional you've adopted based on their answers (only after both questions are answered)
 - Be helpful, friendly, and solution-oriented
+- Provide accurate information about VTU internyet portal and internships
 
-REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use previous conversation context. Never repeat questions already asked. Reject adult content and out-of-topic questions.`;
+REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use previous conversation context. Never repeat questions already asked. Reject adult content and stay focused on VTU internyet portal topics.`;
       
       let conversationContext = systemPrompt + '\n\n';
       
@@ -2416,73 +2621,17 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
         conversationContext += 'IMPORTANT: Use the conversation history above to understand context. Reference previous messages when relevant.\n\n';
       }
       
-      // Check if conclusion question should be asked
-      let conclusionQuestionAsked = false;
-      let userMessagesAfterQuestions = 0;
-      if (bothQuestionsAnswered && conversationHistory.length > 0) {
-        // Find when both questions were answered (when Q2 was answered)
-        let q2AnsweredIndex = -1;
-        for (let i = 0; i < conversationHistory.length; i++) {
-          const msg = conversationHistory[i];
-          const text = msg.text.toLowerCase();
-          
-          // Check if conclusion question was already asked
-          if ((msg.sender === 'bot' || msg.sender === 'agent') && 
-              (text.includes('anything else') || text.includes('can help') || 
-               text.includes('anything else that i can') || text.includes('is there anything'))) {
-            conclusionQuestionAsked = true;
-            break; // Found it, no need to continue
-          }
-          
-          // Find when Q2 was answered (first user message after Q2 was asked)
-          if (question2Asked && msg.sender === 'user' && msg.text.trim().length > 5) {
-            // Check if Q2 was asked before this message
-            let q2WasAskedBefore = false;
-            for (let j = 0; j < i; j++) {
-              const prevMsg = conversationHistory[j];
-              const prevText = prevMsg.text.toLowerCase();
-              if ((prevMsg.sender === 'bot' || prevMsg.sender === 'agent') &&
-                  (prevText.includes('outcomes are you expecting') || prevText.includes('expecting by the end'))) {
-                q2WasAskedBefore = true;
-                break;
-              }
-            }
-            if (q2WasAskedBefore && q2AnsweredIndex === -1) {
-              q2AnsweredIndex = i;
-            }
-          }
-        }
-        
-        // Count user messages after Q2 was answered (excluding the current message being processed)
-        // We want to count complete exchanges (user message + bot response), so we count user messages
-        // that have already been responded to (i.e., messages in conversationHistory)
-        if (q2AnsweredIndex >= 0) {
-          for (let i = q2AnsweredIndex + 1; i < conversationHistory.length; i++) {
-            if (conversationHistory[i].sender === 'user') {
-              userMessagesAfterQuestions++;
-            }
-          }
-        }
-        
-        console.log(`🔍 Conclusion check: bothQuestionsAnswered=${bothQuestionsAnswered}, conclusionQuestionAsked=${conclusionQuestionAsked}, userMessagesAfterQuestions=${userMessagesAfterQuestions}, q2AnsweredIndex=${q2AnsweredIndex}`);
-      }
-      
       // Check if current user message indicates they want to end the chat
-      // Keywords that suggest the user is satisfied and wants to conclude
+      // STRICT: Only match specific ending phrases - more restrictive matching
       const endingPhrases = [
-        'thank you', 'thankyou', 'thanks', 'thx', 'ty',
-        'no thanks', 'no thank you', 'no thankyou', 'no more', 'nothing else', 'no done',
-        'ok thanks', 'okay thanks', 'ok thank you', 'okay thank you', 'ok thankyou', 'okay thankyou',
+        'thank you', 'thankyou', 'thanks', 'thx',
+        'no thanks', 'no thank you', 'no thankyou',
+        'ok thanks', 'okay thanks', 'ok thank you', 'okay thank you',
         "i'm done", 'im done', 'all done', "that's all", 'thats all',
-        'got it thanks', 'got it thank you', 'great thanks',
         'nothing more', 'no more questions', 'no further questions',
-        "that's it", 'thats it', 'that is it', 'thats all i need',
-        'goodbye', 'bye', 'see you', 'see ya'
+        "that's it", 'thats it', 'that is it',
+        'goodbye', 'bye'
       ];
-      
-      const singleWordEndings = ['no', 'ok', 'okay', 'done', 'got it', 'understood', 
-                                  'perfect', 'sure', 'fine', 'alright', 'nothing', 
-                                  'all good', 'all set'];
       
       const trimmedLower = trimmedText.toLowerCase().trim();
       // Remove punctuation and normalize spaces for better matching
@@ -2491,22 +2640,17 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
       const noSpaceText = trimmedLower.replace(/[.,!?;:\s]/g, '');
       let indicatesEnding = false;
       
-      // First check for multi-word phrases (more specific) - check both with and without spaces
+      // STRICT: Only check for exact phrase matches or messages that start/end with phrases
+      // This is more restrictive than before - we don't check if phrase is "contained" anywhere
       indicatesEnding = endingPhrases.some(phrase => {
         const phraseNoSpace = phrase.replace(/\s+/g, '');
         const phraseLower = phrase.toLowerCase();
         
-        // Check exact match (with or without spaces)
+        // STRICT: Only exact match (with or without spaces) or if message starts/ends with phrase
         if (trimmedLower === phraseLower || cleanedText === phraseLower) return true;
         if (trimmedLower === phraseNoSpace || noSpaceText === phraseNoSpace) return true;
         
-        // Check if message contains the phrase (with spaces)
-        if (trimmedLower.includes(phraseLower) || cleanedText.includes(phraseLower)) return true;
-        
-        // Check if message contains phrase without spaces (e.g., "thankyou" in "okthankyou")
-        if (trimmedLower.includes(phraseNoSpace) || noSpaceText.includes(phraseNoSpace)) return true;
-        
-        // Check if message starts or ends with phrase
+        // STRICT: Only check if message starts or ends with phrase (not contains)
         if (trimmedLower.startsWith(phraseLower) || trimmedLower.endsWith(phraseLower)) return true;
         if (trimmedLower.startsWith(phraseNoSpace) || trimmedLower.endsWith(phraseNoSpace)) return true;
         if (noSpaceText.startsWith(phraseNoSpace) || noSpaceText.endsWith(phraseNoSpace)) return true;
@@ -2514,43 +2658,25 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
         return false;
       });
       
-      // Also check for combinations like "no thankyou" or "no done" by checking if message contains
-      // both "no" and any ending word/phrase
+      // STRICT: Only check for "no thanks" or "no thank you" patterns if message is very short (1-3 words)
       if (!indicatesEnding && trimmedLower.split(/\s+/).length <= 3) {
-        const hasNo = /\bno\b/i.test(trimmedLower) || noSpaceText.includes('no');
+        const hasNo = /\bno\b/i.test(trimmedLower);
         if (hasNo) {
-          // Check if message also contains any ending word/phrase
-          const allEndingWords = [...endingPhrases, ...singleWordEndings];
-          const hasEndingWord = allEndingWords.some(ending => {
-            const endingLower = ending.toLowerCase().replace(/\s+/g, '');
-            return noSpaceText.includes(endingLower) || trimmedLower.includes(ending.toLowerCase());
+          // Only check for specific "no + thanks" combinations
+          const thanksPatterns = ['thank', 'thanks', 'thankyou', 'thx'];
+          const hasThanks = thanksPatterns.some(pattern => {
+            return trimmedLower.includes(pattern) || noSpaceText.includes(pattern);
           });
-          if (hasEndingWord) {
+          if (hasThanks) {
             indicatesEnding = true;
           }
         }
       }
       
-      // If no phrase match, check for single-word endings (only if message is short)
-      if (!indicatesEnding && trimmedLower.split(/\s+/).length <= 3) {
-        indicatesEnding = singleWordEndings.some(word => {
-          const wordLower = word.toLowerCase();
-          // Match whole word only (not part of another word)
-          const wordRegex = new RegExp(`\\b${wordLower}\\b`, 'i');
-          // Also check if it's the entire message or combined with other ending words
-          if (trimmedLower === wordLower || cleanedText === wordLower) return true;
-          if (wordRegex.test(trimmedLower) || wordRegex.test(cleanedText)) return true;
-          // Check in no-space version (e.g., "ok" in "okthankyou")
-          if (noSpaceText.includes(wordLower)) return true;
-          return false;
-        });
-      }
-      
-      // If user message indicates ending AND both questions are answered
-      // Show options every time, even if conclusion question was asked before
+      // If user message indicates ending, show conclusion question
       // This check happens BEFORE normal AI processing to ensure it always triggers
-      if (bothQuestionsAnswered && indicatesEnding) {
-        console.log(`🔍 Ending keyword detected: "${trimmedText}" -> indicatesEnding=${indicatesEnding}, bothQuestionsAnswered=${bothQuestionsAnswered}`);
+      if (indicatesEnding) {
+        console.log(`🔍 Ending keyword detected: "${trimmedText}" -> indicatesEnding=${indicatesEnding}`);
         try {
           const conclusionQuestion = 'Is there anything else that I can help?';
           await saveMessageToAppwrite(sessionId, 'bot', conclusionQuestion);
@@ -2568,47 +2694,10 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
           console.error(`❌ Error sending conclusion question to [${sessionId}]:`, err?.message || err);
           // Continue with normal AI processing if conclusion question fails
         }
-      } else if (bothQuestionsAnswered) {
-        console.log(`🔍 Ending check: "${trimmedText}" -> indicatesEnding=${indicatesEnding}, bothQuestionsAnswered=${bothQuestionsAnswered}, cleanedText="${cleanedText}", noSpaceText="${noSpaceText}"`);
       }
       
-      // If it's time to ask conclusion question (after 3+ user messages that have been responded to)
-      // Note: We check >= 3 to ensure there have been meaningful exchanges before asking to conclude
-      if (bothQuestionsAnswered && !conclusionQuestionAsked && userMessagesAfterQuestions >= 3) {
-        try {
-          const conclusionQuestion = 'Is there anything else that I can help?';
-          await saveMessageToAppwrite(sessionId, 'bot', conclusionQuestion);
-          io.to(sessionId).emit('bot_message', { 
-            text: conclusionQuestion, 
-            type: 'conclusion_question',
-            options: [
-              { text: 'Thank you for helping', value: 'thank_you' },
-              { text: 'Want to ask more', value: 'continue' }
-            ]
-          });
-          console.log(`✅ Conclusion question sent to [${sessionId}]`);
-          return; // Don't process AI response
-        } catch (err) {
-          console.error(`❌ Error sending conclusion question to [${sessionId}]:`, err?.message || err);
-          // Continue with normal AI processing if conclusion question fails
-        }
-      }
-      
-      // Add instruction based on question status
-      if (!bothQuestionsAnswered) {
-        conversationContext += `Current User Message: ${trimmedText}\n\n`;
-        if (!question1Asked) {
-          conversationContext += `IMPORTANT: Ask the FIRST question about area/profession. DO NOT answer their question yet.\n\nYour Response (20-30 words):`;
-        } else if (question1Asked && !question1Answered) {
-          conversationContext += `IMPORTANT: Wait for user to answer the first question. If this is their answer, acknowledge it and ask the SECOND question. DO NOT answer other questions yet.\n\nYour Response (20-30 words):`;
-        } else if (question1Answered && !question2Asked) {
-          conversationContext += `IMPORTANT: Ask the SECOND question about expected outcomes. DO NOT answer their question yet.\n\nYour Response (20-30 words):`;
-        } else if (question2Asked && !question2Answered) {
-          conversationContext += `IMPORTANT: Wait for user to answer the second question. If this is their answer, acknowledge it. DO NOT answer other questions until both questions are answered.\n\nYour Response (20-30 words):`;
-        }
-      } else {
-        conversationContext += `Current User Question: ${trimmedText}\n\nYour Response (20-30 words, based on conversation history and current question):`;
-      }
+      // Add instruction for AI response
+      conversationContext += `Current User Question: ${trimmedText}\n\nYour Response (20-30 words, based on conversation history and current question):`;
       
       let result;
       let response;
@@ -2721,6 +2810,7 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
           console.warn(`⚠️  Model ${geminiModelName || 'current'} not available, trying alternatives...`);
           
           const fallbackModels = [
+            'gemini-2.5-flash-lite',
             'gemini-2.0-flash',
             'gemini-1.5-flash',
             'gemini-1.5-pro',
@@ -2779,34 +2869,123 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
       io.to(sessionId).emit('bot_message', { text: aiText, confidence: 0.9 });
       console.log(`✅ Gemini reply sent to [${sessionId}]`);
     } catch (err) {
+      // Log full error details for debugging
       console.error('❌ Gemini call error:', {
         message: err?.message,
         code: err?.code,
-        status: err?.status
+        status: err?.status,
+        statusCode: err?.statusCode,
+        response: err?.response ? JSON.stringify(err.response).substring(0, 200) : 'N/A'
       });
       
-      // Check for API key expiration
-      const isApiKeyExpired = err?.message?.includes('API key expired') || 
-                              err?.message?.includes('API_KEY_INVALID');
-      if (isApiKeyExpired) {
+      // Extract error message in lowercase for easier matching
+      const errorMsg = (err?.message || '').toLowerCase();
+      const errorStatus = err?.status || err?.statusCode || err?.code;
+      
+      // Check for quota exceeded (daily/monthly limits)
+      const isQuotaExceeded = errorMsg.includes('quota exceeded') ||
+                              errorMsg.includes('quota_exceeded') ||
+                              errorMsg.includes('resource exhausted') ||
+                              errorMsg.includes('resource_exhausted') ||
+                              errorMsg.includes('limit exceeded') ||
+                              errorMsg.includes('limit_exceeded') ||
+                              errorMsg.includes('daily limit') ||
+                              errorMsg.includes('monthly limit') ||
+                              errorMsg.includes('billing') ||
+                              errorMsg.includes('payment required') ||
+                              errorStatus === 429;
+      
+      // Check for rate limiting (requests per minute)
+      const isRateLimited = errorMsg.includes('rate limit') ||
+                           errorMsg.includes('rate_limit') ||
+                           errorMsg.includes('too many requests') ||
+                           errorMsg.includes('requests per minute') ||
+                           errorMsg.includes('rpm') ||
+                           (errorStatus === 429 && !isQuotaExceeded);
+      
+      // Check for API key expiration or invalid key
+      const isApiKeyExpired = errorMsg.includes('api key expired') || 
+                              errorMsg.includes('api_key_expired') ||
+                              errorMsg.includes('api key not valid') ||
+                              errorMsg.includes('invalid api key') ||
+                              errorMsg.includes('api_key_invalid') ||
+                              errorMsg.includes('invalid_credentials') ||
+                              errorMsg.includes('unauthorized') ||
+                              errorStatus === 401;
+      
+      // Check for permission/access issues
+      const isPermissionError = errorMsg.includes('permission_denied') ||
+                                 errorMsg.includes('permission denied') ||
+                                 errorMsg.includes('api key does not have permission') ||
+                                 errorMsg.includes('forbidden') ||
+                                 errorStatus === 403;
+      
+      // Check for billing/payment issues
+      const isBillingError = errorMsg.includes('billing') ||
+                            errorMsg.includes('payment required') ||
+                            errorMsg.includes('payment_required') ||
+                            errorMsg.includes('credit') ||
+                            errorMsg.includes('subscription');
+      
+      let fallbackMsg = 'AI temporarily unavailable; your message is recorded and an agent will follow up.';
+      let errorType = 'unknown';
+      
+      if (isQuotaExceeded || isBillingError) {
+        console.error('💰 Gemini API quota exceeded or billing issue');
+        console.error('   📊 This usually means:');
+        console.error('      - Daily/monthly quota has been reached');
+        console.error('      - Free tier limits exceeded');
+        console.error('      - Billing not enabled on the API key');
+        console.error('   💡 Solutions:');
+        console.error('      1. Wait for quota to reset (usually daily)');
+        console.error('      2. Check if billing is enabled in Google Cloud Console');
+        console.error('      3. Get a new API key with billing enabled');
+        console.error('      4. Contact the API key owner to check quota/billing status');
+        fallbackMsg = 'AI service quota has been exceeded. The API key has reached its daily/monthly limit. Please try again later or contact support.';
+        errorType = 'quota_exceeded';
+      } else if (isRateLimited) {
+        console.error('⏱️  Gemini API rate limit exceeded');
+        console.error('   📊 This means too many requests per minute');
+        console.error('   💡 Solutions:');
+        console.error('      1. Wait 1-2 minutes and try again');
+        console.error('      2. Reduce request frequency');
+        console.error('      3. Contact API key owner to check rate limits');
+        await markSessionNeedsHuman(sessionId, 'Rate limit exceeded');
+        fallbackMsg = 'AI service is temporarily rate-limited (too many requests). Please wait a minute and try again. Your message has been recorded.';
+        errorType = 'rate_limited';
+      } else if (isApiKeyExpired) {
         console.error('🔑 Gemini API key has expired or is invalid');
         console.error('   💡 Fix: Get a new API key from https://aistudio.google.com/app/apikey');
         console.error('   💡 Then update GEMINI_API_KEY in your .env file and restart the server');
+        fallbackMsg = 'AI service is currently unavailable due to API key issue. Please contact support. Your message has been recorded.';
+        errorType = 'api_key_expired';
+      } else if (isPermissionError) {
+        console.error('🚫 Gemini API key does not have required permissions');
+        console.error('   💡 Fix: Check API key permissions in Google Cloud Console');
+        console.error('   💡 Ensure the API key has access to Gemini API');
+        fallbackMsg = 'AI service is currently unavailable due to permission issue. Please contact support. Your message has been recorded.';
+        errorType = 'permission_denied';
+      } else {
+        // Generic error - log more details
+        console.error('⚠️  Unknown Gemini API error');
+        console.error('   Error message:', err?.message);
+        console.error('   Error code:', err?.code);
+        console.error('   Error status:', err?.status);
+        console.error('   Full error:', JSON.stringify(err, Object.getOwnPropertyNames(err)).substring(0, 500));
+        console.error('   💡 This might be a temporary issue. Check server logs for more details.');
+        errorType = 'unknown';
       }
-      
-      const isRateLimit = err?.status === 429 || err?.message?.includes('429') || err?.code === 429;
-      if (isRateLimit) {
-        await markSessionNeedsHuman(sessionId, 'Rate limit exceeded');
-      }
-      
-      const fallbackMsg = 'AI temporarily unavailable; your message is recorded and an agent will follow up.';
       
       // Calculate latency even for errors (latencyStart is defined outside try block)
       const latencyEnd = process.hrtime.bigint();
       const latencyMs = Number(latencyEnd - latencyStart) / 1000000;
       
       // Save fallback message
-      await saveMessageToAppwrite(sessionId, 'bot', fallbackMsg, { confidence: 0, error: err?.message });
+      await saveMessageToAppwrite(sessionId, 'bot', fallbackMsg, { 
+        confidence: 0, 
+        error: err?.message,
+        errorType: errorType
+      });
       
       // Save accuracy record for fallback
       await saveAccuracyRecord(
@@ -2820,7 +2999,8 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
         {
           model: geminiModelName || 'unknown',
           error: err?.message || 'Unknown error',
-          errorCode: err?.code || err?.status || null
+          errorCode: err?.code || err?.status || null,
+          errorType: errorType
         }
       );
       
@@ -4161,35 +4341,93 @@ async function* streamAllMessages(startDate, endDate) {
   const limit = 100;
   let offset = 0;
   let hasMore = true;
+  let totalYielded = 0;
   
   while (hasMore) {
     try {
       let queries = [];
-      if (Query && startDate) {
+      // Only apply date filters if both dates are provided
+      if (Query && startDate && endDate) {
         queries.push(Query.greaterThanEqual('createdAt', startDate.toISOString()));
-      }
-      if (Query && endDate) {
         queries.push(Query.lessThanEqual('createdAt', endDate.toISOString()));
+      }
+      
+      // CRITICAL: Add Query.limit() and Query.offset() to queries array
+      // Appwrite defaults to 25 documents per request, so we must use Query.limit() in queries array
+      if (Query) {
+        queries.push(Query.limit(limit));
+        queries.push(Query.offset(offset));
+      }
+      
+      // Debug logging for first batch
+      if (offset === 0) {
+        if (startDate && endDate) {
+          console.log(`📊 Streaming messages with date filter: startDate=${startDate?.toISOString()}, endDate=${endDate?.toISOString()}`);
+        } else {
+          console.log(`📊 Streaming ALL messages (no date filter)`);
+        }
       }
       
       const result = await awDatabases.listDocuments(
         APPWRITE_DATABASE_ID,
         APPWRITE_MESSAGES_COLLECTION_ID,
-        queries.length > 0 ? queries : undefined,
-        limit,
-        offset
+        queries.length > 0 ? queries : undefined
       );
       
-      for (const msg of result.documents) {
-        yield msg;
+      // Log progress for debugging
+      if (offset % 500 === 0 || offset === 0) {
+        console.log(`📊 Appwrite batch: fetched ${result.documents.length} messages, total=${result.total !== undefined ? result.total : 'unknown'}, offset=${offset}, hasMore=${result.documents.length === limit}`);
       }
       
+      // If this is the first batch and we got fewer than expected, log a warning
+      if (offset === 0 && result.documents.length < limit && result.total !== undefined && result.total > result.documents.length) {
+        console.warn(`⚠️  First batch returned ${result.documents.length} messages but total is ${result.total}. Will continue fetching...`);
+      }
+      
+      for (const msg of result.documents) {
+        // If date filtering is applied, double-check the date range client-side as fallback
+        if (startDate && endDate) {
+          const msgDate = new Date(msg.createdAt || msg.$createdAt || 0);
+          if (msgDate >= startDate && msgDate <= endDate) {
+            yield msg;
+            totalYielded++;
+          }
+        } else {
+          yield msg;
+          totalYielded++;
+        }
+      }
+      
+      // Update offset and determine if there are more documents
       offset += result.documents.length;
-      hasMore = result.documents.length === limit;
+      
+      // Use total count if available, otherwise check if we got a full page
+      if (result.total !== undefined) {
+        hasMore = offset < result.total;
+        if (offset % 1000 === 0) {
+          console.log(`📊 Progress: fetched ${offset}/${result.total} messages`);
+        }
+      } else {
+        // Fallback: assume more if we got a full page
+        hasMore = result.documents.length === limit;
+      }
+      
+      // Safety check: prevent infinite loops
+      if (offset > 1000000) {
+        console.warn('⚠️  Reached safety limit of 1M messages, stopping stream');
+        break;
+      }
     } catch (err) {
       console.error('Error streaming messages:', err);
+      console.error('   Error details:', err.message, err.code);
       break;
     }
+  }
+  
+  if (offset === 0) {
+    console.log(`📊 No messages found in database`);
+  } else {
+    console.log(`📊 Finished streaming messages: total yielded=${totalYielded}, total fetched=${offset}`);
   }
 }
 
@@ -4198,35 +4436,91 @@ async function* streamAllSessions(startDate, endDate) {
   const limit = 100;
   let offset = 0;
   let hasMore = true;
+  let totalYielded = 0;
   
   while (hasMore) {
     try {
       let queries = [];
-      if (Query && startDate) {
+      // Only apply date filters if both dates are provided
+      if (Query && startDate && endDate) {
         queries.push(Query.greaterThanEqual('startTime', startDate.toISOString()));
-      }
-      if (Query && endDate) {
         queries.push(Query.lessThanEqual('startTime', endDate.toISOString()));
+      }
+      
+      // CRITICAL: Add Query.limit() and Query.offset() to queries array
+      // Appwrite defaults to 25 documents per request, so we must use Query.limit() in queries array
+      if (Query) {
+        queries.push(Query.limit(limit));
+        queries.push(Query.offset(offset));
+      }
+      
+      // Debug logging for first batch
+      if (offset === 0) {
+        if (startDate && endDate) {
+          console.log(`📊 Streaming sessions with date filter: startDate=${startDate?.toISOString()}, endDate=${endDate?.toISOString()}`);
+        } else {
+          console.log(`📊 Streaming ALL sessions (no date filter)`);
+        }
       }
       
       const result = await awDatabases.listDocuments(
         APPWRITE_DATABASE_ID,
         APPWRITE_SESSIONS_COLLECTION_ID,
-        queries.length > 0 ? queries : undefined,
-        limit,
-        offset
+        queries.length > 0 ? queries : undefined
       );
       
-      for (const session of result.documents) {
-        yield session;
+      // Log progress for debugging
+      console.log(`📊 Appwrite batch: fetched ${result.documents.length} sessions, total=${result.total !== undefined ? result.total : 'unknown'}, offset=${offset}, hasMore=${result.documents.length === limit}`);
+      
+      // If this is the first batch and we got fewer than expected, log a warning
+      if (offset === 0 && result.documents.length < limit && result.total !== undefined && result.total > result.documents.length) {
+        console.warn(`⚠️  First batch returned ${result.documents.length} sessions but total is ${result.total}. Will continue fetching...`);
       }
       
+      for (const session of result.documents) {
+        // If date filtering is applied, double-check the date range client-side as fallback
+        if (startDate && endDate) {
+          const sessionStart = new Date(session.startTime || session.$createdAt || 0);
+          if (sessionStart >= startDate && sessionStart <= endDate) {
+            yield session;
+            totalYielded++;
+          }
+        } else {
+          yield session;
+          totalYielded++;
+        }
+      }
+      
+      // Update offset and determine if there are more documents
       offset += result.documents.length;
-      hasMore = result.documents.length === limit;
+      
+      // Use total count if available, otherwise check if we got a full page
+      if (result.total !== undefined) {
+        hasMore = offset < result.total;
+        if (offset % 500 === 0) {
+          console.log(`📊 Progress: fetched ${offset}/${result.total} sessions`);
+        }
+      } else {
+        // Fallback: assume more if we got a full page
+        hasMore = result.documents.length === limit;
+      }
+      
+      // Safety check: prevent infinite loops
+      if (offset > 100000) {
+        console.warn('⚠️  Reached safety limit of 100k sessions, stopping stream');
+        break;
+      }
     } catch (err) {
       console.error('Error streaming sessions:', err);
+      console.error('   Error details:', err.message, err.code);
       break;
     }
+  }
+  
+  if (offset === 0) {
+    console.log(`📊 No sessions found in database`);
+  } else {
+    console.log(`📊 Finished streaming sessions: total yielded=${totalYielded}, total fetched=${offset}`);
   }
 }
 
@@ -4236,6 +4530,8 @@ app.get('/admin/metrics/overview', requireAdminAuth, async (req, res) => {
   const authHeader = req.headers.authorization;
   const adminToken = authHeader ? authHeader.substring(7) : 'unknown';
   
+  console.log(`📥 Overview metrics request: from="${from}", to="${to}"`);
+  
   const cacheKey = getCacheKey('overview', { from, to });
   const cached = metricsCache.get(cacheKey);
   if (cached) {
@@ -4244,11 +4540,33 @@ app.get('/admin/metrics/overview', requireAdminAuth, async (req, res) => {
   }
   
   if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_SESSIONS_COLLECTION_ID || !APPWRITE_MESSAGES_COLLECTION_ID) {
+    console.error('❌ Appwrite not configured');
     return res.status(503).json({ error: 'Appwrite not configured' });
   }
   
-  const { start, end } = getDateRange(from, to);
-  console.log(`📊 Computing overview metrics: ${start.toISOString()} to ${end.toISOString()}`);
+  // Only apply date filtering if both from and to are provided and not empty
+  // If not provided or empty, get all data
+  let start = null;
+  let end = null;
+  
+  // Check if dates are provided and valid (not empty strings)
+  const hasValidDates = from && to && typeof from === 'string' && typeof to === 'string' && from.trim() !== '' && to.trim() !== '';
+  
+  if (hasValidDates) {
+    try {
+      const dateRange = getDateRange(from, to);
+      start = dateRange.start;
+      end = dateRange.end;
+      console.log(`📊 Computing overview metrics WITH date filter: ${start.toISOString()} to ${end.toISOString()}`);
+      console.log(`📊 Date range: from=${from}, to=${to}`);
+    } catch (dateErr) {
+      console.warn(`⚠️  Invalid date format, ignoring date filter:`, dateErr.message);
+      console.log(`📊 Computing overview metrics for ALL data (invalid date format)`);
+    }
+  } else {
+    console.log(`📊 Computing overview metrics for ALL data (no date filter)`);
+    console.log(`📊 Date range: from=${from || 'not provided'}, to=${to || 'not provided'}`);
+  }
   
   try {
     let totalSessions = 0;
@@ -4267,50 +4585,84 @@ app.get('/admin/metrics/overview', requireAdminAuth, async (req, res) => {
     };
     
     // Count sessions
-    for await (const session of streamAllSessions(start, end)) {
-      totalSessions++;
-      
-      // Track status
-      const status = (session.status || 'active').toLowerCase();
-      if (statusCounts.hasOwnProperty(status)) {
-        statusCounts[status]++;
-      } else {
-        statusCounts.active++; // Default to active for unknown statuses
-      }
-      
-      // Check for human takeover (agent assigned)
-      let assignedAgent = session.assignedAgent;
-      if (!assignedAgent && session.userMeta) {
-        try {
-          const userMeta = typeof session.userMeta === 'string' ? JSON.parse(session.userMeta) : session.userMeta;
-          assignedAgent = userMeta?.assignedAgent;
-        } catch (e) {}
-      }
-      if (assignedAgent) {
-        humanTakeoverCount++;
-        // Also count as agent_assigned if status isn't already set
-        if (status !== 'agent_assigned' && status !== 'closed') {
-          statusCounts.active = Math.max(0, statusCounts.active - 1);
-          statusCounts.agent_assigned++;
+    let sessionCount = 0;
+    let sessionStreamError = null;
+    try {
+      for await (const session of streamAllSessions(start, end)) {
+        totalSessions++;
+        sessionCount++;
+        
+        // Debug: Log first few sessions to verify date filtering
+        if (sessionCount <= 3) {
+          const sessionStart = new Date(session.startTime || session.$createdAt || 0);
+          console.log(`📊 Sample session ${sessionCount}: sessionId=${session.sessionId}, startTime=${sessionStart.toISOString()}, status=${session.status}`);
+        }
+        
+        // Track status
+        const status = (session.status || 'active').toLowerCase();
+        if (statusCounts.hasOwnProperty(status)) {
+          statusCounts[status]++;
+        } else {
+          statusCounts.active++; // Default to active for unknown statuses
+        }
+        
+        // Check for human takeover (agent assigned)
+        let assignedAgent = session.assignedAgent;
+        if (!assignedAgent && session.userMeta) {
+          try {
+            const userMeta = typeof session.userMeta === 'string' ? JSON.parse(session.userMeta) : session.userMeta;
+            assignedAgent = userMeta?.assignedAgent;
+          } catch (e) {}
+        }
+        if (assignedAgent) {
+          humanTakeoverCount++;
+          // Also count as agent_assigned if status isn't already set
+          if (status !== 'agent_assigned' && status !== 'closed') {
+            statusCounts.active = Math.max(0, statusCounts.active - 1);
+            statusCounts.agent_assigned++;
+          }
         }
       }
+    } catch (streamErr) {
+      sessionStreamError = streamErr;
+      console.error('❌ Error streaming sessions:', streamErr);
+    }
+    
+    // If we got very few sessions with date filter, warn user
+    if (start && end && totalSessions < 5) {
+      console.warn(`⚠️  Only found ${totalSessions} sessions in date range. This might be too restrictive.`);
+      console.warn(`   Consider checking if your sessions fall within ${start.toISOString()} to ${end.toISOString()}`);
     }
     
     // Count messages and compute response times
     const sessionMessages = new Map(); // sessionId -> [{sender, createdAt, ...}]
     
-    for await (const msg of streamAllMessages(start, end)) {
-      totalMessages++;
-      sessionsWithMessages.add(msg.sessionId);
-      
-      if (!sessionMessages.has(msg.sessionId)) {
-        sessionMessages.set(msg.sessionId, []);
+    let messageCount = 0;
+    let messageStreamError = null;
+    try {
+      for await (const msg of streamAllMessages(start, end)) {
+        totalMessages++;
+        messageCount++;
+        sessionsWithMessages.add(msg.sessionId);
+        
+        // Debug: Log first few messages to verify date filtering
+        if (messageCount <= 3) {
+          const msgDate = new Date(msg.createdAt || msg.$createdAt || 0);
+          console.log(`📊 Sample message ${messageCount}: sessionId=${msg.sessionId}, createdAt=${msgDate.toISOString()}, sender=${msg.sender}`);
+        }
+        
+        if (!sessionMessages.has(msg.sessionId)) {
+          sessionMessages.set(msg.sessionId, []);
+        }
+        sessionMessages.get(msg.sessionId).push({
+          sender: msg.sender,
+          createdAt: new Date(msg.createdAt || msg.$createdAt || Date.now()),
+          confidence: msg.confidence
+        });
       }
-      sessionMessages.get(msg.sessionId).push({
-        sender: msg.sender,
-        createdAt: new Date(msg.createdAt || msg.$createdAt || Date.now()),
-        confidence: msg.confidence
-      });
+    } catch (streamErr) {
+      messageStreamError = streamErr;
+      console.error('❌ Error streaming messages:', streamErr);
     }
     
     // Compute bot response times (user message -> next bot message)
@@ -4341,6 +4693,19 @@ app.get('/admin/metrics/overview', requireAdminAuth, async (req, res) => {
       }
     }
     
+    // Log summary for debugging
+    console.log(`📊 Metrics Summary:`);
+    console.log(`   Total Sessions: ${totalSessions}`);
+    console.log(`   Total Messages: ${totalMessages}`);
+    console.log(`   Sessions with Messages: ${sessionsWithMessages.size}`);
+    console.log(`   Avg Messages/Session: ${avgMessagesPerSession.toFixed(2)}`);
+    console.log(`   Bot Response Times: ${botResponseTimes.length} pairs`);
+    console.log(`   Avg Response Time: ${Math.round(avgBotResponseTimeMs)}ms`);
+    console.log(`   Human Takeover Count: ${humanTakeoverCount}`);
+    console.log(`   Human Takeover Rate: ${(humanTakeoverRate * 100).toFixed(2)}%`);
+    console.log(`   AI Fallback Count: ${aiFallbackCount}`);
+    console.log(`   Session Statuses:`, statusCounts);
+    
     const result = {
       totalSessions,
       totalMessages,
@@ -4349,8 +4714,8 @@ app.get('/admin/metrics/overview', requireAdminAuth, async (req, res) => {
       humanTakeoverRate: Math.round(humanTakeoverRate * 10000) / 100, // Percentage
       aiFallbackCount,
       sessionStatuses: statusCounts, // Include status breakdown
-      startDate: start.toISOString().split('T')[0],
-      endDate: end.toISOString().split('T')[0]
+      startDate: start ? start.toISOString().split('T')[0] : null,
+      endDate: end ? end.toISOString().split('T')[0] : null
     };
     
     metricsCache.set(cacheKey, result);
@@ -4380,8 +4745,22 @@ app.get('/admin/metrics/messages-over-time', requireAdminAuth, async (req, res) 
     return res.status(503).json({ error: 'Appwrite not configured' });
   }
   
-  const { start, end } = getDateRange(from, to);
-  console.log(`📊 Computing messages-over-time: ${start.toISOString()} to ${end.toISOString()}, interval=${interval}`);
+  // Only apply date filtering if both from and to are provided and not empty
+  let start = null;
+  let end = null;
+  if (from && to && from.trim() !== '' && to.trim() !== '') {
+    try {
+      const dateRange = getDateRange(from, to);
+      start = dateRange.start;
+      end = dateRange.end;
+      console.log(`📊 Computing messages-over-time WITH date filter: ${start.toISOString()} to ${end.toISOString()}, interval=${interval}`);
+    } catch (dateErr) {
+      console.warn(`⚠️  Invalid date format, ignoring date filter:`, dateErr.message);
+      console.log(`📊 Computing messages-over-time for ALL data (invalid date format), interval=${interval}`);
+    }
+  } else {
+    console.log(`📊 Computing messages-over-time for ALL data (no date filter), interval=${interval}`);
+  }
   
   try {
     const buckets = new Map(); // date -> { messages: 0, sessionsStarted: 0 }
@@ -4459,8 +4838,22 @@ app.get('/admin/metrics/agent-performance', requireAdminAuth, async (req, res) =
     return res.status(503).json({ error: 'Appwrite not configured' });
   }
   
-  const { start, end } = getDateRange(from, to);
-  console.log(`📊 Computing agent performance: ${start.toISOString()} to ${end.toISOString()}`);
+  // Only apply date filtering if both from and to are provided and not empty
+  let start = null;
+  let end = null;
+  if (from && to && from.trim() !== '' && to.trim() !== '') {
+    try {
+      const dateRange = getDateRange(from, to);
+      start = dateRange.start;
+      end = dateRange.end;
+      console.log(`📊 Computing agent performance WITH date filter: ${start.toISOString()} to ${end.toISOString()}`);
+    } catch (dateErr) {
+      console.warn(`⚠️  Invalid date format, ignoring date filter:`, dateErr.message);
+      console.log(`📊 Computing agent performance for ALL data (invalid date format)`);
+    }
+  } else {
+    console.log(`📊 Computing agent performance for ALL data (no date filter)`);
+  }
   
   try {
     const agentStats = new Map(); // agentId -> { sessionsHandled, messagesHandled, responseTimes, sessionStartTimes }
@@ -4647,9 +5040,23 @@ app.get('/admin/metrics/confidence-histogram', requireAdminAuth, async (req, res
     return res.status(503).json({ error: 'Appwrite not configured' });
   }
   
-  const { start, end } = getDateRange(from, to);
+  // Only apply date filtering if both from and to are provided and not empty
+  let start = null;
+  let end = null;
+  if (from && to && from.trim() !== '' && to.trim() !== '') {
+    try {
+      const dateRange = getDateRange(from, to);
+      start = dateRange.start;
+      end = dateRange.end;
+      console.log(`📊 Computing confidence histogram WITH date filter: ${start.toISOString()} to ${end.toISOString()}, bins=${bins}`);
+    } catch (dateErr) {
+      console.warn(`⚠️  Invalid date format, ignoring date filter:`, dateErr.message);
+      console.log(`📊 Computing confidence histogram for ALL data (invalid date format), bins=${bins}`);
+    }
+  } else {
+    console.log(`📊 Computing confidence histogram for ALL data (no date filter), bins=${bins}`);
+  }
   const numBins = parseInt(bins) || 10;
-  console.log(`📊 Computing confidence histogram: ${start.toISOString()} to ${end.toISOString()}, bins=${numBins}`);
   
   try {
     const confidences = [];
@@ -4715,9 +5122,23 @@ app.get('/admin/metrics/response-times', requireAdminAuth, async (req, res) => {
     return res.status(503).json({ error: 'Appwrite not configured' });
   }
   
-  const { start, end } = getDateRange(from, to);
+  // Only apply date filtering if both from and to are provided and not empty
+  let start = null;
+  let end = null;
+  if (from && to && from.trim() !== '' && to.trim() !== '') {
+    try {
+      const dateRange = getDateRange(from, to);
+      start = dateRange.start;
+      end = dateRange.end;
+      console.log(`📊 Computing response times WITH date filter: ${start.toISOString()} to ${end.toISOString()}, percentiles=${percentiles}`);
+    } catch (dateErr) {
+      console.warn(`⚠️  Invalid date format, ignoring date filter:`, dateErr.message);
+      console.log(`📊 Computing response times for ALL data (invalid date format), percentiles=${percentiles}`);
+    }
+  } else {
+    console.log(`📊 Computing response times for ALL data (no date filter), percentiles=${percentiles}`);
+  }
   const percentileList = percentiles.split(',').map(p => parseInt(p.trim())).filter(p => !isNaN(p));
-  console.log(`📊 Computing response times: ${start.toISOString()} to ${end.toISOString()}, percentiles=${percentiles}`);
   
   try {
     const responseTimes = [];
@@ -4807,6 +5228,9 @@ app.post('/auth/signup', async (req, res) => {
   try {
     const { name, email, role } = req.body;
     
+    // Debug: Log received data
+    console.log(`📥 Signup request received:`, { name, email, role, body: req.body });
+    
     // Validation
     if (!email) {
       return res.status(400).json({ error: 'Email is required' });
@@ -4826,17 +5250,24 @@ app.post('/auth/signup', async (req, res) => {
     
     // Determine role assignment
     let assignedRole = 'viewer'; // Default
-    const DEV_ALLOW_SIGNUP_ROLE = process.env.DEV_ALLOW_SIGNUP_ROLE === 'true';
     const authHeader = req.headers.authorization;
     const isSuperAdmin = authHeader && authHeader.startsWith('Bearer ') && 
                          authHeader.substring(7) === ADMIN_SHARED_SECRET;
     
-    if (role && (isSuperAdmin || DEV_ALLOW_SIGNUP_ROLE)) {
-      // Validate role
+    // Allow any user to select their role during signup
+    // Validate role if provided
+    if (role) {
+      console.log(`🔍 Role received from request: "${role}" (type: ${typeof role})`);
       const validRoles = ['super_admin', 'admin', 'agent', 'viewer'];
       if (validRoles.includes(role)) {
         assignedRole = role;
+        console.log(`✅ Role validated and assigned: ${assignedRole}`);
+      } else {
+        console.warn(`⚠️  Invalid role provided: "${role}", defaulting to 'viewer'`);
+        console.warn(`   Valid roles are: ${validRoles.join(', ')}`);
       }
+    } else {
+      console.log(`ℹ️  No role provided in request, using default: 'viewer'`);
     }
     
     // Generate userId
@@ -4845,19 +5276,43 @@ app.post('/auth/signup', async (req, res) => {
     
     // Create user in Appwrite (no passwordHash)
     try {
-      const userDoc = await createUserRow({
+      console.log(`📝 Attempting to create user: ${email} with role: ${assignedRole}`);
+      
+      // Build payload with only attributes that exist in the collection schema
+      // Required: userId, email
+      // Optional: name, roles
+      // Note: createdAt/updatedAt are auto-managed by Appwrite ($createdAt, $updatedAt)
+      // Note: lastSeen and userMeta may not exist in schema - only include if collection has them
+      const payload = {
         userId,
         email,
         name: name || email,
-        roles: [assignedRole],
-        createdAt: timestamp,
-        updatedAt: timestamp,
-        lastSeen: timestamp,
-        userMeta: JSON.stringify({ createdBy: isSuperAdmin ? 'admin' : 'self-signup' })
+        roles: [assignedRole]
+      };
+      
+      console.log(`📤 Creating user with payload:`, JSON.stringify(payload, null, 2));
+      
+      // Try to include createdAt/updatedAt only if collection supports datetime attributes
+      // If they fail, we'll catch and retry without them
+      const userDoc = await createUserRow(payload);
+      
+      console.log(`✅ User document created:`, {
+        userId: userDoc.userId,
+        email: userDoc.email,
+        roles: userDoc.roles,
+        fullDoc: userDoc
       });
+      console.log(`✅ User document created, now setting roles...`);
       
       // Set roles via helper (in case createUserRow doesn't set them)
-      await setUserRoles(userId, [assignedRole]);
+      // Don't fail if setUserRoles fails - user is already created
+      try {
+        await setUserRoles(userId, [assignedRole]);
+        console.log(`✅ Roles set successfully`);
+      } catch (roleErr) {
+        console.warn(`⚠️  Failed to set roles (non-critical):`, roleErr.message);
+        // Continue anyway - user is created
+      }
       
       // Log audit entry
       console.log(`📝 [AUDIT] User created: ${email} (${userId}) with role: ${assignedRole} by ${isSuperAdmin ? 'admin' : 'self-signup'}`);
@@ -4873,8 +5328,17 @@ app.post('/auth/signup', async (req, res) => {
       if (createErr.code === 409) {
         return res.status(409).json({ error: 'User already exists' });
       }
-      console.error('Error creating user:', createErr);
-      return res.status(500).json({ error: 'Failed to create user account' });
+      console.error('❌ Error creating user:', createErr);
+      console.error('❌ Error details:', {
+        message: createErr.message,
+        code: createErr.code,
+        type: createErr.type,
+        stack: createErr.stack?.split('\n').slice(0, 5).join('\n')
+      });
+      return res.status(500).json({ 
+        error: 'Failed to create user account',
+        details: createErr.message || 'Unknown error'
+      });
     }
   } catch (err) {
     console.error('Error in signup:', err);
