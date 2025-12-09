@@ -1,7 +1,13 @@
 # Dependencies
 node_modules/
+**/node_modules/
 .pnp
 .pnp.js
+
+# pnpm
+.pnpm-store/
+.pnpm-debug.log
+pnpm-lock.yaml
 
 # Environment variables
 .env
@@ -103,6 +109,7 @@ dist/
 dist/
 dist-ssr/
 *.local
+.vite/
 
 # Rollup
 .rollup.cache/
@@ -129,10 +136,10 @@ dist-ssr/
 .yarn/install-state.gz
 .pnp.*
 
-# Lock files (optional - uncomment if you want to ignore them)
-# package-lock.json
-# yarn.lock
-# pnpm-lock.yaml
+# Lock files - using pnpm, so ignore npm/yarn locks
+package-lock.json
+yarn.lock
+# pnpm-lock.yaml (keep this one since we're using pnpm)
 
 # Appwrite local files
 appwrite.json
