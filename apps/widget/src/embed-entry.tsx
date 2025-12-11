@@ -89,7 +89,10 @@ function ChatWidgetWithButton({ initialSessionId }: { initialSessionId?: string 
             ×
           </button>
           {/* Chat widget */}
-          <EmbedWidget initialSessionId={initialSessionId} />
+          <EmbedWidget 
+            initialSessionId={initialSessionId}
+            onAgentInitiatedChat={() => setChatWidgetOpen(true)}
+          />
         </div>
       )}
 

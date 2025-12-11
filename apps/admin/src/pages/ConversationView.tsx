@@ -7,7 +7,7 @@ const API_BASE = 'http://localhost:4000'
 const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET || 'dev-secret-change-me'
 
 interface Message {
-  sender: string
+  sender: 'user' | 'agent' | 'bot' | 'internal'
   text: string
   timestamp: string
   agentId?: string
@@ -16,14 +16,18 @@ interface Message {
 export default function ConversationView() {
   const { sessionId } = useParams<{ sessionId: string }>()
   const navigate = useNavigate()
-  const { hasAnyRole } = useAuth()
+  const { hasAnyRole, user } = useAuth()
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(true)
   const [agentId, setAgentId] = useState('')
   const [messageText, setMessageText] = useState('')
+  const [isPrivateNote, setIsPrivateNote] = useState(false)
   const [socket, setSocket] = useState<any>(null)
   const [sessionStatus, setSessionStatus] = useState<string>('')
   const [assignedAgentId, setAssignedAgentId] = useState<string>('')
+  
+  // Check if current user can send messages (agent, admin, or super_admin)
+  const canSendMessages = hasAnyRole(['agent', 'admin', 'super_admin'])
   const [exporting, setExporting] = useState(false)
   const [showExportMenu, setShowExportMenu] = useState(false)
   
@@ -63,11 +67,12 @@ export default function ConversationView() {
         sock.emit('join_session', { sessionId })
         console.log(`📱 Admin socket joined session room: ${sessionId}`)
       }
-      // Auto-connect as agent if session has assigned agent
-      if (assignedAgentId) {
+      // Auto-connect as agent if session has assigned agent and current user matches
+      const currentUserId = user?.userId
+      if (assignedAgentId && currentUserId === assignedAgentId) {
         setAgentId(assignedAgentId)
         sock.emit('agent_connect', { agentId: assignedAgentId })
-        console.log(`👤 Auto-connected as agent: ${assignedAgentId}`)
+        console.log(`👤 Auto-connected as assigned agent: ${assignedAgentId}`)
       } else if (agentId) {
         sock.emit('agent_connect', { agentId })
         console.log(`👤 Connected as agent: ${agentId}`)
@@ -177,12 +182,50 @@ export default function ConversationView() {
       console.log('📨 Assignment notification:', data)
     })
     
+    // Listen for internal notes (private agent messages)
+    sock.on('internal_note', (data: any) => {
+      console.log('📨 Received internal_note:', data)
+      if (data.sessionId === sessionId || !data.sessionId) {
+        setMessages(prev => {
+          // Check if message already exists to avoid duplicates
+          const exists = prev.some(m => 
+            m.sender === 'internal' && 
+            m.text === data.text && 
+            Math.abs(new Date(m.timestamp).getTime() - (data.ts || Date.now())) < 2000
+          )
+          if (exists) {
+            console.log('   ⚠️  Duplicate internal note, skipping')
+            return prev
+          }
+          console.log('   ✅ Adding internal note to UI')
+          return [...prev, { 
+            sender: 'internal', 
+            text: data.text, 
+            timestamp: new Date(data.ts || Date.now()).toISOString(), 
+            agentId: data.agentId 
+          }]
+        })
+      } else {
+        console.log(`   ⚠️  Internal note for different session: ${data.sessionId} (current: ${sessionId})`)
+      }
+    })
+    
     setSocket(sock)
     
     return () => {
       sock.disconnect()
     }
-  }, [sessionId, assignedAgentId])
+  }, [sessionId, assignedAgentId, user])
+  
+  // Auto-fill agentId when assignedAgentId is set (ensures Send button is enabled)
+  // This handles both assignment methods: Initiate Chat and manual assignment
+  useEffect(() => {
+    if (assignedAgentId) {
+      // Always set agentId to match assignedAgentId (enables Send button)
+      setAgentId(assignedAgentId)
+      console.log(`✅ Auto-filled agentId from assignedAgentId: ${assignedAgentId}`)
+    }
+  }, [assignedAgentId])
   
   // Separate effect to reconnect when agentId changes
   useEffect(() => {
@@ -223,8 +266,14 @@ export default function ConversationView() {
         
         if (agent) {
           setAssignedAgentId(agent)
-          setAgentId(agent) // Auto-fill agent ID field
-          console.log(`✅ Found assigned agent: ${agent}`)
+          // Always auto-fill agentId when assignedAgent is found (enables Send button)
+          setAgentId(agent)
+          const currentUserId = user?.userId
+          if (currentUserId && currentUserId === agent) {
+            console.log(`✅ Found assigned agent: ${agent} (matches current user - auto-connected)`)
+          } else {
+            console.log(`✅ Found assigned agent: ${agent} (auto-filled agentId field)`)
+          }
         }
       }
     } catch (err) {
@@ -470,8 +519,15 @@ export default function ConversationView() {
   }
 
   function sendMessage() {
-    if (!sessionId || !messageText.trim() || !agentId) {
-      alert('Please enter agent ID and message')
+    if (!sessionId || !messageText.trim()) {
+      alert('Please enter a message')
+      return
+    }
+    
+    // Use current user's ID if agentId is not set but user has permission
+    const effectiveAgentId = agentId || (canSendMessages && user?.userId ? user.userId : null)
+    if (!effectiveAgentId) {
+      alert('Agent ID is required')
       return
     }
     
@@ -481,9 +537,27 @@ export default function ConversationView() {
     }
     
     if (socket) {
-      socket.emit('agent_message', { sessionId, text: messageText.trim(), agentId })
-      setMessages(prev => [...prev, { sender: 'agent', text: messageText.trim(), timestamp: new Date().toISOString(), agentId }])
+      if (isPrivateNote) {
+        // Send as internal note (private, only visible to agents)
+        socket.emit('internal_note', { sessionId, text: messageText.trim(), agentId: effectiveAgentId })
+        setMessages(prev => [...prev, { 
+          sender: 'internal', 
+          text: messageText.trim(), 
+          timestamp: new Date().toISOString(), 
+          agentId: effectiveAgentId 
+        }])
+      } else {
+        // Send as regular agent message (visible to user)
+        socket.emit('agent_message', { sessionId, text: messageText.trim(), agentId: effectiveAgentId })
+        setMessages(prev => [...prev, { 
+          sender: 'agent', 
+          text: messageText.trim(), 
+          timestamp: new Date().toISOString(), 
+          agentId: effectiveAgentId 
+        }])
+      }
       setMessageText('')
+      setIsPrivateNote(false) // Reset toggle after sending
     }
   }
 
@@ -631,10 +705,15 @@ export default function ConversationView() {
                   <span style={{ fontSize: '13px', color: '#6c757d', marginLeft: '10px' }}>
                     Assigned to: {assignedAgentId}
                   </span>
-                  {agentId && agentId !== assignedAgentId && (
+                  {/* Only show reassign button if current user is NOT the assigned agent */}
+                  {agentId && agentId !== assignedAgentId && user?.userId !== assignedAgentId && (
                     <button onClick={assignToMe} style={{ padding: '8px 16px', background: '#ffc107', color: '#333', border: 'none', borderRadius: '4px', cursor: 'pointer', marginLeft: '10px' }}>
                       Reassign to Me
                     </button>
+                  )}
+                  {/* If current user IS the assigned agent, show they're assigned */}
+                  {user?.userId === assignedAgentId && (
+                    <span style={{ fontSize: '13px', color: '#28a745', fontWeight: '500', marginLeft: '10px' }}>✓ You are assigned</span>
                   )}
                 </>
               ) : (
@@ -678,14 +757,23 @@ export default function ConversationView() {
                 style={{
                   padding: '10px 14px',
                   borderRadius: '8px',
-                  background: msg.sender === 'user' ? '#667eea' : msg.sender === 'agent' ? '#28a745' : msg.sender === 'bot' ? '#6c757d' : '#f8f9fa',
-                  color: msg.sender === 'user' ? 'white' : msg.sender === 'bot' ? 'white' : '#333',
+                  background: msg.sender === 'user' ? '#667eea' : 
+                              msg.sender === 'agent' ? '#28a745' : 
+                              msg.sender === 'bot' ? '#6c757d' : 
+                              msg.sender === 'internal' ? '#fff3cd' : '#f8f9fa',
+                  color: msg.sender === 'user' ? 'white' : 
+                         msg.sender === 'bot' ? 'white' : 
+                         msg.sender === 'internal' ? '#856404' : '#333',
                   alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start',
-                  maxWidth: '70%'
+                  maxWidth: '70%',
+                  border: msg.sender === 'internal' ? '2px dashed #ffc107' : 'none'
                 }}
               >
                 <div style={{ fontSize: '12px', opacity: 0.8, marginBottom: '4px', fontWeight: '500' }}>
-                  {msg.sender === 'bot' ? '🤖 Bot' : msg.sender === 'agent' ? `👤 Agent${msg.agentId ? ` (${msg.agentId})` : ''}` : '👤 User'}
+                  {msg.sender === 'bot' ? '🤖 Bot' : 
+                   msg.sender === 'agent' ? `👤 Agent${msg.agentId ? ` (${msg.agentId})` : ''}` : 
+                   msg.sender === 'internal' ? '🔒 Private Note' : 
+                   '👤 User'}
                 </div>
                 <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{msg.text}</div>
                 <div style={{ fontSize: '11px', opacity: 0.7, marginTop: '4px' }}>
@@ -697,29 +785,43 @@ export default function ConversationView() {
         )}
       </div>
 
-      <div style={{ display: 'flex', gap: '10px' }}>
-        <input
-          type="text"
-          placeholder="Type your message..."
-          value={messageText}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMessageText(e.target.value)}
-          onKeyPress={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === 'Enter' && sendMessage()}
-          style={{ flex: 1, padding: '10px', border: '1px solid #ddd', borderRadius: '4px' }}
-        />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        {/* Private Note Toggle */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '14px', color: '#666' }}>
+            <input
+              type="checkbox"
+              checked={isPrivateNote}
+              onChange={(e) => setIsPrivateNote(e.target.checked)}
+              style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+            />
+            <span>🔒 Private Note (only visible to agents)</span>
+          </label>
+        </div>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <input
+            type="text"
+            placeholder="Type your message..."
+            value={messageText}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMessageText(e.target.value)}
+            onKeyPress={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === 'Enter' && sendMessage()}
+            style={{ flex: 1, padding: '10px', border: '1px solid #ddd', borderRadius: '4px' }}
+          />
         <button
           onClick={sendMessage}
-          disabled={!agentId || !messageText.trim()}
+          disabled={!canSendMessages || !messageText.trim()}
           style={{
             padding: '10px 20px',
-            background: agentId && messageText.trim() ? '#28a745' : '#ccc',
+            background: canSendMessages && messageText.trim() ? '#28a745' : '#ccc',
             color: 'white',
             border: 'none',
             borderRadius: '4px',
-            cursor: agentId && messageText.trim() ? 'pointer' : 'not-allowed'
+            cursor: canSendMessages && messageText.trim() ? 'pointer' : 'not-allowed'
           }}
         >
           Send
         </button>
+        </div>
       </div>
     </div>
   )

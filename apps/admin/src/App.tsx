@@ -6,6 +6,7 @@ import AnalyticsPage from './pages/AnalyticsPage'
 import UsersPage from './pages/UsersPage'
 import AccuracyPage from './pages/AccuracyPage'
 import EncryptionPage from './pages/EncryptionPage'
+import LiveVisitors from './pages/LiveVisitors'
 import SignupPage from './pages/SignupPage'
 import AuthPage from './pages/AuthPage'
 import PermissionDeniedPage from './pages/PermissionDeniedPage'
@@ -76,6 +77,12 @@ function Navigation() {
                   className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
                 >
                   Sessions
+                </Link>
+                <Link
+                  to="/live"
+                  className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
+                >
+                  Live View
                 </Link>
                 <Link
                   to="/analytics"
@@ -155,6 +162,7 @@ function App() {
             <Route path="/auth" element={<AuthPage />} />
             <Route path="/sessions" element={<ProtectedRoute><SessionsList /></ProtectedRoute>} />
             <Route path="/sessions/:sessionId" element={<ProtectedRoute><ConversationView /></ProtectedRoute>} />
+            <Route path="/live" element={<ProtectedRoute><LiveVisitors /></ProtectedRoute>} />
             <Route path="/analytics" element={<ProtectedRoute><AnalyticsPage /></ProtectedRoute>} />
             <Route path="/accuracy" element={<ProtectedRoute requiredRole={['admin', 'super_admin']}><AccuracyPage /></ProtectedRoute>} />
             <Route path="/users" element={<ProtectedRoute><UsersRoute /></ProtectedRoute>} />

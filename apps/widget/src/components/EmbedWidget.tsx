@@ -1,9 +1,15 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { io } from 'socket.io-client';
+import { io, Socket } from 'socket.io-client';
 
-const socket = io('http://localhost:4000');
+const SOCKET_URL = 'http://localhost:4000';
 
-export default function EmbedWidget({ initialSessionId }: { initialSessionId?: string }) {
+export default function EmbedWidget({ 
+  initialSessionId,
+  onAgentInitiatedChat
+}: { 
+  initialSessionId?: string;
+  onAgentInitiatedChat?: () => void;
+}) {
   // Load sessionId from localStorage or use initialSessionId
   // BUT: Don't load if conversation was concluded
   const getStoredSessionId = () => {
@@ -36,6 +42,7 @@ export default function EmbedWidget({ initialSessionId }: { initialSessionId?: s
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<number | null>(null);
   const messagesLoadedRef = useRef(false); // Track if messages have been loaded
+  const socketRef = useRef<Socket | null>(null); // Store socket instance
 
   // Apply theme from CSS variables
   function applyTheme(themeVars: Record<string, string>) {
@@ -94,17 +101,146 @@ export default function EmbedWidget({ initialSessionId }: { initialSessionId?: s
     }
   }, [sessionId]);
 
-  // Also load messages on initial mount if sessionId exists
+  // Initialize socket connection immediately on mount (even if widget is closed)
   useEffect(() => {
+    // Create socket connection
+    const socket = io(SOCKET_URL);
+    socketRef.current = socket;
+    
+    // Helper function to emit visitor_join
+    const emitVisitorJoin = () => {
+      if (socket && socket.connected) {
+        socket.emit('visitor_join', {
+          url: window.location.href,
+          title: document.title,
+          referrer: document.referrer
+        });
+        console.log('👤 Visitor join event emitted');
+      } else {
+        console.warn('⚠️  Cannot emit visitor_join: socket not connected');
+      }
+    };
+    
+    // Emit visitor_join on connect (this will fire when socket connects)
+    socket.on('connect', () => {
+      console.log('ws connected', socket.id);
+      setIsConnected(true);
+      
+      // Emit visitor_join immediately upon connection (before chat starts)
+      emitVisitorJoin();
+      
+      // Join session room if sessionId exists
+      if (sessionId) {
+        socket.emit('join_session', { sessionId });
+        console.log(`📱 Widget socket joined session room: ${sessionId}`);
+        // Load messages from storage when reconnecting
+        if (!messagesLoadedRef.current) {
+          loadMessagesFromStorage(sessionId);
+        }
+      }
+    });
+    
+    socket.on('disconnect', () => {
+      setIsConnected(false);
+      console.log('ws disconnected');
+    });
+    
+    socket.on('reconnect', () => {
+      console.log('ws reconnected', socket.id);
+      setIsConnected(true);
+      // Rejoin session room on reconnect
+      if (sessionId) {
+        socket.emit('join_session', { sessionId });
+        console.log(`📱 Widget socket rejoined session room on reconnect: ${sessionId}`);
+      }
+      // Re-emit visitor_join on reconnect
+      emitVisitorJoin();
+    });
+    
+    // Listen for agent-initiated chat (proactive chat) - MUST be in same useEffect as socket creation
+    socket.on('agent_initiated_chat', (data: any) => {
+      console.log('📨 Received agent_initiated_chat:', data);
+      const { sessionId: newSessionId, text, sender = 'bot' } = data || {};
+      
+      if (!newSessionId || !text) {
+        console.warn('⚠️  Invalid agent_initiated_chat payload:', data);
+        return;
+      }
+      
+      // 1. Set isOpen to true (via callback)
+      if (onAgentInitiatedChat) {
+        onAgentInitiatedChat();
+      }
+      
+      // 2. Save sessionId to localStorage
+      localStorage.setItem('ai-support-session-id', newSessionId);
+      
+      // 3. Update sessionId state
+      setSessionId(newSessionId);
+      messagesLoadedRef.current = false;
+      
+      // 4. Append the received message to messages state as 'bot' message
+      setMessages(prev => {
+        // Check for duplicates
+        const exists = prev.some(msg => 
+          msg.sender === sender && 
+          msg.text === text &&
+          (msg.ts && Date.now() - msg.ts < 2000)
+        );
+        if (exists) {
+          console.log(`   ⚠️  Duplicate ${sender} message, skipping`);
+          return prev;
+        }
+        console.log(`   ✅ Adding ${sender} message to widget (initiated chat)`);
+        return [...prev, { 
+          sender: sender, // Use 'bot' as sender so it appears as bot message
+          text: text, 
+          ts: Date.now()
+        }];
+      });
+      
+      // Join the session room (this connects the widget to the session created by admin)
+      console.log(`🔗 Connecting widget to session ${newSessionId} (created by admin initiate_chat)`);
+      socket.emit('join_session', { sessionId: newSessionId });
+      console.log(`📱 Widget joined session room for agent-initiated chat: ${newSessionId}`);
+      console.log(`   ✅ Widget is now connected to the same session that was created by admin`);
+      
+      // 5. Play notification sound (optional)
+      try {
+        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        oscillator.frequency.value = 800;
+        oscillator.type = 'sine';
+        
+        gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+        
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.3);
+      } catch (err) {
+        console.warn('Could not play notification sound:', err);
+      }
+    });
+    
+    // Also load messages on initial mount if sessionId exists
     const storedSessionId = getStoredSessionId();
     if (storedSessionId && !messagesLoadedRef.current) {
       loadMessagesFromStorage(storedSessionId);
     }
-    // Check socket connection status on mount
-    if (socket.connected) {
-      setIsConnected(true);
-    }
-  }, []); // Run only on mount
+    
+    return () => {
+      socket.off('connect');
+      socket.off('disconnect');
+      socket.off('reconnect');
+      socket.off('agent_initiated_chat');
+      socket.disconnect();
+    };
+  }, [onAgentInitiatedChat]); // Include onAgentInitiatedChat in dependencies
 
   // Fetch theme on session start
   useEffect(() => {
@@ -147,45 +283,21 @@ export default function EmbedWidget({ initialSessionId }: { initialSessionId?: s
     setIsBotTyping(false);
   };
 
+  // Set up socket event listeners (separate from initialization)
   useEffect(() => {
-    // Check if socket is already connected when component mounts
-    if (socket.connected) {
-      setIsConnected(true);
-      console.log('ws already connected', socket.id);
-      // Join session room if sessionId exists
-      if (sessionId) {
-        socket.emit('join_session', { sessionId });
-        console.log(`📱 Widget socket joined session room (already connected): ${sessionId}`);
+    const socket = socketRef.current;
+    if (!socket) return;
+    
+    // Update sessionId dependency - rejoin room when sessionId changes
+    if (sessionId) {
+      socket.emit('join_session', { sessionId });
+      console.log(`📱 Widget socket joined session room: ${sessionId}`);
+      if (!messagesLoadedRef.current) {
+        loadMessagesFromStorage(sessionId);
       }
     }
-
-    socket.on('connect', () => {
-      console.log('ws connected', socket.id);
-      setIsConnected(true);
-      // CRITICAL: Join session room if sessionId exists to receive agent messages
-      if (sessionId) {
-        socket.emit('join_session', { sessionId });
-        console.log(`📱 Widget socket joined session room: ${sessionId}`);
-        // Load messages from storage when reconnecting
-        if (!messagesLoadedRef.current) {
-          loadMessagesFromStorage(sessionId);
-        }
-      }
-    });
-    socket.on('disconnect', () => {
-      setIsConnected(false);
-      console.log('ws disconnected');
-    });
-    socket.on('reconnect', () => {
-      console.log('ws reconnected', socket.id);
-      setIsConnected(true);
-      // Rejoin session room on reconnect
-      if (sessionId) {
-        socket.emit('join_session', { sessionId });
-        console.log(`📱 Widget socket rejoined session room on reconnect: ${sessionId}`);
-      }
-    });
-    socket.on('session_started', ({ sessionId: newSessionId }) => {
+    
+    socket.on('session_started', ({ sessionId: newSessionId }: any) => {
       setSessionId(newSessionId);
       // Store sessionId in localStorage for persistence
       if (newSessionId) {
@@ -271,6 +383,7 @@ export default function EmbedWidget({ initialSessionId }: { initialSessionId?: s
       stopTypingIndicator();
       setMessages(prev => [...prev, { sender: 'system', text: `Error: ${err.error}`, ts: Date.now() }]);
     });
+    
     socket.on('conversation_closed', (data: any) => {
       const { sessionId: closedSessionId } = data || {};
       // Only reset if this is the current session
@@ -310,6 +423,9 @@ export default function EmbedWidget({ initialSessionId }: { initialSessionId?: s
   }, [messages]);
 
   function start() {
+    const socket = socketRef.current;
+    if (!socket) return;
+    
     const sid = sessionId || `s_${Date.now()}`;
     setSessionId(sid);
     // Store sessionId in localStorage
@@ -328,7 +444,8 @@ export default function EmbedWidget({ initialSessionId }: { initialSessionId?: s
   }
   
   function handleConclusionOption(optionValue: string, optionText: string) {
-    if (!sessionId || conversationConcluded) return; // Don't allow clicks if conversation is concluded
+    const socket = socketRef.current;
+    if (!socket || !sessionId || conversationConcluded) return; // Don't allow clicks if conversation is concluded
     
     // Send the selected option as a user message
     setMessages(prev => [...prev, { sender: 'user', text: optionText, ts: Date.now() }]);
@@ -351,7 +468,8 @@ export default function EmbedWidget({ initialSessionId }: { initialSessionId?: s
   }
 
   function send() {
-    if (!text.trim() || !sessionId) return;
+    const socket = socketRef.current;
+    if (!socket || !text.trim() || !sessionId) return;
     setMessages(prev => [...prev, { sender: 'user', text: text.trim(), ts: Date.now() }]);
     socket.emit('user_message', { sessionId, text: text.trim() });
     setText('');
