@@ -28,6 +28,11 @@ export default function ConversationView() {
   
   // Check if current user can send messages (agent, admin, or super_admin)
   const canSendMessages = hasAnyRole(['agent', 'admin', 'super_admin'])
+  
+  // Debug logging for close button visibility
+  useEffect(() => {
+    console.log(`🔍 Close button check: assignedAgentId=${assignedAgentId}, canSendMessages=${canSendMessages}, user.roles=${user?.roles?.join(',') || 'none'}`)
+  }, [assignedAgentId, canSendMessages, user?.roles])
   const [exporting, setExporting] = useState(false)
   const [showExportMenu, setShowExportMenu] = useState(false)
   
@@ -246,21 +251,27 @@ export default function ConversationView() {
         }
       })
       const data = await res.json()
-      const session = (data.sessions || []).find((s: any) => s.sessionId === sessionId)
+      // The API returns items, not sessions
+      const session = (data.items || data.sessions || []).find((s: any) => s.sessionId === sessionId)
       
       if (session) {
         setSessionStatus(session.status || '')
         
         // Extract assignedAgent from session
+        // The API endpoint already extracts assignedAgent from userMeta and sets it on the session object
         let agent = session.assignedAgent || null
+        console.log(`🔍 Session data check: assignedAgent=${session.assignedAgent}, userMeta=${session.userMeta ? 'exists' : 'null'}, status=${session.status}`)
+        
         if (!agent && session.userMeta) {
           try {
             const userMeta = typeof session.userMeta === 'string' ? JSON.parse(session.userMeta) : session.userMeta
+            console.log(`🔍 Parsed userMeta:`, userMeta)
             if (userMeta?.assignedAgent) {
               agent = userMeta.assignedAgent
+              console.log(`✅ Found assignedAgent in userMeta: ${agent}`)
             }
           } catch (e) {
-            // Ignore parse errors
+            console.error(`❌ Error parsing userMeta:`, e)
           }
         }
         
@@ -274,6 +285,10 @@ export default function ConversationView() {
           } else {
             console.log(`✅ Found assigned agent: ${agent} (auto-filled agentId field)`)
           }
+          console.log(`🔍 Close button check: assignedAgentId=${agent}, canSendMessages=${canSendMessages}, user.roles=${user?.roles?.join(',') || 'none'}`)
+        } else {
+          console.log(`⚠️  No assigned agent found for session ${sessionId}`)
+          console.log(`   Full session object:`, JSON.stringify(session, null, 2))
         }
       }
     } catch (err) {
@@ -580,38 +595,8 @@ export default function ConversationView() {
             ← Back
           </button>
           <h1 style={{ display: 'inline', marginLeft: '10px', marginRight: '10px' }}>Session: {sessionId}</h1>
-          {/* Refresh button to reload messages without full page refresh */}
-          <button
-            onClick={() => {
-              // Reload latest session info and messages
-              loadSessionInfo()
-              loadMessages(false)
-            }}
-            style={{
-              padding: '8px 16px',
-              background: '#007bff',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '13px'
-            }}
-          >
-            Refresh
-          </button>
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-          {sessionStatus && (
-            <span style={{
-              padding: '6px 12px',
-              borderRadius: '4px',
-              fontSize: '13px',
-              background: sessionStatus === 'active' ? '#d4edda' : sessionStatus === 'agent_assigned' ? '#d1ecf1' : sessionStatus === 'closed' ? '#f8d7da' : '#e2e3e5',
-              color: sessionStatus === 'active' ? '#155724' : sessionStatus === 'agent_assigned' ? '#0c5460' : sessionStatus === 'closed' ? '#721c24' : '#383d41'
-            }}>
-              {sessionStatus}
-            </span>
-          )}
           {hasAnyRole(['admin', 'super_admin']) && (
             <div style={{ position: 'relative', display: 'inline-block' }} data-export-menu>
               <button
@@ -693,12 +678,34 @@ export default function ConversationView() {
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAgentId(e.target.value)}
                 style={{ padding: '8px', border: '1px solid #ddd', borderRadius: '4px', width: '120px', marginLeft: '10px' }}
               />
-              {assignedAgentId && assignedAgentId === agentId ? (
+              {assignedAgentId && canSendMessages && sessionStatus === 'agent_assigned' ? (
                 <>
+                  {/* Refresh button to reload messages without full page refresh */}
+                  <button
+                    onClick={() => {
+                      // Reload latest session info and messages
+                      loadSessionInfo()
+                      loadMessages(false)
+                    }}
+                    style={{
+                      padding: '8px 16px',
+                      background: '#007bff',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                      marginLeft: '10px'
+                    }}
+                  >
+                    Refresh
+                  </button>
                   <button onClick={closeConversation} style={{ padding: '8px 16px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', marginLeft: '10px' }}>
                     Close Conversation
                   </button>
-                  <span style={{ fontSize: '13px', color: '#28a745', fontWeight: '500', marginLeft: '10px' }}>✓ Assigned</span>
+                  {assignedAgentId === agentId && (
+                    <span style={{ fontSize: '13px', color: '#28a745', fontWeight: '500', marginLeft: '10px' }}>✓ Assigned</span>
+                  )}
                 </>
               ) : assignedAgentId ? (
                 <>
