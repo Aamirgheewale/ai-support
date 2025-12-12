@@ -14,6 +14,7 @@ interface Session {
   assignedAgent?: string
   needsHuman?: boolean
   userMeta?: string | object
+  $createdAt?: string
 }
 
 export default function SessionsList() {
@@ -299,7 +300,7 @@ export default function SessionsList() {
               {bulkExporting ? 'Exporting...' : `Bulk Export (${selectedSessions.size})`}
             </button>
           )}
-          <button onClick={loadSessions} style={{ padding: '8px 16px', background: '#667eea', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+          <button onClick={() => loadSessions()} style={{ padding: '8px 16px', background: '#667eea', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
             Refresh
           </button>
         </div>

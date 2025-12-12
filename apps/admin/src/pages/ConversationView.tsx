@@ -337,7 +337,7 @@ export default function ConversationView() {
       // Transform Appwrite messages to UI format - includes user, bot, and agent messages
       const transformedMessages = messages.map((msg: any) => {
         // Parse metadata if it's a string
-        let metadata = {}
+        let metadata: { agentId?: string } = {}
         if (msg.metadata) {
           try {
             metadata = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata
