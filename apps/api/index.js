@@ -50,6 +50,12 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(cookieParser());
+
+// Health check route
+app.get('/', (req, res) => {
+  res.send('API is running live!');
+});
+
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
