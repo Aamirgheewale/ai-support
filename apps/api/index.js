@@ -45,7 +45,12 @@ if (helmet) {
 }
 
 app.use(cors({
-  origin: true,
+  origin: [
+    'https://ai-support-admin.vercel.app',
+    'https://ai-support-widget-one.vercel.app',
+    'http://localhost:5173',
+    'http://localhost:5174'
+  ],
   credentials: true // Allow cookies
 }));
 app.use(express.json());
