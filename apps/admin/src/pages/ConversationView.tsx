@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { io } from 'socket.io-client'
 import { useAuth } from '../hooks/useAuth'
 
-const API_BASE = 'http://localhost:4000'
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000'
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_API_BASE || 'http://localhost:4000'
 const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET || 'dev-secret-change-me'
 
 interface Message {
@@ -63,7 +64,7 @@ export default function ConversationView() {
     loadMessages()
     
     // Connect to socket for real-time updates
-    const sock = io('http://localhost:4000')
+    const sock = io(SOCKET_URL)
     
     sock.on('connect', () => {
       console.log('✅ Socket connected')

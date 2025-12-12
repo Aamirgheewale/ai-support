@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import PaginationControls from '../components/common/PaginationControls'
 
-const API_BASE = 'http://localhost:4000'
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000'
 const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET || 'dev-secret-change-me'
 
 interface Session {

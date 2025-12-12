@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { io } from 'socket.io-client'
 import { useAuth } from '../hooks/useAuth'
 
-const SOCKET_URL = 'http://localhost:4000'
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_API_BASE || 'http://localhost:4000'
 
 interface LiveVisitor {
   socketId: string

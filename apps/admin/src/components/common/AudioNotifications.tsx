@@ -3,7 +3,7 @@ import { io, Socket } from 'socket.io-client'
 import { useSound } from '../../hooks/useSound'
 import Toast from './Toast'
 
-const SOCKET_URL = 'http://localhost:4000'
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_API_BASE || 'http://localhost:4000'
 
 interface ToastMessage {
   id: string

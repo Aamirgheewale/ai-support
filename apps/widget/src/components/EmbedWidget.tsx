@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 
-const SOCKET_URL = 'http://localhost:4000';
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_API_BASE || 'http://localhost:4000';
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
 
 export default function EmbedWidget({ 
   initialSessionId,
@@ -235,7 +236,7 @@ export default function EmbedWidget({
   // Fetch theme on session start
   useEffect(() => {
     if (sessionId) {
-      fetch(`http://localhost:4000/session/${sessionId}/theme`)
+      fetch(`${API_BASE}/session/${sessionId}/theme`)
         .then(res => res.json())
         .then(data => {
           if (data.theme && Object.keys(data.theme).length > 0) {
