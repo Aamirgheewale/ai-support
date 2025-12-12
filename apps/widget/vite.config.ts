@@ -19,6 +19,8 @@ export default defineConfig({
           'react-dom': 'ReactDOM'
         }
       }
-    }
+    },
+    // Copy public files (including index.html) to dist
+    copyPublicDir: true
   }
 })
