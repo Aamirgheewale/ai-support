@@ -1,5 +1,5 @@
-[phases.setup]
-nixPkgs = ["nodejs-20_x"]
+[providers]
+node = "20"
 
 [phases.install]
 cmds = ["npm i -g corepack@latest && corepack enable && corepack prepare pnpm@10.22.0 --activate", "CI=true pnpm install --no-frozen-lockfile"]
