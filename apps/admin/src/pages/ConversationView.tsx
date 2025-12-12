@@ -340,9 +340,11 @@ export default function ConversationView() {
         let metadata: { agentId?: string } = {}
         if (msg.metadata) {
           try {
-            metadata = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata
+            const parsed = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata
+            metadata = parsed as { agentId?: string }
           } catch (e) {
             // Ignore parse errors
+            metadata = {}
           }
         }
         
@@ -350,7 +352,7 @@ export default function ConversationView() {
           sender: msg.sender || 'unknown',
           text: msg.text || '',
           timestamp: msg.createdAt || msg.timestamp || msg.$createdAt || new Date().toISOString(),
-          agentId: metadata.agentId || undefined
+          agentId: metadata?.agentId || undefined
         }
       })
       
