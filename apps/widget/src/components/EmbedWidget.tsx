@@ -205,23 +205,13 @@ export default function EmbedWidget({
       console.log(`📱 Widget joined session room for agent-initiated chat: ${newSessionId}`);
       console.log(`   ✅ Widget is now connected to the same session that was created by admin`);
       
-      // 5. Play notification sound (optional)
+      // 5. Play notification sound
       try {
-        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-        const oscillator = audioContext.createOscillator();
-        const gainNode = audioContext.createGain();
-        
-        oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
-        
-        oscillator.frequency.value = 800;
-        oscillator.type = 'sine';
-        
-        gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
-        
-        oscillator.start(audioContext.currentTime);
-        oscillator.stop(audioContext.currentTime + 0.3);
+        const popSound = new Audio('/sounds/pop.mp3');
+        popSound.volume = 0.7;
+        popSound.play().catch((err) => {
+          console.warn('Could not play notification sound:', err);
+        });
       } catch (err) {
         console.warn('Could not play notification sound:', err);
       }
@@ -369,6 +359,17 @@ export default function EmbedWidget({
         console.log('   ✅ Adding agent message to widget');
         return [...prev, { sender: 'agent', text: m.text, ts: Date.now() }];
       });
+      
+      // Play notification sound for agent messages
+      try {
+        const popSound = new Audio('/sounds/pop.mp3');
+        popSound.volume = 0.7;
+        popSound.play().catch((err) => {
+          console.warn('Could not play notification sound:', err);
+        });
+      } catch (err) {
+        console.warn('Could not play notification sound:', err);
+      }
     });
     socket.on('agent_joined', (data: any) => {
       console.log('📨 Widget received agent_joined:', data);

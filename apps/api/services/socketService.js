@@ -487,6 +487,13 @@ function initializeSocket(dependencies) {
       
       const welcomeMsg = "Hi! I'm your AI chat assistant. Ask me any question related to VTU internyet portal and I will provide you quick response.";
       socket.emit('session_started', { sessionId });
+      // Broadcast session_started to admin_feed for audio notifications
+      console.log(`📢 Broadcasting session_started to admin_feed for session: ${sessionId}`);
+      const adminFeedRoom = io.sockets.adapter.rooms.get('admin_feed');
+      const adminFeedSize = adminFeedRoom ? adminFeedRoom.size : 0;
+      console.log(`   👥 Admin feed room size: ${adminFeedSize} socket(s)`);
+      io.to('admin_feed').emit('session_started', { sessionId });
+      console.log(`   ✅ session_started event emitted to admin_feed`);
       socket.emit('bot_message', { text: welcomeMsg, confidence: 1 });
       
       const welcomeStart = process.hrtime.bigint();
@@ -555,6 +562,12 @@ function initializeSocket(dependencies) {
         if (conversationConcluded) {
           console.log(`💾 Attempting to save user message to Appwrite...`);
           await chatService.saveMessageToAppwrite(sessionId, 'user', trimmedText);
+          // Broadcast user message to admin_feed for audio notifications
+          io.to('admin_feed').emit('user_message_for_agent', {
+            sessionId: sessionId,
+            text: trimmedText,
+            ts: Date.now()
+          });
           console.log(`⚠️  Conversation concluded for [${sessionId}], ignoring user message`);
           return;
         }
@@ -565,6 +578,12 @@ function initializeSocket(dependencies) {
             (trimmedLower.includes('thank you') && trimmedLower.includes('helping'))) {
           const finalMessage = 'All the queries are solved, thank you have a good day';
           await chatService.saveMessageToAppwrite(sessionId, 'user', trimmedText);
+          // Broadcast user message to admin_feed for audio notifications
+          io.to('admin_feed').emit('user_message_for_agent', {
+            sessionId: sessionId,
+            text: trimmedText,
+            ts: Date.now()
+          });
           await chatService.saveMessageToAppwrite(sessionId, 'bot', finalMessage);
           
           if (databases && databaseId && sessionsCollectionId) {
@@ -609,6 +628,12 @@ function initializeSocket(dependencies) {
           if (isConcluded) {
             const newSessionMsg = 'This conversation has ended. Please click "Start Chat" to begin a new session.';
             await chatService.saveMessageToAppwrite(sessionId, 'user', trimmedText);
+            // Broadcast user message to admin_feed for audio notifications
+            io.to('admin_feed').emit('user_message_for_agent', {
+              sessionId: sessionId,
+              text: trimmedText,
+              ts: Date.now()
+            });
             await chatService.saveMessageToAppwrite(sessionId, 'bot', newSessionMsg);
             io.to(sessionId).emit('bot_message', { text: newSessionMsg, type: 'conclusion_final' });
             return;
@@ -620,6 +645,14 @@ function initializeSocket(dependencies) {
         }
         
         console.log(`✅ User message saved successfully [${sessionId}]`);
+        
+        // Broadcast user message to admin_feed for audio notifications (all admins) - for ALL user messages
+        io.to('admin_feed').emit('user_message_for_agent', {
+          sessionId: sessionId,
+          text: trimmedText,
+          ts: Date.now()
+        });
+        console.log(`📢 Broadcasted user message to admin_feed for session ${sessionId}`);
         
         // Check if session has assigned agent or AI is paused
         const cachedAssignment = sessionAssignments.get(sessionId);

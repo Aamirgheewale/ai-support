@@ -11,6 +11,7 @@ import SignupPage from './pages/SignupPage'
 import AuthPage from './pages/AuthPage'
 import PermissionDeniedPage from './pages/PermissionDeniedPage'
 import UserProfileModal from './components/common/UserProfileModal'
+import AudioNotifications from './components/common/AudioNotifications'
 import { useState, useEffect } from 'react'
 
 function Navigation() {
@@ -156,6 +157,7 @@ function App() {
       <BrowserRouter>
         <div className="min-h-screen bg-gray-50">
           <Navigation />
+          <AudioNotifications />
 
           <Routes>
             <Route path="/" element={<Navigate to="/auth" replace />} />

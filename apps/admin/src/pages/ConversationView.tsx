@@ -669,6 +669,27 @@ export default function ConversationView() {
               )}
             </div>
           )}
+          {/* Refresh button - always visible for all sessions */}
+          <button
+            onClick={() => {
+              // Reload latest session info and messages
+              loadSessionInfo()
+              loadMessages(false)
+            }}
+            style={{
+              padding: '8px 16px',
+              background: '#007bff',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '13px',
+              marginLeft: '10px'
+            }}
+            title="Refresh chat messages and session data"
+          >
+            🔄 Refresh
+          </button>
           {hasAnyRole(['agent', 'admin', 'super_admin']) && (
             <>
               <input
@@ -680,26 +701,6 @@ export default function ConversationView() {
               />
               {assignedAgentId && canSendMessages && sessionStatus === 'agent_assigned' ? (
                 <>
-                  {/* Refresh button to reload messages without full page refresh */}
-                  <button
-                    onClick={() => {
-                      // Reload latest session info and messages
-                      loadSessionInfo()
-                      loadMessages(false)
-                    }}
-                    style={{
-                      padding: '8px 16px',
-                      background: '#007bff',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      fontSize: '13px',
-                      marginLeft: '10px'
-                    }}
-                  >
-                    Refresh
-                  </button>
                   <button onClick={closeConversation} style={{ padding: '8px 16px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', marginLeft: '10px' }}>
                     Close Conversation
                   </button>

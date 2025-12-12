@@ -20,7 +20,7 @@ export default function Toast({ message, type, onClose, duration = 3000 }: Toast
                    'bg-blue-50 border-blue-200 text-blue-800'
 
   return (
-    <div className={`fixed top-4 right-4 z-50 rounded-lg border p-4 shadow-lg ${bgColor} animate-slide-in`}>
+    <div className={`rounded-lg border p-4 shadow-lg ${bgColor} animate-slide-in min-w-[300px]`}>
       <div className="flex items-center justify-between">
         <span className="text-sm font-medium">{message}</span>
         <button
