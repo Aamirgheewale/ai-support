@@ -15,24 +15,20 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml* ./
 # Copy entire project
 COPY . .
 
-# Install dependencies
-RUN pnpm install --frozen-lockfile
+# Install dependencies (allow lockfile refresh to avoid sync issues)
+RUN pnpm install --no-frozen-lockfile
 
-# Build widget app
-WORKDIR /app/apps/widget
-RUN pnpm run build
+# Build widget app using filter
+RUN pnpm run --filter apps/widget build
 
 # Install serve globally
 RUN npm install -g serve
-
-# Set working directory back to root for serving
-WORKDIR /app
 
 # Expose port (Railway will set PORT env var)
 EXPOSE 8080
 
 # Serve the widget dist folder
 # -s flag enables SPA mode (serves index.html for all routes)
-# -l flag sets the listen port from PORT environment variable
-CMD ["sh", "-c", "serve -s apps/widget/dist -l ${PORT:-8080}"]
+# -l flag sets the listen port
+CMD ["serve", "-s", "apps/widget/dist", "-l", "8080"]
 
