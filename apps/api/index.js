@@ -35,6 +35,10 @@ try {
 
 const app = express();
 
+// Trust the first proxy so secure cookies & protocol detection work correctly on Railway/Heroku
+// This is required when the app is behind a reverse proxy/edge that terminates TLS.
+app.set('trust proxy', 1);
+
 // Security headers (helmet)
 if (helmet) {
   app.use(helmet({
@@ -3470,10 +3474,14 @@ app.post('/auth/login', async (req, res) => {
     const sessionToken = user.userId; // Use userId as session token
     
     // Set HttpOnly Secure cookie (preferred method)
+    // IMPORTANT for cross-domain admin frontend:
+    // - secure: true      → only send over HTTPS (Railway runs behind HTTPS)
+    // - sameSite: 'none'  → allow cookies to be sent on cross-site requests
+    // - httpOnly: true    → JS cannot read cookie (more secure)
     const cookieOptions = {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production', // HTTPS only in production
-      sameSite: 'lax',
+      secure: true,
+      sameSite: 'none',
       maxAge: remember ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000 // 30 days or 1 day
     };
     res.cookie('sessionToken', sessionToken, cookieOptions);
