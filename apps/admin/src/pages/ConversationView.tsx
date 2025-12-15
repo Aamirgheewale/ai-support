@@ -64,7 +64,10 @@ export default function ConversationView() {
     loadMessages()
     
     // Connect to socket for real-time updates
-    const sock = io(SOCKET_URL)
+    const sock = io(SOCKET_URL, {
+      withCredentials: true,
+      transports: ['websocket', 'polling']
+    })
     
     sock.on('connect', () => {
       console.log('✅ Socket connected')

@@ -105,7 +105,10 @@ export default function EmbedWidget({
   // Initialize socket connection immediately on mount (even if widget is closed)
   useEffect(() => {
     // Create socket connection
-    const socket = io(SOCKET_URL);
+    const socket = io(SOCKET_URL, {
+      withCredentials: true,
+      transports: ['websocket', 'polling']
+    });
     socketRef.current = socket;
     
     // Helper function to emit visitor_join

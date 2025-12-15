@@ -57,7 +57,10 @@ export default function AudioNotifications() {
 
   useEffect(() => {
     // Connect to socket for global notifications
-    const sock = io(SOCKET_URL)
+    const sock = io(SOCKET_URL, {
+      withCredentials: true,
+      transports: ['websocket', 'polling']
+    })
     
     // IMPORTANT: Set up listeners BEFORE connect to ensure they're ready
     // Listen for new session start (ring sound)
