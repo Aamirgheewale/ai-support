@@ -1,9 +1,0 @@
-[phases.install]
-cmds = ["npm i -g corepack@latest && corepack enable && corepack prepare pnpm@10.22.0 --activate", "CI=true pnpm install --no-frozen-lockfile"]
-
-[phases.build]
-cmds = ["pnpm run build"]
-
-[start]
-cmd = "node index.js"
-
