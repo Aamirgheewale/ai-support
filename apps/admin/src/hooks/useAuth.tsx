@@ -3,6 +3,42 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
 const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET || 'dev-secret-change-me';
 
+// Safe storage helpers so that browsers which block storage (privacy mode, 3rd‑party iframes, etc.)
+// do not throw and break the auth flow.
+function safeStorageGetToken(): string | null {
+  try {
+    if (typeof window === 'undefined') return null;
+    return window.localStorage.getItem('auth_token') || window.sessionStorage.getItem('auth_token');
+  } catch (err) {
+    console.warn('Storage access blocked when reading auth_token:', err);
+    return null;
+  }
+}
+
+function safeStorageSetToken(token: string, remember?: boolean) {
+  try {
+    if (typeof window === 'undefined') return;
+    if (remember) {
+      window.localStorage.setItem('auth_token', token);
+    } else {
+      window.sessionStorage.setItem('auth_token', token);
+    }
+  } catch (err) {
+    console.warn('Storage access blocked when writing auth_token:', err);
+    // Continue with in‑memory token only
+  }
+}
+
+function safeStorageClearToken() {
+  try {
+    if (typeof window === 'undefined') return;
+    window.localStorage.removeItem('auth_token');
+    window.sessionStorage.removeItem('auth_token');
+  } catch (err) {
+    console.warn('Storage access blocked when clearing auth_token:', err);
+  }
+}
+
 interface User {
   userId: string;
   email: string;
@@ -36,22 +72,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Load token from memory (fallback if cookies don't work)
   // In production, prefer HttpOnly cookies set by backend
   useEffect(() => {
-    const storedToken = localStorage.getItem('auth_token');
+    const storedToken = safeStorageGetToken();
     if (storedToken) {
       setToken(storedToken);
     }
   }, []);
 
   const fetchUser = async (authToken?: string) => {
-    // Only use provided token, don't fallback to ADMIN_SECRET automatically
-    // This prevents auto-authentication on auth pages
-    const tokenToUse = authToken || token;
-    
+    // Only use explicit token (override, state, or from storage).
+    // Do NOT fall back to ADMIN_SECRET automatically for normal auth.
+    const tokenToUse = authToken || token || safeStorageGetToken();
+
     if (!tokenToUse) {
       setUser(null);
       return null;
     }
-    
+
     try {
       const res = await fetch(`${API_BASE}/me`, {
         headers: {
@@ -79,8 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         // Clear invalid token
         setToken(null);
-        localStorage.removeItem('auth_token');
-        sessionStorage.removeItem('auth_token');
+        safeStorageClearToken();
         setUser(null);
         return null;
       }
@@ -105,15 +140,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Initial load: check for existing session
   useEffect(() => {
     const initAuth = async () => {
-      // Check if we have a stored token first
-      const storedToken = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
-      
-      // Only try to fetch user if we have a token
-      // Don't auto-authenticate with dev-admin on initial load
+      // Try to get a stored token first (may be blocked by browser privacy settings)
+      const storedToken = safeStorageGetToken();
+
+      // Only try to fetch user if we have a token;
+      // don't auto-authenticate with dev-admin on initial load.
       if (storedToken) {
         await fetchUser(storedToken);
       } else {
-        // No stored token, set loading to false without setting user
         setUser(null);
       }
       setLoading(false);
@@ -142,11 +176,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // In production, prefer cookies, but keep memory storage as fallback
     if (data.token) {
       setToken(data.token);
-      if (credentials.remember) {
-        localStorage.setItem('auth_token', data.token);
-      } else {
-        sessionStorage.setItem('auth_token', data.token);
-      }
+      // Try to persist token; ignore storage errors so auth flow can continue
+      safeStorageSetToken(data.token, credentials.remember);
     }
 
     // Fetch user details
@@ -189,8 +220,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Clear token from memory
     setToken(null);
     setUser(null);
-    localStorage.removeItem('auth_token');
-    sessionStorage.removeItem('auth_token');
+    safeStorageClearToken();
 
     // In production, call backend logout endpoint to clear HttpOnly cookie
     // For now, just clear client-side state
