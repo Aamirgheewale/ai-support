@@ -70,13 +70,39 @@
         .nav-button:active {
             transform: translateY(0);
         }
+        .widget-button {
+            display: inline-block;
+            margin-top: 20px;
+            margin-left: 10px;
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+            color: white;
+            text-decoration: none;
+            border: none;
+            border-radius: 8px;
+            font-weight: 500;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+        }
+        .widget-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(76, 175, 80, 0.4);
+        }
+        .widget-button:active {
+            transform: translateY(0);
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Widget Preview</h1>
         <p>This is a demo page for the AI Support Widget. The widget should appear as a floating button in the bottom right corner.</p>
-        <a href="/" class="nav-button">← Back to Main Widget Page</a>
+        <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+            <a href="/" class="nav-button">← Back to Main Widget Page</a>
+            <button onclick="window.location.href='/'" class="widget-button">Go to Widget Page</button>
+        </div>
         <div id="status" class="status loading">Loading widget...</div>
         <div id="chat-widget-container"></div>
     </div>
