@@ -44,14 +44,18 @@ if (helmet) {
   console.log('✅ Security headers enabled (helmet)');
 }
 
+const allowedOrigins = [
+  'https://ai-support-admin.vercel.app',
+  'https://ai-support-widget-one.vercel.app',
+  'http://localhost:5173',
+  'http://localhost:5174',
+  // Railway frontend admin (production)
+  'https://outstanding-vitality-production-c38b.up.railway.app'
+];
+
 app.use(cors({
-  origin: [
-    'https://ai-support-admin.vercel.app',
-    'https://ai-support-widget-one.vercel.app',
-    'http://localhost:5173',
-    'http://localhost:5174'
-  ],
-  credentials: true // Allow cookies
+  origin: allowedOrigins,
+  credentials: true // Allow cookies / auth headers
 }));
 app.use(express.json());
 app.use(cookieParser());
@@ -62,7 +66,12 @@ app.get('/', (req, res) => {
 });
 
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: '*' } });
+const io = new Server(server, {
+  cors: {
+    origin: allowedOrigins,
+    credentials: true
+  }
+});
 
 // Appwrite client initialization
 let awClient = null;
