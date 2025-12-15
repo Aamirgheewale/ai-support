@@ -1,7 +1,7 @@
 {
   "headers": [
     {
-      "source": "/(.*\\.(js|mjs|css|json|ico|png|jpg|jpeg|gif|svg|woff|woff2|ttf|eot))",
+      "source": "/(.*).(js|css|png|jpg|jpeg|gif|ico|svg|json|woff|woff2|ttf|eot)",
       "headers": [
         {
           "key": "Cache-Control",
@@ -12,7 +12,7 @@
   ],
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/((?!assets/|.*\\..*).*)",
       "destination": "/index.html"
     }
   ]
