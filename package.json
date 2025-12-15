@@ -1,0 +1,31 @@
+{
+  "name": "ai-support",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI Customer Support Chat System - Monorepo",
+  "packageManager": "pnpm@10.22.0",
+  "scripts": {
+    "dev:admin": "pnpm --filter admin dev",
+    "dev:widget": "pnpm --filter widget dev",
+    "dev:api": "pnpm --filter api start",
+    "build:admin": "pnpm --filter admin build",
+    "build:widget": "pnpm --filter widget build",
+    "build:widget:lib": "pnpm --filter widget build:lib",
+    "build:api": "pnpm --filter api build",
+    "build:all": "pnpm --filter admin build && pnpm --filter widget build",
+    "install:all": "pnpm install",
+    "clean": "pnpm --filter admin exec rm -rf dist && pnpm --filter widget exec rm -rf dist"
+  },
+  "keywords": [
+    "ai",
+    "chatbot",
+    "customer-support",
+    "monorepo"
+  ],
+  "author": "",
+  "license": "ISC",
+  "workspaces": [
+    "apps/*"
+  ]
+}
+
