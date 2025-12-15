@@ -27,7 +27,10 @@ RUN npm install -g serve
 # Expose port (Railway will set PORT env var)
 EXPOSE 8080
 
+# Debug: list build output
+RUN ls -la apps/admin/dist
+
 # Serve the admin dist folder
 # -s flag enables SPA mode (serves index.html for all routes)
 # -l flag sets the listen port
-CMD ["serve", "-s", "apps/admin/dist", "-l", "8080"]
+CMD ["sh", "-c", "cd apps/admin && npx serve -s dist -l 8080"]
