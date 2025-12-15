@@ -35,9 +35,3 @@ EXPOSE 8080
 # -s flag enables SPA mode (serves index.html for all routes)
 # -l flag sets the listen port from PORT environment variable
 CMD ["sh", "-c", "serve -s apps/admin/dist -l ${PORT:-8080}"]
-
-FROM alpine
-WORKDIR /app
-COPY . .
-# This command will print every file Railway can see, then fail on purpose
-RUN echo "=== FILE LIST START ===" && ls -la && echo "=== FILE LIST END ===" && exit 1
