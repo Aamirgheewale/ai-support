@@ -180,7 +180,7 @@ function App() {
           zIndex: 1
         }}>
           <a 
-            href="#" 
+            href="/" 
             style={{ 
               color: '#ffffff', 
               textDecoration: 'none',
@@ -192,6 +192,20 @@ function App() {
             onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
           >
             Home
+          </a>
+          <a 
+            href="/preview.html" 
+            style={{ 
+              color: '#ffffff', 
+              textDecoration: 'none',
+              fontSize: '20px',
+              fontWeight: 500,
+              cursor: 'pointer'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.opacity = '0.8'}
+            onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+          >
+            Widget Preview
           </a>
           <div ref={servicesRef} style={{ position: 'relative' }}>
             <button
