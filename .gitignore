@@ -7,7 +7,6 @@ node_modules/
 # pnpm
 .pnpm-store/
 .pnpm-debug.log
-pnpm-lock.yaml
 
 # Environment variables
 .env
@@ -142,7 +141,9 @@ dist-ssr/
 # Lock files - using pnpm, so ignore npm/yarn locks
 package-lock.json
 yarn.lock
-# pnpm-lock.yaml (keep this one since we're using pnpm)
+# pnpm-lock.yaml should be tracked (not ignored)
+!pnpm-lock.yaml
+!**/pnpm-lock.yaml
 
 # Appwrite local files
 appwrite.json
