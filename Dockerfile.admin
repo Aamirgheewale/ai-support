@@ -1,36 +1,34 @@
-# Dockerfile for Admin Dashboard
-# Build context: ROOT of the repository
-
 FROM node:18-alpine
 
-# Install pnpm globally
-RUN npm install -g pnpm
-
-# Set working directory
 WORKDIR /app
 
-# Copy root-level package files (if they exist)
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml* ./
+# 1. Install Global Tools
+RUN npm install -g pnpm serve
 
-# Copy entire project
+# 2. Copy Files
 COPY . .
 
-# Install dependencies (allow lockfile refresh to avoid sync issues)
+# 3. Install Dependencies
 RUN pnpm install --no-frozen-lockfile
 
-# Build admin app using filter
-RUN pnpm run --filter apps/admin build
+# 4. Build Admin (Verbose mode to see errors)
+RUN cd apps/admin && pnpm run build
 
-# Install serve globally
-RUN npm install -g serve
+# --- CRITICAL DEBUG STEP ---
+# This script looks for index.html. 
+# If NOT found, it prints the directory contents and CRASHES the build.
+RUN if [ ! -f /app/apps/admin/dist/index.html ]; then \
+        echo "❌ ERROR: index.html NOT found in /app/apps/admin/dist!"; \
+        echo "📂 CONTENTS of /app/apps/admin:"; \
+        ls -la /app/apps/admin; \
+        exit 1; \
+    else \
+        echo "✅ SUCCESS: index.html found!"; \
+        ls -la /app/apps/admin/dist; \
+    fi
 
-# Expose port (Railway will set PORT env var)
-EXPOSE 8080
+# 5. Serve using Absolute Path
+ENV PORT=8080
+CMD ["serve", "-s", "/app/apps/admin/dist", "-l", "8080"]
 
-# Debug: list build output
-RUN ls -la apps/admin/dist
 
-# Serve the admin dist folder
-# -s flag enables SPA mode (serves index.html for all routes)
-# -l flag sets the listen port
-CMD ["sh", "-c", "cd apps/admin && npx serve -s dist -l 8080"]
