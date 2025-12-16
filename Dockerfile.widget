@@ -10,9 +10,11 @@ COPY . .
 # 3. Install Dependencies
 RUN pnpm install --no-frozen-lockfile
 
-# 4. Bake in Environment Variables
-ARG VITE_API_URL
-ENV VITE_API_URL=$VITE_API_URL
+# 4. Bake in Environment Variables (these must be set at build time for Vite)
+ARG VITE_API_BASE
+ARG VITE_SOCKET_URL
+ENV VITE_API_BASE=$VITE_API_BASE
+ENV VITE_SOCKET_URL=$VITE_SOCKET_URL
 
 # 5. Build Widget (THE FIX: Change directory explicitly)
 # We use 'cd' instead of '--filter' to guarantee it finds the project
