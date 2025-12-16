@@ -18,7 +18,7 @@ interface Session {
 }
 
 export default function SessionsList() {
-  const { hasAnyRole } = useAuth()
+  const { hasAnyRole, token } = useAuth()
   const [sessions, setSessions] = useState<Session[]>([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('')
@@ -75,8 +75,9 @@ export default function SessionsList() {
 
       const res = await fetch(`${API_BASE}/admin/sessions?${params}`, {
         headers: {
-          'Authorization': `Bearer ${ADMIN_SECRET}`
-        }
+          'Authorization': `Bearer ${token || ADMIN_SECRET}`
+        },
+        credentials: 'include' // Include cookies as fallback
       })
       const data = await res.json()
       
@@ -147,8 +148,9 @@ export default function SessionsList() {
     try {
       const res = await fetch(`${API_BASE}/admin/sessions/${sessionId}/export?format=${format}`, {
         headers: {
-          'Authorization': `Bearer ${ADMIN_SECRET}`
-        }
+          'Authorization': `Bearer ${token || ADMIN_SECRET}`
+        },
+        credentials: 'include' // Include cookies as fallback
       })
 
       if (!res.ok) {
@@ -188,9 +190,10 @@ export default function SessionsList() {
       const res = await fetch(`${API_BASE}/admin/sessions/export`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${ADMIN_SECRET}`,
+          'Authorization': `Bearer ${token || ADMIN_SECRET}`,
           'Content-Type': 'application/json'
         },
+        credentials: 'include', // Include cookies as fallback
         body: JSON.stringify({
           sessionIds: Array.from(selectedSessions),
           format
