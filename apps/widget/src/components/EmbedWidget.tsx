@@ -38,6 +38,7 @@ export default function EmbedWidget({
   const [messages, setMessages] = useState<Array<{ sender: string; text: string; ts?: number; type?: string; options?: Array<{ text: string; value: string }> }>>([]);
   const [text, setText] = useState('');
   const [isConnected, setIsConnected] = useState(false);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const [isBotTyping, setIsBotTyping] = useState(false);
   const [isButtonBlinking, setIsButtonBlinking] = useState(false);
   const [conversationConcluded, setConversationConcluded] = useState(false);
@@ -107,11 +108,18 @@ export default function EmbedWidget({
   // Initialize socket connection immediately on mount (even if widget is closed)
   useEffect(() => {
     // Create socket connection
-    const socket = io(SOCKET_URL, {
-      withCredentials: true,
-      transports: ['websocket', 'polling']
-    });
-    socketRef.current = socket;
+    let socket;
+    try {
+      console.log('🔌 Connecting to socket:', SOCKET_URL);
+      socket = io(SOCKET_URL, {
+        withCredentials: true,
+        transports: ['websocket', 'polling']
+      });
+      socketRef.current = socket;
+    } catch (error) {
+      console.error('❌ Failed to create socket connection:', error);
+      return;
+    }
     
     // Helper function to emit visitor_join
     const emitVisitorJoin = () => {
@@ -131,6 +139,7 @@ export default function EmbedWidget({
     socket.on('connect', () => {
       console.log('ws connected', socket.id);
       setIsConnected(true);
+      setConnectionError(null); // Clear any previous errors
       
       // Emit visitor_join immediately upon connection (before chat starts)
       emitVisitorJoin();
@@ -146,9 +155,20 @@ export default function EmbedWidget({
       }
     });
     
-    socket.on('disconnect', () => {
+    socket.on('disconnect', (reason) => {
       setIsConnected(false);
-      console.log('ws disconnected');
+      console.log('ws disconnected:', reason);
+      if (reason === 'io server disconnect') {
+        // Server disconnected the socket, try to reconnect manually
+        socket.connect();
+      }
+    });
+
+    socket.on('connect_error', (error) => {
+      console.error('❌ Socket connection error:', error.message);
+      console.error('   Make sure the API server is running on', SOCKET_URL);
+      setIsConnected(false);
+      setConnectionError(`Cannot connect to server. Please ensure the API server is running on ${SOCKET_URL}`);
     });
     
     socket.on('reconnect', () => {
@@ -491,12 +511,12 @@ export default function EmbedWidget({
     }
   }
 
-  // Hook to detect mobile on resize
-  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth <= 768);
+  // Hook to detect mobile on resize - use 640px as mobile breakpoint
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth <= 640);
   
   useEffect(() => {
     const handleResize = () => {
-      setIsMobile(window.innerWidth <= 768);
+      setIsMobile(window.innerWidth <= 640);
     };
     
     window.addEventListener('resize', handleResize);
@@ -505,77 +525,71 @@ export default function EmbedWidget({
 
   return (
     <div style={{ 
-      width: isMobile ? 'calc(100vw - 40px)' : 380, 
-      height: isMobile ? 'calc(100vh - 40px)' : 600,
-      maxWidth: isMobile ? '420px' : 380,
-      maxHeight: isMobile ? '600px' : 600,
-      border: '1px solid rgba(255, 255, 255, 0.2)', 
-      borderRadius: 12, 
+      width: isMobile ? '100vw' : 380, 
+      height: isMobile ? '100vh' : 600,
+      maxWidth: isMobile ? '100vw' : 380,
+      maxHeight: isMobile ? '100vh' : 600,
+      border: isMobile ? 'none' : '1px solid rgba(255, 255, 255, 0.2)', 
+      borderRadius: isMobile ? 0 : 12, 
       overflow: 'hidden',
       display: 'flex',
       flexDirection: 'column',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-      boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+      boxShadow: isMobile ? 'none' : '0 4px 12px rgba(0,0,0,0.1)',
       background: 'transparent',
       pointerEvents: 'auto',
-      position: isMobile ? 'fixed' : 'relative',
-      top: isMobile ? '50%' : 'auto',
-      left: isMobile ? '50%' : 'auto',
-      right: isMobile ? 'auto' : 'auto',
-      bottom: isMobile ? 'auto' : 'auto',
-      transform: isMobile ? 'translate(-50%, -50%)' : 'none',
-      zIndex: isMobile ? 99999 : 'auto'
+      position: 'relative', // Always relative - parent container handles positioning
+      transform: 'none',
+      zIndex: 'auto'
     }}>
       {/* Header */}
       <div style={{ 
         background: 'linear-gradient(to bottom right, #000000, #ffffff)',
         color: 'white',
         padding: isMobile ? '12px 16px' : '16px 20px',
-        paddingRight: onClose ? (isMobile ? '44px' : '48px') : (isMobile ? '16px' : '20px'),
+        paddingRight: isMobile ? '44px' : '48px', // Always add padding for close button
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
         minHeight: isMobile ? '56px' : 'auto',
         position: 'relative'
       }}>
-        {/* Close button - positioned at top right of widget */}
-        {onClose && (
-          <button
-            onClick={onClose}
-            style={{
-              position: 'absolute',
-              top: isMobile ? '8px' : '12px',
-              right: isMobile ? '8px' : '12px',
-              width: isMobile ? '32px' : '36px',
-              height: isMobile ? '32px' : '36px',
-              borderRadius: '50%',
-              background: 'rgba(255, 255, 255, 0.2)',
-              border: '1px solid rgba(255, 255, 255, 0.3)',
-              color: '#ffffff',
-              fontSize: isMobile ? '20px' : '24px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)',
-              zIndex: 10,
-              transition: 'all 0.2s ease',
-              lineHeight: 1,
-              padding: 0
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.3)';
-              e.currentTarget.style.transform = 'scale(1.1)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)';
-              e.currentTarget.style.transform = 'scale(1)';
-            }}
-            aria-label="Close chat"
-          >
-            ×
-          </button>
-        )}
+        {/* Close button - always visible at top right of widget */}
+        <button
+          onClick={onClose || (() => console.log('No close handler provided'))}
+          style={{
+            position: 'absolute',
+            top: isMobile ? '8px' : '12px',
+            right: isMobile ? '8px' : '12px',
+            width: isMobile ? '32px' : '36px',
+            height: isMobile ? '32px' : '36px',
+            borderRadius: '50%',
+            background: 'rgba(255, 255, 255, 0.2)',
+            border: '1px solid rgba(255, 255, 255, 0.3)',
+            color: '#ffffff',
+            fontSize: isMobile ? '20px' : '24px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)',
+            zIndex: 10,
+            transition: 'all 0.2s ease',
+            lineHeight: 1,
+            padding: 0
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.3)';
+            e.currentTarget.style.transform = 'scale(1.1)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)';
+            e.currentTarget.style.transform = 'scale(1)';
+          }}
+          aria-label="Close chat"
+        >
+          ×
+        </button>
         <div>
           <div style={{ fontWeight: 600, fontSize: isMobile ? '14px' : '16px' }}>AI Customer Support</div>
           <div style={{ fontSize: isMobile ? '11px' : '12px', opacity: 0.9, marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -592,8 +606,10 @@ export default function EmbedWidget({
               </>
             ) : (
               <>
-                <span style={{ color: '#999' }}>○</span>
-                <span>Offline</span>
+                <span style={{ color: connectionError ? '#f44336' : '#999' }}>○</span>
+                <span style={{ color: connectionError ? '#f44336' : 'inherit' }}>
+                  {connectionError ? 'Connection Error' : 'Offline'}
+                </span>
               </>
             )}
           </div>
@@ -635,7 +651,24 @@ export default function EmbedWidget({
         isolation: 'isolate',
         minHeight: 0 // Allow flex shrinking on mobile
       }}>
-        {messages.length === 0 && sessionId && (
+        {connectionError && (
+          <div style={{ 
+            textAlign: 'center', 
+            color: '#ff6b6b', 
+            fontSize: isMobile ? '12px' : '13px',
+            padding: '16px',
+            background: 'rgba(255, 107, 107, 0.1)',
+            borderRadius: '8px',
+            margin: '12px',
+            border: '1px solid rgba(255, 107, 107, 0.3)'
+          }}>
+            ⚠️ {connectionError}
+            <div style={{ fontSize: '11px', marginTop: '8px', opacity: 0.8 }}>
+              Please start the API server: <code style={{ background: 'rgba(0,0,0,0.2)', padding: '2px 6px', borderRadius: '4px' }}>cd apps/api && node index.js</code>
+            </div>
+          </div>
+        )}
+        {messages.length === 0 && sessionId && !connectionError && (
           <div style={{ 
             textAlign: 'center', 
             color: '#ffffff', 

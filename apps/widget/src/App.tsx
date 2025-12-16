@@ -5,11 +5,40 @@ function App() {
   const [servicesOpen, setServicesOpen] = useState(false);
   const servicesRef = useRef<HTMLDivElement>(null);
   const [chatWidgetOpen, setChatWidgetOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth <= 640);
+
+  // Debug log
+  useEffect(() => {
+    console.log('✅ App component mounted');
+  }, []);
+
+  // Debug chat widget state
+  useEffect(() => {
+    console.log('📱 Chat widget state changed:', chatWidgetOpen);
+  }, [chatWidgetOpen]);
+
+  // Handle mobile detection
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 640);
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Close dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (servicesRef.current && !servicesRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      // Don't close if clicking on chat button or widget
+      const chatButton = (event.target as HTMLElement)?.closest('[aria-label="Open chat"]');
+      const chatWidget = (event.target as HTMLElement)?.closest('[data-chat-widget]');
+      if (chatButton || chatWidget) {
+        return; // Don't interfere with chat widget
+      }
+      
+      if (servicesRef.current && !servicesRef.current.contains(target)) {
         setServicesOpen(false);
       }
     }
@@ -38,99 +67,108 @@ function App() {
         left: 0,
         right: 0,
         display: 'flex',
-        justifyContent: 'space-between',
+        justifyContent: isMobile ? 'center' : 'space-between',
         alignItems: 'center',
-        padding: '24px 0',
+        padding: isMobile ? '12px 8px' : '24px 0',
         zIndex: 100,
-        gap: '20px',
+        gap: isMobile ? '8px' : '20px',
         overflow: 'visible',
         pointerEvents: 'auto',
-        background: 'transparent'
+        background: 'transparent',
+        flexWrap: isMobile ? 'wrap' : 'nowrap'
       }}>
         {/* Wreath background - behind left rectangle only */}
-        <div style={{
-          position: 'absolute',
-          top: '0',
-          left: '0',
-          width: '250px',
-          height: 'auto',
-          zIndex: 0,
-          pointerEvents: 'none',
-          marginTop: '0',
-          paddingTop: '0'
-        }}>
-          <img 
-            src="/wreath.png" 
-            alt="Wreath" 
-            style={{ 
-              width: '100%',
-              height: 'auto',
-              objectFit: 'contain',
-              display: 'block',
-              opacity: 0.9,
-              transform: 'rotate(180deg)',
-              marginTop: '0',
-              paddingTop: '0'
-            }} 
-          />
-        </div>
+        {!isMobile && (
+          <div style={{
+            position: 'absolute',
+            top: '0',
+            left: '0',
+            width: '250px',
+            height: 'auto',
+            zIndex: 0,
+            pointerEvents: 'none',
+            marginTop: '0',
+            paddingTop: '0'
+          }}>
+            <img 
+              src="/wreath.png" 
+              alt="Wreath" 
+              style={{ 
+                width: '100%',
+                height: 'auto',
+                objectFit: 'contain',
+                display: 'block',
+                opacity: 0.9,
+                transform: 'rotate(180deg)',
+                marginTop: '0',
+                paddingTop: '0'
+              }} 
+            />
+          </div>
+        )}
 
         {/* Wreath background - behind right rectangle only */}
-        <div style={{
-          position: 'absolute',
-          top: '0',
-          right: '0',
-          width: '250px',
-          height: 'auto',
-          zIndex: 0,
-          pointerEvents: 'none',
-          marginTop: '0',
-          paddingTop: '0'
-        }}>
-          <img 
-            src="/wreath.png" 
-            alt="Wreath" 
-            style={{ 
-              width: '100%',
-              height: 'auto',
-              objectFit: 'contain',
-              display: 'block',
-              opacity: 0.9,
-              transform: 'rotate(145deg)',
-              marginTop: '0',
-              paddingTop: '0'
-            }} 
-          />
-        </div>
+        {!isMobile && (
+          <div style={{
+            position: 'absolute',
+            top: '0',
+            right: '0',
+            width: '250px',
+            height: 'auto',
+            zIndex: 0,
+            pointerEvents: 'none',
+            marginTop: '0',
+            paddingTop: '0'
+          }}>
+            <img 
+              src="/wreath.png" 
+              alt="Wreath" 
+              style={{ 
+                width: '100%',
+                height: 'auto',
+                objectFit: 'contain',
+                display: 'block',
+                opacity: 0.9,
+                transform: 'rotate(145deg)',
+                marginTop: '0',
+                paddingTop: '0'
+              }} 
+            />
+          </div>
+        )}
 
         {/* Left Rectangle - ChatBot */}
-        <div style={{
-          background: 'rgba(255, 255, 255, 0.1)',
-          backdropFilter: 'blur(10px)',
-          WebkitBackdropFilter: 'blur(10px)',
-          border: '1px solid rgba(255, 255, 255, 0.2)',
-          borderRadius: '0 20px 20px 0',
-          padding: '18px 32px',
-          flex: '0 0 auto',
-          position: 'relative',
-          zIndex: 1
-        }}>
-          <span style={{ color: '#ffffff', fontSize: '20px', fontWeight: 500 }}>ChatBot</span>
-        </div>
+        {!isMobile && (
+          <div style={{
+            background: 'rgba(255, 255, 255, 0.1)',
+            backdropFilter: 'blur(10px)',
+            WebkitBackdropFilter: 'blur(10px)',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            borderRadius: '0 20px 20px 0',
+            padding: '18px 32px',
+            flex: '0 0 auto',
+            position: 'relative',
+            zIndex: 1
+          }}>
+            <span style={{ color: '#ffffff', fontSize: '20px', fontWeight: 500 }}>ChatBot</span>
+          </div>
+        )}
 
         {/* Center - CeBe Heading */}
         <div style={{ 
-          flex: 1, 
+          flex: isMobile ? '1 1 100%' : 1, 
           display: 'flex', 
           justifyContent: 'center', 
           alignItems: 'center',
           position: 'relative',
-          zIndex: 1
+          zIndex: 1,
+          order: isMobile ? -1 : 0,
+          width: isMobile ? '100%' : 'auto'
         }}>
           <div style={{
             position: 'relative',
             display: 'inline-block',
-            padding: '16px 32px'
+            padding: isMobile ? '8px 16px' : '16px 32px'
           }}>
             {/* Glass effect background */}
             <div style={{
@@ -149,11 +187,11 @@ function App() {
             {/* CeBe Text */}
             <h1 style={{ 
               color: '#ffffff', 
-              fontSize: '48px',
+              fontSize: isMobile ? '28px' : '48px',
               fontWeight: 400,
               fontFamily: "'Bungee Shade', cursive",
               margin: 0,
-              letterSpacing: '2px',
+              letterSpacing: isMobile ? '1px' : '2px',
               textShadow: '2px 2px 4px rgba(0, 0, 0, 0.3)',
               textTransform: 'uppercase',
               position: 'relative',
@@ -165,55 +203,56 @@ function App() {
         </div>
 
         {/* Right Rectangle - Home, Services, Logo */}
-        <div style={{
-          background: 'rgba(255, 255, 255, 0.1)',
-          backdropFilter: 'blur(10px)',
-          WebkitBackdropFilter: 'blur(10px)',
-          border: '1px solid rgba(255, 255, 255, 0.2)',
-          borderRadius: '20px 0 0 20px',
-          padding: '18px 32px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '24px',
-          flex: '0 0 auto',
-          position: 'relative',
-          zIndex: 1
-        }}>
-          <a 
-            href="/" 
-            style={{ 
-              color: '#ffffff', 
-              textDecoration: 'none',
-              fontSize: '20px',
-              fontWeight: 500,
-              cursor: 'pointer'
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.opacity = '0.8'}
-            onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
-          >
-            Home
-          </a>
-          <div ref={servicesRef} style={{ position: 'relative' }}>
-            <button
-              onClick={() => setServicesOpen(!servicesOpen)}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: '#ffffff',
+        {!isMobile && (
+          <div style={{
+            background: 'rgba(255, 255, 255, 0.1)',
+            backdropFilter: 'blur(10px)',
+            WebkitBackdropFilter: 'blur(10px)',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            borderRadius: '20px 0 0 20px',
+            padding: '18px 32px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '24px',
+            flex: '0 0 auto',
+            position: 'relative',
+            zIndex: 1
+          }}>
+            <a 
+              href="/" 
+              style={{ 
+                color: '#ffffff', 
+                textDecoration: 'none',
                 fontSize: '20px',
                 fontWeight: 500,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: 0
+                cursor: 'pointer'
               }}
               onMouseEnter={(e) => e.currentTarget.style.opacity = '0.8'}
               onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
             >
-              Services
-              <span style={{ fontSize: '14px' }}>{servicesOpen ? '▲' : '▼'}</span>
-            </button>
+              Home
+            </a>
+            <div ref={servicesRef} style={{ position: 'relative' }}>
+              <button
+                onClick={() => setServicesOpen(!servicesOpen)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#ffffff',
+                  fontSize: '20px',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: 0
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.opacity = '0.8'}
+                onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+              >
+                Services
+                <span style={{ fontSize: '14px' }}>{servicesOpen ? '▲' : '▼'}</span>
+              </button>
             {servicesOpen && (
               <div style={{
                 position: 'absolute',
@@ -291,13 +330,14 @@ function App() {
             />
           </div>
         </div>
+        )}
       </div>
 
       <div style={{ 
         maxWidth: 1200, 
         margin: '0 auto', 
-        marginTop: '100px',
-        padding: '20px',
+        marginTop: isMobile ? '80px' : '100px',
+        padding: isMobile ? '12px' : '20px',
         position: 'relative',
         zIndex: 1
       }}>
@@ -307,7 +347,7 @@ function App() {
           justifyContent: 'center', 
           alignItems: 'center',
           marginTop: '0px',
-          marginBottom: '40px',
+          marginBottom: isMobile ? '20px' : '40px',
           position: 'relative'
         }}>
           {/* Particle splash behind hero */}
@@ -333,8 +373,8 @@ function App() {
             top: '50%',
             left: '50%',
             transform: 'translate(-50%, -50%)',
-            width: '550px',
-            height: '400px',
+            width: isMobile ? '300px' : '550px',
+            height: isMobile ? '220px' : '400px',
             borderRadius: '50%',
             background: 'radial-gradient(ellipse, rgba(255, 255, 255, 0.4) 0%, rgba(59, 130, 246, 0.3) 50%, transparent 100%)',
             filter: 'blur(40px)',
@@ -347,7 +387,7 @@ function App() {
             src="/cebe-hero.png" 
             alt="CeBe Hero" 
             style={{ 
-              width: '500px',
+              width: isMobile ? '280px' : '500px',
               height: 'auto',
               objectFit: 'contain',
               display: 'block',
@@ -358,15 +398,16 @@ function App() {
           {/* Text above rectangle */}
           <div style={{
             position: 'absolute',
-            bottom: '65px',
-            left: '30%',
-            width: '151px',
+            bottom: isMobile ? '35px' : '65px',
+            left: isMobile ? '50%' : '30%',
+            transform: isMobile ? 'translateX(-50%)' : 'none',
+            width: isMobile ? '140px' : '151px',
             zIndex: 3,
             textAlign: 'center'
           }}>
             <span style={{
               color: '#ffffff',
-              fontSize: '14px',
+              fontSize: isMobile ? '11px' : '14px',
               fontWeight: 500,
               textShadow: '1px 1px 2px rgba(0, 0, 0, 0.3)',
               lineHeight: '1.4'
@@ -377,18 +418,19 @@ function App() {
           {/* Glass effect rectangle - left bottom overlapping hero */}
           <div style={{
             position: 'absolute',
-            bottom: '43px',
-            left: '30%',
-            width: '151px',
-            height: '86px',
+            bottom: isMobile ? '20px' : '43px',
+            left: isMobile ? '50%' : '30%',
+            transform: isMobile ? 'translateX(-50%)' : 'none',
+            width: isMobile ? '140px' : '151px',
+            height: isMobile ? '50px' : '86px',
             background: 'rgba(255, 255, 255, 0.1)',
             backdropFilter: 'blur(10px)',
             WebkitBackdropFilter: 'blur(10px)',
             border: '1px solid rgba(255, 255, 255, 0.2)',
-            borderTopLeftRadius: '30px',
-            borderBottomLeftRadius: '30px',
-            borderTopRightRadius: '0',
-            borderBottomRightRadius: '0',
+            borderTopLeftRadius: isMobile ? '16px' : '30px',
+            borderBottomLeftRadius: isMobile ? '16px' : '30px',
+            borderTopRightRadius: isMobile ? '16px' : '0',
+            borderBottomRightRadius: isMobile ? '16px' : '0',
             zIndex: 2
           }} />
         </div>
@@ -396,13 +438,18 @@ function App() {
       {/* Floating Chat Button - Circular */}
       {!chatWidgetOpen && (
         <button
-          onClick={() => setChatWidgetOpen(true)}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('💬 Chat button clicked, opening widget...');
+            setChatWidgetOpen(true);
+          }}
           style={{
             position: 'fixed',
-            bottom: '30px',
-            right: '30px',
-            width: '70px',
-            height: '70px',
+            bottom: isMobile ? '20px' : '30px',
+            right: isMobile ? '20px' : '30px',
+            width: isMobile ? '60px' : '70px',
+            height: isMobile ? '60px' : '70px',
             borderRadius: '50%',
             background: 'linear-gradient(135deg, #000000 0%, #ffffff 100%)',
             border: '2px solid rgba(255, 255, 255, 0.3)',
@@ -414,17 +461,21 @@ function App() {
             zIndex: 10000,
             transition: 'all 0.3s ease',
             color: '#ffffff',
-            fontSize: '24px',
+            fontSize: isMobile ? '20px' : '24px',
             fontWeight: 'bold',
             pointerEvents: 'auto'
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'scale(1.1)';
-            e.currentTarget.style.boxShadow = '0 6px 25px rgba(0, 0, 0, 0.4), 0 0 30px rgba(255, 255, 255, 0.2)';
+            if (!isMobile) {
+              e.currentTarget.style.transform = 'scale(1.1)';
+              e.currentTarget.style.boxShadow = '0 6px 25px rgba(0, 0, 0, 0.4), 0 0 30px rgba(255, 255, 255, 0.2)';
+            }
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'scale(1)';
-            e.currentTarget.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.3), 0 0 20px rgba(255, 255, 255, 0.1)';
+            if (!isMobile) {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.3), 0 0 20px rgba(255, 255, 255, 0.1)';
+            }
           }}
           aria-label="Open chat"
         >
@@ -434,48 +485,26 @@ function App() {
 
       {/* Chat Widget Popup */}
       {chatWidgetOpen && (
-        <div style={{
-          position: 'fixed',
-          bottom: '30px',
-          right: '30px',
-          zIndex: 10000,
-          animation: 'slideUp 0.3s ease-out',
-          pointerEvents: 'auto'
-        }}>
-          {/* Close button */}
-          <button
-            onClick={() => setChatWidgetOpen(false)}
-            style={{
-              position: 'absolute',
-              top: '-15px',
-              right: '-15px',
-              width: '40px',
-              height: '40px',
-              borderRadius: '50%',
-              background: 'linear-gradient(135deg, #000000 0%, #ffffff 100%)',
-              border: '2px solid rgba(255, 255, 255, 0.3)',
-              color: '#ffffff',
-              fontSize: '20px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 2px 10px rgba(0, 0, 0, 0.3)',
-              zIndex: 1002,
-              transition: 'all 0.2s ease'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'rotate(90deg) scale(1.1)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'rotate(0deg) scale(1)';
-            }}
-            aria-label="Close chat"
-          >
-            ×
-          </button>
+        <div 
+          data-chat-widget="true"
+          style={{
+            position: 'fixed',
+            top: isMobile ? 0 : 'auto',
+            left: isMobile ? 0 : 'auto',
+            right: isMobile ? 0 : '30px',
+            bottom: isMobile ? 0 : '30px',
+            width: isMobile ? '100vw' : 'auto',
+            height: isMobile ? '100vh' : 'auto',
+            zIndex: 10001,
+            animation: 'slideUp 0.3s ease-out',
+            pointerEvents: 'auto',
+            display: 'flex',
+            alignItems: isMobile ? 'stretch' : 'flex-end',
+            justifyContent: isMobile ? 'stretch' : 'flex-end'
+          }}
+        >
           {/* Chat widget */}
-          <EmbedWidget />
+          <EmbedWidget onClose={() => setChatWidgetOpen(false)} />
         </div>
       )}
 

@@ -34,6 +34,8 @@ html {
   height: 100%;
   overflow-x: hidden;
   overflow-y: auto;
+  -webkit-text-size-adjust: 100%;
+  -ms-text-size-adjust: 100%;
 }
 
 body {
@@ -45,6 +47,9 @@ body {
   overflow-x: hidden;
   overflow-y: auto;
   position: relative;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  touch-action: manipulation;
 }
 
 h1 {
