@@ -17,7 +17,7 @@ interface Message {
 export default function ConversationView() {
   const { sessionId } = useParams<{ sessionId: string }>()
   const navigate = useNavigate()
-  const { hasAnyRole, user } = useAuth()
+  const { hasAnyRole, user, token } = useAuth()
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(true)
   const [agentId, setAgentId] = useState('')
@@ -251,8 +251,9 @@ export default function ConversationView() {
     try {
       const res = await fetch(`${API_BASE}/admin/sessions`, {
         headers: {
-          'Authorization': `Bearer ${ADMIN_SECRET}`
-        }
+          'Authorization': `Bearer ${token || ADMIN_SECRET}`
+        },
+        credentials: 'include' // Include cookies as fallback
       })
       const data = await res.json()
       // The API returns items, not sessions
@@ -323,8 +324,9 @@ export default function ConversationView() {
       
       const res = await fetch(`${API_BASE}/admin/sessions/${sessionId}/messages?${params}`, {
         headers: {
-          'Authorization': `Bearer ${ADMIN_SECRET}`
-        }
+          'Authorization': `Bearer ${token || ADMIN_SECRET}`
+        },
+        credentials: 'include' // Include cookies as fallback
       })
       
       if (!res.ok) {
@@ -428,9 +430,10 @@ export default function ConversationView() {
       const res = await fetch(`${API_BASE}/admin/sessions/${sessionId}/assign`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${ADMIN_SECRET}`,
+          'Authorization': `Bearer ${token || ADMIN_SECRET}`,
           'Content-Type': 'application/json'
         },
+        credentials: 'include', // Include cookies as fallback
         body: JSON.stringify({ agentId })
       })
       const data = await res.json()
@@ -480,8 +483,9 @@ export default function ConversationView() {
     try {
       const res = await fetch(`${API_BASE}/admin/sessions/${sessionId}/export?format=${format}`, {
         headers: {
-          'Authorization': `Bearer ${ADMIN_SECRET}`
-        }
+          'Authorization': `Bearer ${token || ADMIN_SECRET}`
+        },
+        credentials: 'include' // Include cookies as fallback
       })
 
       if (!res.ok) {
@@ -518,9 +522,10 @@ export default function ConversationView() {
       const res = await fetch(`${API_BASE}/admin/sessions/${sessionId}/close`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${ADMIN_SECRET}`,
+          'Authorization': `Bearer ${token || ADMIN_SECRET}`,
           'Content-Type': 'application/json'
-        }
+        },
+        credentials: 'include' // Include cookies as fallback
       })
       const data = await res.json()
       if (data.success) {
