@@ -16,7 +16,7 @@ interface User {
 }
 
 export default function UsersPage() {
-  const { hasRole } = useAuth();
+  const { hasRole, token } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -57,8 +57,9 @@ export default function UsersPage() {
       
       const res = await fetch(`${API_BASE}/admin/users?${params}`, {
         headers: {
-          'Authorization': `Bearer ${ADMIN_SECRET}`
-        }
+          'Authorization': `Bearer ${token || ADMIN_SECRET}`
+        },
+        credentials: 'include' // Include cookies as fallback
       });
 
       if (!res.ok) {
@@ -85,8 +86,9 @@ export default function UsersPage() {
       const res = await fetch(`${API_BASE}/admin/users/${userId}`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${ADMIN_SECRET}`
-        }
+          'Authorization': `Bearer ${token || ADMIN_SECRET}`
+        },
+        credentials: 'include' // Include cookies as fallback
       });
 
       if (!res.ok) {
@@ -106,9 +108,10 @@ export default function UsersPage() {
       const res = await fetch(`${API_BASE}/admin/users/${editingUser.userId}/roles`, {
         method: 'PUT',
         headers: {
-          'Authorization': `Bearer ${ADMIN_SECRET}`,
+          'Authorization': `Bearer ${token || ADMIN_SECRET}`,
           'Content-Type': 'application/json'
         },
+        credentials: 'include', // Include cookies as fallback
         body: JSON.stringify({ roles })
       });
 
@@ -134,9 +137,10 @@ export default function UsersPage() {
       const res = await fetch(`${API_BASE}/admin/users`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${ADMIN_SECRET}`,
+          'Authorization': `Bearer ${token || ADMIN_SECRET}`,
           'Content-Type': 'application/json'
         },
+        credentials: 'include', // Include cookies as fallback
         body: JSON.stringify(newUser)
       });
 
