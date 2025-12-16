@@ -4,19 +4,19 @@ WORKDIR /app
 # 1. Install Global Tools
 RUN npm install -g pnpm serve
 
-# 2. Copy Files (Root Context)
+# 2. Copy Files
 COPY . .
 
 # 3. Install Dependencies
 RUN pnpm install --no-frozen-lockfile
 
 # 4. Bake in Environment Variables
-# (Add any other VITE_ variables you need here)
 ARG VITE_API_URL
 ENV VITE_API_URL=$VITE_API_URL
 
-# 5. Build Widget
-RUN pnpm run --filter apps/widget build
+# 5. Build Widget (THE FIX: Change directory explicitly)
+# We use 'cd' instead of '--filter' to guarantee it finds the project
+RUN cd apps/widget && pnpm run build
 
 # --- DEBUG: Verify Build ---
 RUN if [ ! -f /app/apps/widget/dist/index.html ]; then \
