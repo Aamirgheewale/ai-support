@@ -1,34 +1,32 @@
-# Dockerfile for Widget App
-# Build context: ROOT of the repository
-
 FROM node:18-alpine
-
-# Install pnpm globally
-RUN npm install -g pnpm
-
-# Set working directory
 WORKDIR /app
 
-# Copy root-level package files (if they exist)
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml* ./
+# 1. Install Global Tools
+RUN npm install -g pnpm serve
 
-# Copy entire project
+# 2. Copy Files (Root Context)
 COPY . .
 
-# Install dependencies (allow lockfile refresh to avoid sync issues)
+# 3. Install Dependencies
 RUN pnpm install --no-frozen-lockfile
 
-# Build widget app using filter
+# 4. Bake in Environment Variables
+# (Add any other VITE_ variables you need here)
+ARG VITE_API_URL
+ENV VITE_API_URL=$VITE_API_URL
+
+# 5. Build Widget
 RUN pnpm run --filter apps/widget build
 
-# Install serve globally
-RUN npm install -g serve
+# --- DEBUG: Verify Build ---
+RUN if [ ! -f /app/apps/widget/dist/index.html ]; then \
+        echo "❌ ERROR: index.html NOT found in /app/apps/widget/dist!"; \
+        ls -la /app/apps/widget; \
+        exit 1; \
+    else \
+        echo "✅ SUCCESS: Widget index.html found!"; \
+    fi
 
-# Expose port (Railway will set PORT env var)
-EXPOSE 8080
-
-# Serve the widget dist folder
-# -s flag enables SPA mode (serves index.html for all routes)
-# -l flag sets the listen port
-CMD ["serve", "-s", "apps/widget/dist", "-l", "8080"]
-
+# 6. Serve
+ENV PORT=8080
+CMD ["serve", "-s", "/app/apps/widget/dist", "-l", "8080", "--cors"]
