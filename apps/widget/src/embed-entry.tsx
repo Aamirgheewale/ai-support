@@ -1,11 +1,21 @@
 // apps/widget/src/embed-entry.tsx — Embeddable widget entry point
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import EmbedWidget from './components/EmbedWidget'
 
 // Wrapper component with circular button
 function ChatWidgetWithButton({ initialSessionId }: { initialSessionId?: string }) {
   const [chatWidgetOpen, setChatWidgetOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth <= 768);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   return (
     <>
@@ -15,10 +25,10 @@ function ChatWidgetWithButton({ initialSessionId }: { initialSessionId?: string 
           onClick={() => setChatWidgetOpen(true)}
           style={{
             position: 'fixed',
-            bottom: '30px',
-            right: '30px',
-            width: '70px',
-            height: '70px',
+            bottom: isMobile ? '20px' : '30px',
+            right: isMobile ? '20px' : '30px',
+            width: isMobile ? '60px' : '70px',
+            height: isMobile ? '60px' : '70px',
             borderRadius: '50%',
             background: 'linear-gradient(135deg, #000000 0%, #ffffff 100%)',
             border: '2px solid rgba(255, 255, 255, 0.3)',
@@ -30,7 +40,7 @@ function ChatWidgetWithButton({ initialSessionId }: { initialSessionId?: string 
             zIndex: 10000,
             transition: 'all 0.3s ease',
             color: '#ffffff',
-            fontSize: '24px',
+            fontSize: isMobile ? '20px' : '24px',
             fontWeight: 'bold'
           }}
           onMouseEnter={(e) => {
@@ -51,47 +61,21 @@ function ChatWidgetWithButton({ initialSessionId }: { initialSessionId?: string 
       {chatWidgetOpen && (
         <div style={{
           position: 'fixed',
-          bottom: '30px',
-          right: '30px',
+          bottom: isMobile ? 'auto' : '30px',
+          right: isMobile ? 'auto' : '30px',
+          left: isMobile ? '50%' : 'auto',
+          top: isMobile ? '50%' : 'auto',
+          transform: isMobile ? 'translate(-50%, -50%)' : 'none',
+          width: isMobile ? 'auto' : 'auto',
+          height: isMobile ? 'auto' : 'auto',
           zIndex: 10001,
           animation: 'slideUp 0.3s ease-out'
         }}>
-          {/* Close button */}
-          <button
-            onClick={() => setChatWidgetOpen(false)}
-            style={{
-              position: 'absolute',
-              top: '-15px',
-              right: '-15px',
-              width: '40px',
-              height: '40px',
-              borderRadius: '50%',
-              background: 'linear-gradient(135deg, #000000 0%, #ffffff 100%)',
-              border: '2px solid rgba(255, 255, 255, 0.3)',
-              color: '#ffffff',
-              fontSize: '20px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 2px 10px rgba(0, 0, 0, 0.3)',
-              zIndex: 10002,
-              transition: 'all 0.2s ease'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'rotate(90deg) scale(1.1)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'rotate(0deg) scale(1)';
-            }}
-            aria-label="Close chat"
-          >
-            ×
-          </button>
           {/* Chat widget */}
           <EmbedWidget 
             initialSessionId={initialSessionId}
             onAgentInitiatedChat={() => setChatWidgetOpen(true)}
+            onClose={() => setChatWidgetOpen(false)}
           />
         </div>
       )}

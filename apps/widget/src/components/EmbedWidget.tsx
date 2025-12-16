@@ -6,10 +6,12 @@ const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
 
 export default function EmbedWidget({ 
   initialSessionId,
-  onAgentInitiatedChat
+  onAgentInitiatedChat,
+  onClose
 }: { 
   initialSessionId?: string;
   onAgentInitiatedChat?: () => void;
+  onClose?: () => void;
 }) {
   // Load sessionId from localStorage or use initialSessionId
   // BUT: Don't load if conversation was concluded
@@ -489,10 +491,24 @@ export default function EmbedWidget({
     }
   }
 
+  // Hook to detect mobile on resize
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth <= 768);
+  
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   return (
     <div style={{ 
-      width: 380, 
-      height: 600,
+      width: isMobile ? 'calc(100vw - 40px)' : 380, 
+      height: isMobile ? 'calc(100vh - 40px)' : 600,
+      maxWidth: isMobile ? '420px' : 380,
+      maxHeight: isMobile ? '600px' : 600,
       border: '1px solid rgba(255, 255, 255, 0.2)', 
       borderRadius: 12, 
       overflow: 'hidden',
@@ -501,20 +517,68 @@ export default function EmbedWidget({
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
       boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
       background: 'transparent',
-      pointerEvents: 'auto'
+      pointerEvents: 'auto',
+      position: isMobile ? 'fixed' : 'relative',
+      top: isMobile ? '50%' : 'auto',
+      left: isMobile ? '50%' : 'auto',
+      right: isMobile ? 'auto' : 'auto',
+      bottom: isMobile ? 'auto' : 'auto',
+      transform: isMobile ? 'translate(-50%, -50%)' : 'none',
+      zIndex: isMobile ? 99999 : 'auto'
     }}>
       {/* Header */}
       <div style={{ 
         background: 'linear-gradient(to bottom right, #000000, #ffffff)',
         color: 'white',
-        padding: '16px 20px',
+        padding: isMobile ? '12px 16px' : '16px 20px',
+        paddingRight: onClose ? (isMobile ? '44px' : '48px') : (isMobile ? '16px' : '20px'),
         display: 'flex',
         justifyContent: 'space-between',
-        alignItems: 'center'
+        alignItems: 'center',
+        minHeight: isMobile ? '56px' : 'auto',
+        position: 'relative'
       }}>
+        {/* Close button - positioned at top right of widget */}
+        {onClose && (
+          <button
+            onClick={onClose}
+            style={{
+              position: 'absolute',
+              top: isMobile ? '8px' : '12px',
+              right: isMobile ? '8px' : '12px',
+              width: isMobile ? '32px' : '36px',
+              height: isMobile ? '32px' : '36px',
+              borderRadius: '50%',
+              background: 'rgba(255, 255, 255, 0.2)',
+              border: '1px solid rgba(255, 255, 255, 0.3)',
+              color: '#ffffff',
+              fontSize: isMobile ? '20px' : '24px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)',
+              zIndex: 10,
+              transition: 'all 0.2s ease',
+              lineHeight: 1,
+              padding: 0
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.3)';
+              e.currentTarget.style.transform = 'scale(1.1)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)';
+              e.currentTarget.style.transform = 'scale(1)';
+            }}
+            aria-label="Close chat"
+          >
+            ×
+          </button>
+        )}
         <div>
-          <div style={{ fontWeight: 600, fontSize: '16px' }}>AI Customer Support</div>
-          <div style={{ fontSize: '12px', opacity: 0.9, marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div style={{ fontWeight: 600, fontSize: isMobile ? '14px' : '16px' }}>AI Customer Support</div>
+          <div style={{ fontSize: isMobile ? '11px' : '12px', opacity: 0.9, marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
             {isConnected ? (
               <>
                 <span className="online-indicator" style={{
@@ -542,12 +606,13 @@ export default function EmbedWidget({
               background: 'linear-gradient(to top left, #000000, #ffffff)',
               border: '1px solid rgba(255,255,255,0.2)',
               color: 'white',
-              padding: '6px 16px',
+              padding: isMobile ? '8px 14px' : '6px 16px',
               borderRadius: '6px',
               cursor: 'pointer',
               fontWeight: 500,
-              fontSize: '14px',
-              transition: 'all 0.3s ease'
+              fontSize: isMobile ? '13px' : '14px',
+              transition: 'all 0.3s ease',
+              whiteSpace: 'nowrap'
             }}
           >
             {conversationConcluded ? 'Start New Chat' : 'Start Chat'}
@@ -559,15 +624,16 @@ export default function EmbedWidget({
       <div style={{ 
         flex: 1,
         overflow: 'auto', 
-        padding: '16px',
+        padding: isMobile ? '12px' : '16px',
         background: 'rgba(255, 255, 255, 0.1)',
         backdropFilter: 'blur(10px)',
         WebkitBackdropFilter: 'blur(56px)',
         display: 'flex',
         flexDirection: 'column',
-        gap: '12px',
+        gap: isMobile ? '10px' : '12px',
         position: 'relative',
-        isolation: 'isolate'
+        isolation: 'isolate',
+        minHeight: 0 // Allow flex shrinking on mobile
       }}>
         {messages.length === 0 && sessionId && (
           <div style={{ 
@@ -590,8 +656,8 @@ export default function EmbedWidget({
             }}
           >
             <div style={{
-              maxWidth: '75%',
-              padding: '10px 14px',
+              maxWidth: isMobile ? '85%' : '75%',
+              padding: isMobile ? '10px 12px' : '10px 14px',
               borderRadius: '12px',
               background: m.sender === 'user' 
                 ? '#ffffff'
@@ -599,10 +665,12 @@ export default function EmbedWidget({
                 ? '#000000'
                 : '#ffffff',
               color: m.sender === 'system' ? '#ffffff' : (m.sender === 'user' ? '#000000' : '#000000'),
-              fontSize: '14px',
+              fontSize: isMobile ? '13px' : '14px',
               lineHeight: '1.5',
               boxShadow: m.sender !== 'system' ? '0 1px 2px rgba(0,0,0,0.1)' : 'none',
-              border: m.sender === 'system' ? '1px solid rgba(255, 255, 255, 0.2)' : 'none'
+              border: m.sender === 'system' ? '1px solid rgba(255, 255, 255, 0.2)' : 'none',
+              wordWrap: 'break-word',
+              overflowWrap: 'break-word'
             }}>
               {m.text}
             </div>
@@ -611,8 +679,8 @@ export default function EmbedWidget({
                 marginTop: '8px',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '8px',
-                width: '75%'
+                gap: isMobile ? '6px' : '8px',
+                width: isMobile ? '85%' : '75%'
               }}>
                 {m.options.map((option, optIdx) => (
                   <button
@@ -620,7 +688,7 @@ export default function EmbedWidget({
                     onClick={() => handleConclusionOption(option.value, option.text)}
                     disabled={conversationConcluded}
                     style={{
-                      padding: '10px 16px',
+                      padding: isMobile ? '10px 14px' : '10px 16px',
                       background: conversationConcluded 
                         ? 'rgba(200, 200, 200, 0.1)' 
                         : 'rgba(102, 126, 234, 0.1)',
@@ -629,7 +697,7 @@ export default function EmbedWidget({
                         : '1px solid rgba(102, 126, 234, 0.3)',
                       borderRadius: '8px',
                       color: '#ffffff',
-                      fontSize: '14px',
+                      fontSize: isMobile ? '13px' : '14px',
                       cursor: conversationConcluded ? 'not-allowed' : 'pointer',
                       fontWeight: 500,
                       transition: 'all 0.2s',
@@ -666,14 +734,16 @@ export default function EmbedWidget({
             }}
           >
             <div style={{
-              maxWidth: '75%',
-              padding: '10px 14px',
+              maxWidth: isMobile ? '85%' : '75%',
+              padding: isMobile ? '10px 12px' : '10px 14px',
               borderRadius: '12px',
               background: '#000000',
               color: '#ffffff',
-              fontSize: '14px',
+              fontSize: isMobile ? '13px' : '14px',
               lineHeight: '1.5',
-              boxShadow: '0 1px 2px rgba(0,0,0,0.1)'
+              boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+              wordWrap: 'break-word',
+              overflowWrap: 'break-word'
             }}>
               {streamingText}
             </div>
@@ -699,13 +769,14 @@ export default function EmbedWidget({
 
       {/* Input Area */}
       <div style={{ 
-        padding: '16px',
+        padding: isMobile ? '12px' : '16px',
         background: 'rgba(255, 255, 255, 0.1)',
         backdropFilter: 'blur(56px)',
         WebkitBackdropFilter: 'blur(56px)',
         borderTop: '1px solid rgba(255, 255, 255, 0.2)',
         display: 'flex',
-        gap: '8px'
+        gap: isMobile ? '6px' : '8px',
+        flexShrink: 0 // Prevent input area from shrinking
       }}>
         <input 
           value={text} 
@@ -714,12 +785,13 @@ export default function EmbedWidget({
           disabled={!sessionId || conversationConcluded}
           style={{ 
             flex: 1, 
-            padding: '10px 14px',
+            padding: isMobile ? '10px 12px' : '10px 14px',
             border: '1px solid #e0e0e0',
             borderRadius: '8px',
-            fontSize: '14px',
+            fontSize: isMobile ? '13px' : '14px',
             outline: 'none',
-            background: (sessionId && !conversationConcluded) ? 'white' : '#f5f5f5'
+            background: (sessionId && !conversationConcluded) ? 'white' : '#f5f5f5',
+            minWidth: 0 // Allow input to shrink properly
           }} 
           placeholder={
             conversationConcluded 
@@ -733,7 +805,7 @@ export default function EmbedWidget({
           onClick={send}
           disabled={!sessionId || !text.trim() || conversationConcluded}
           style={{
-            padding: '10px 20px',
+            padding: isMobile ? '10px 16px' : '10px 20px',
             background: (sessionId && text.trim() && !conversationConcluded)
               ? 'linear-gradient(135deg, #000000 0%, #ffffff 100%)'
               : '#ccc',
@@ -743,8 +815,10 @@ export default function EmbedWidget({
             borderRadius: '8px',
             cursor: (sessionId && text.trim() && !conversationConcluded) ? 'pointer' : 'not-allowed',
             fontWeight: 500,
-            fontSize: '14px',
-            transition: 'all 0.2s ease'
+            fontSize: isMobile ? '13px' : '14px',
+            transition: 'all 0.2s ease',
+            whiteSpace: 'nowrap',
+            flexShrink: 0
           }}
         >
           Send
