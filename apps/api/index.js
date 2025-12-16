@@ -1433,6 +1433,11 @@ app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
       fullTextSearch 
     } = req.query;
     
+    // Log search parameter for debugging
+    if (search) {
+      console.log(`🔍 Search parameter received: "${search}" - will filter client-side for partial matching`);
+    }
+    
     if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_SESSIONS_COLLECTION_ID) {
       return res.json({ items: [], total: 0, limit, offset, hasMore: false, message: 'Appwrite not configured' });
     }
@@ -1442,9 +1447,11 @@ app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
       queries.push(Query.equal('status', status));
       console.log(`🔍 Filtering sessions by status: "${status}"`);
     }
-    if (search && search.trim() !== '' && Query) {
-      queries.push(Query.equal('sessionId', search));
-      console.log(`🔍 Filtering sessions by sessionId search: "${search}"`);
+    // IMPORTANT: search filtering is done client-side after fetch to support partial matching
+    // DO NOT add Query.equal('sessionId', search) here - it only supports exact matches
+    // We fetch all sessions and filter in-memory for partial sessionId search
+    if (search && search.trim() !== '') {
+      console.log(`✅ Search "${search}" will be applied via client-side filtering (partial match)`);
     }
     if (startDate && Query) {
       try {
@@ -1466,7 +1473,28 @@ app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
       }
     }
     
-    console.log(`📋 Fetching sessions with ${queries.length} query filter(s), limit=${limit}, offset=${offset}`);
+    // CRITICAL: Verify search is NOT in queries (safety check)
+    // Search must be filtered client-side, NOT via Appwrite query (which only supports exact match)
+    const hasSearchInQuery = queries.some(q => {
+      if (!q) return false;
+      const queryStr = q.toString ? q.toString() : String(q);
+      // Check if this query is filtering by sessionId (which would be wrong for search)
+      return queryStr.includes('sessionId') && search;
+    });
+    if (hasSearchInQuery) {
+      console.error(`❌ ERROR: Search query detected in queries array! Removing it - search must be done client-side.`);
+      queries = queries.filter(q => {
+        if (!q) return true;
+        const queryStr = q.toString ? q.toString() : String(q);
+        return !(queryStr.includes('sessionId') && search);
+      });
+    }
+    
+    // Log what queries we're using
+    if (queries.length > 0) {
+      console.log(`📋 Query filters: ${queries.map(q => q?.toString?.() || String(q)).join(', ')}`);
+    }
+    console.log(`📋 Fetching sessions with ${queries.length} query filter(s), limit=${limit}, offset=${offset}${search ? `, search="${search}" (will filter client-side for partial match)` : ''}`);
     
     // Add ordering: newest first (createdAt desc)
     // NOTE: For production, add index on createdAt (desc) in Appwrite Console for better performance
@@ -1491,14 +1519,19 @@ app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
       // Appwrite defaults to 25 documents per request, so we must use Query.limit() in queries array
       // Appwrite's maximum is 5000 per request
       const appwriteMaxPerRequest = 5000;
-      // For high limits (like 10000), always fetch in batches starting with 5000
-      const shouldFetchAll = !limit || limit >= 1000; // If limit is high or not specified, fetch all
+      // For high limits (like 10000), or when search/filter is used, always fetch all sessions first
+      // Search requires fetching all to filter client-side for partial matching
+      const shouldFetchAll = !limit || limit >= 1000 || search || agentId || fullTextSearch;
       const firstBatchLimit = shouldFetchAll ? appwriteMaxPerRequest : Math.min(limit || 5000, appwriteMaxPerRequest);
       
-      // CRITICAL: Add Query.limit() to queries array - Appwrite requires this, not just the parameter
-      const queriesWithLimit = Query ? [...finalQueries, Query.limit(firstBatchLimit), Query.offset(offset)] : finalQueries;
+      // When doing client-side filtering (search, agentId, fullTextSearch), fetch from offset 0
+      // so we can filter all sessions, then apply pagination after filtering
+      const fetchOffset = (search || agentId || fullTextSearch) ? 0 : offset;
       
-      console.log(`🔍 Appwrite call: firstBatchLimit=${firstBatchLimit}, offset=${offset}, queries=${queriesWithLimit.length}, originalLimit=${limit}, shouldFetchAll=${shouldFetchAll}`);
+      // CRITICAL: Add Query.limit() to queries array - Appwrite requires this, not just the parameter
+      const queriesWithLimit = Query ? [...finalQueries, Query.limit(firstBatchLimit), Query.offset(fetchOffset)] : finalQueries;
+      
+      console.log(`🔍 Appwrite call: firstBatchLimit=${firstBatchLimit}, offset=${fetchOffset}${search ? ' (search: fetching all from start)' : ''}, queries=${queriesWithLimit.length}, originalLimit=${limit}, shouldFetchAll=${shouldFetchAll}`);
       
       // Always fetch first batch with Query.limit() in queries array to avoid Appwrite's default of 25
       result = await awDatabases.listDocuments(
@@ -1507,16 +1540,19 @@ app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
         queriesWithLimit // Queries array with Query.limit() and Query.offset()
       );
       totalCount = result.total;
-      console.log(`✅ First batch: ${result.documents.length} documents, total in DB: ${result.total} (offset=${offset}, limit=${firstBatchLimit})`);
+      console.log(`✅ First batch: ${result.documents.length} documents, total in DB: ${result.total} (offset=${fetchOffset}, limit=${firstBatchLimit})`);
       
       // If we need more documents (limit is high or we want all), fetch in batches
       if (shouldFetchAll && result.documents.length < totalCount) {
         console.log(`📦 Fetching remaining sessions in batches (got ${result.documents.length}, total=${totalCount})`);
         const allDocuments = [...result.documents];
-        let currentOffset = offset + result.documents.length;
+        let currentOffset = fetchOffset + result.documents.length;
         
-        while (allDocuments.length < totalCount) {
-          const batchLimit = Math.min(5000, totalCount - allDocuments.length);
+        // When search is used, we need to fetch ALL sessions for filtering, so continue until we get 0 results
+        const continueUntilEmpty = search || agentId || fullTextSearch;
+        
+        while (allDocuments.length < totalCount || continueUntilEmpty) {
+          const batchLimit = Math.min(5000, continueUntilEmpty ? 5000 : (totalCount - allDocuments.length));
           const batchQueries = Query ? [...finalQueries, Query.limit(batchLimit), Query.offset(currentOffset)] : finalQueries;
           const batchResult = await awDatabases.listDocuments(
             APPWRITE_DATABASE_ID,
@@ -1524,14 +1560,27 @@ app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
             batchQueries // Use Query.limit() and Query.offset() in queries array
           );
           
-          allDocuments.push(...batchResult.documents);
-          
-          if (batchResult.documents.length < batchLimit) {
+          if (batchResult.documents.length === 0) {
             // No more documents available
+            console.log(`📦 No more sessions found at offset ${currentOffset}, stopping batch fetch`);
+            break;
+          }
+          
+          allDocuments.push(...batchResult.documents);
+          console.log(`📦 Batch fetch: got ${batchResult.documents.length} more sessions (total so far: ${allDocuments.length})`);
+          
+          if (!continueUntilEmpty && batchResult.documents.length < batchLimit) {
+            // No more documents available (when not doing exhaustive search)
             break;
           }
           
           currentOffset += batchResult.documents.length;
+          
+          // Safety check: prevent infinite loops
+          if (allDocuments.length > 100000) {
+            console.warn(`⚠️  Stopping batch fetch after 100,000 sessions (safety limit)`);
+            break;
+          }
         }
         
         result.documents = allDocuments;
@@ -1580,6 +1629,33 @@ app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
         assignedAgent: assignedAgent
       };
     });
+    
+    // Client-side filtering for search (sessionId partial matching)
+    if (search && search.trim() !== '') {
+      const beforeFilter = transformedSessions.length;
+      const searchLower = search.trim().toLowerCase();
+      console.log(`🔍 Starting search filter: ${beforeFilter} sessions before filtering, searching for "${search}" (lowercase: "${searchLower}")`);
+      
+      // Debug: log first few sessionIds to verify format
+      if (transformedSessions.length > 0) {
+        console.log(`🔍 Sample sessionIds (first 5): ${transformedSessions.slice(0, 5).map(s => s.sessionId).join(', ')}`);
+      }
+      
+      transformedSessions = transformedSessions.filter(s => {
+        if (!s.sessionId) {
+          return false;
+        }
+        const matches = s.sessionId.toLowerCase().includes(searchLower);
+        return matches;
+      });
+      
+      console.log(`🔍 SessionId search filter (partial match): ${beforeFilter} → ${transformedSessions.length} sessions matching "${search}"`);
+      
+      // Debug: log matching sessionIds
+      if (transformedSessions.length > 0 && transformedSessions.length <= 10) {
+        console.log(`🔍 Matching sessionIds: ${transformedSessions.map(s => s.sessionId).join(', ')}`);
+      }
+    }
     
     // Client-side filtering for agentId (since it's in userMeta, not directly queryable)
     if (agentId && agentId.trim() !== '') {
