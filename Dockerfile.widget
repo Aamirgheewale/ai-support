@@ -29,6 +29,6 @@ RUN if [ ! -f /app/apps/widget/dist/index.html ]; then \
         echo "✅ SUCCESS: Widget index.html found!"; \
     fi
 
-# 6. Serve
+# 6. Serve (--single flag enables SPA mode for client-side routing)
 ENV PORT=8080
-CMD ["serve", "-s", "/app/apps/widget/dist", "-l", "8080", "--cors"]
+CMD ["serve", "-s", "/app/apps/widget/dist", "-l", "8080", "--cors", "--single"]
