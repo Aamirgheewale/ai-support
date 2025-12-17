@@ -525,20 +525,22 @@ export default function EmbedWidget({
 
   return (
     <div style={{ 
-      width: isMobile ? '100vw' : 380, 
-      height: isMobile ? '100vh' : 600,
-      maxWidth: isMobile ? '100vw' : 380,
-      maxHeight: isMobile ? '100vh' : 600,
+      // Desktop: compact standard widget size (similar to Tawk.to)
+      // Mobile: take full width/height of the fixed container
+      width: isMobile ? '100%' : 360,
+      height: isMobile ? '100%' : 'auto',
+      maxWidth: isMobile ? '100%' : 360,
+      maxHeight: isMobile ? '100%' : 580,
       border: isMobile ? 'none' : '1px solid rgba(255, 255, 255, 0.2)', 
       borderRadius: isMobile ? 0 : 12, 
       overflow: 'hidden',
       display: 'flex',
       flexDirection: 'column',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-      boxShadow: isMobile ? 'none' : '0 4px 12px rgba(0,0,0,0.1)',
+      boxShadow: isMobile ? 'none' : '0 4px 12px rgba(0,0,0,0.15)',
       background: 'transparent',
       pointerEvents: 'auto',
-      position: 'relative', // Always relative - parent container handles positioning
+      position: 'relative', // Parent controls bottom/right fixed positioning
       transform: 'none',
       zIndex: 'auto'
     }}>

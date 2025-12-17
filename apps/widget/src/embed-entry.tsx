@@ -25,8 +25,8 @@ function ChatWidgetWithButton({ initialSessionId }: { initialSessionId?: string 
           onClick={() => setChatWidgetOpen(true)}
           style={{
             position: 'fixed',
-            bottom: isMobile ? '20px' : '30px',
-            right: isMobile ? '20px' : '30px',
+            bottom: isMobile ? '20px' : '20px',
+            right: isMobile ? '20px' : '20px',
             width: isMobile ? '60px' : '70px',
             height: isMobile ? '60px' : '70px',
             borderRadius: '50%',
@@ -61,15 +61,20 @@ function ChatWidgetWithButton({ initialSessionId }: { initialSessionId?: string 
       {chatWidgetOpen && (
         <div style={{
           position: 'fixed',
-          bottom: isMobile ? 'auto' : '30px',
-          right: isMobile ? 'auto' : '30px',
-          left: isMobile ? '50%' : 'auto',
-          top: isMobile ? '50%' : 'auto',
-          transform: isMobile ? 'translate(-50%, -50%)' : 'none',
-          width: isMobile ? 'auto' : 'auto',
-          height: isMobile ? 'auto' : 'auto',
+          // Desktop: bottom-right floating widget (standard size)
+          // Mobile: full-width docked to bottom
+          bottom: isMobile ? 0 : 20,
+          right: isMobile ? 0 : 20,
+          left: isMobile ? 0 : 'auto',
+          top: isMobile ? 'auto' : 'auto',
+          transform: 'none',
+          width: isMobile ? '100%' : 360,
+          maxHeight: isMobile ? '100vh' : 520,
           zIndex: 10001,
-          animation: 'slideUp 0.3s ease-out'
+          animation: 'slideUp 0.3s ease-out',
+          display: 'flex',
+          alignItems: 'flex-end',
+          justifyContent: 'flex-end'
         }}>
           {/* Chat widget */}
           <EmbedWidget 

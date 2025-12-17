@@ -320,8 +320,8 @@ export default function Layout({ children }: LayoutProps) {
           }}
           style={{
             position: 'fixed',
-            bottom: isMobile ? '20px' : '30px',
-            right: isMobile ? '20px' : '30px',
+            bottom: isMobile ? '20px' : '20px',
+            right: isMobile ? '20px' : '20px',
             width: isMobile ? '60px' : '70px',
             height: isMobile ? '60px' : '70px',
             borderRadius: '50%',
@@ -363,18 +363,20 @@ export default function Layout({ children }: LayoutProps) {
           data-chat-widget="true"
           style={{
             position: 'fixed',
-            top: isMobile ? 0 : 'auto',
+            // Desktop: standard compact widget bottom-right
+            // Mobile: full-width at bottom
+            top: isMobile ? 'auto' : 'auto',
             left: isMobile ? 0 : 'auto',
-            right: isMobile ? 0 : '30px',
-            bottom: isMobile ? 0 : '30px',
-            width: isMobile ? '100vw' : 'auto',
-            height: isMobile ? '100vh' : 'auto',
+            right: isMobile ? 0 : 20,
+            bottom: isMobile ? 0 : 20,
+            width: isMobile ? '100%' : 360,
+            height: isMobile ? '100vh' : 'auto', // inner widget capped to 520px
             zIndex: 10001,
             animation: 'slideUp 0.3s ease-out',
             pointerEvents: 'auto',
             display: 'flex',
-            alignItems: isMobile ? 'stretch' : 'flex-end',
-            justifyContent: isMobile ? 'stretch' : 'flex-end'
+            alignItems: 'flex-end',
+            justifyContent: 'flex-end'
           }}
         >
           <EmbedWidget onClose={() => setChatWidgetOpen(false)} />
