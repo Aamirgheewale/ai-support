@@ -54,7 +54,8 @@ const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:5174',
   // Railway frontend admin (production)
-  'https://outstanding-vitality-production-c38b.up.railway.app'
+  'https://outstanding-vitality-production-c38b.up.railway.app',
+  'https://charming-nourishment-production.up.railway.app'
 ];
 
 app.use(cors({
