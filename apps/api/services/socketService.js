@@ -568,8 +568,31 @@ function initializeSocket(dependencies) {
             text: trimmedText,
             ts: Date.now()
           });
-          console.log(`⚠️  Conversation concluded for [${sessionId}], ignoring user message`);
-          return;
+          
+          // Un-conclude the conversation to allow new messages to be processed
+          if (databases && databaseId && sessionsCollectionId) {
+            try {
+              const currentSession = await chatService.getSessionDoc(sessionId);
+              if (currentSession) {
+                const userMeta = typeof currentSession.userMeta === 'string' 
+                  ? JSON.parse(currentSession.userMeta || '{}') 
+                  : (currentSession.userMeta || {});
+                userMeta.conversationConcluded = false;
+                await databases.updateDocument(
+                  databaseId,
+                  sessionsCollectionId,
+                  currentSession.$id,
+                  { userMeta: JSON.stringify(userMeta) }
+                );
+                console.log(`✅ Conversation un-concluded for [${sessionId}], processing new message`);
+              }
+            } catch (err) {
+              console.warn('Failed to un-conclude conversation:', err?.message || err);
+            }
+          }
+          
+          // Continue processing the message (don't return early)
+          console.log(`🔄 Processing message after un-concluding conversation [${sessionId}]`);
         }
         
         // Handle conclusion option selections

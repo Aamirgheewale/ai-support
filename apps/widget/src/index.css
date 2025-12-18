@@ -164,3 +164,14 @@ button:focus-visible {
     box-shadow: 0 0 8px 3px rgba(76, 175, 80, 0.5);
   }
 }
+
+@keyframes slideDown {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+}

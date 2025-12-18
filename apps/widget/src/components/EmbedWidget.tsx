@@ -525,73 +525,29 @@ export default function EmbedWidget({
 
   return (
     <div style={{ 
-      // Desktop: compact standard widget size (similar to Tawk.to)
-      // Mobile: take full width/height of the fixed container
-      width: isMobile ? '100%' : 360,
-      height: isMobile ? '100%' : 'auto',
-      maxWidth: isMobile ? '100%' : 360,
-      maxHeight: isMobile ? '100%' : 580,
-      border: isMobile ? 'none' : '1px solid rgba(255, 255, 255, 0.2)', 
-      borderRadius: isMobile ? 0 : 12, 
+      // Fill parent container completely
+      width: '100%',
+      height: '100%',
       overflow: 'hidden',
       display: 'flex',
       flexDirection: 'column',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-      boxShadow: isMobile ? 'none' : '0 4px 12px rgba(0,0,0,0.15)',
       background: 'transparent',
       pointerEvents: 'auto',
-      position: 'relative', // Parent controls bottom/right fixed positioning
-      transform: 'none',
-      zIndex: 'auto'
+      position: 'relative'
     }}>
       {/* Header */}
       <div style={{ 
         background: 'linear-gradient(to bottom right, #000000, #ffffff)',
         color: 'white',
         padding: isMobile ? '12px 16px' : '16px 20px',
-        paddingRight: isMobile ? '44px' : '48px', // Always add padding for close button
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
         minHeight: isMobile ? '56px' : 'auto',
-        position: 'relative'
+        position: 'relative',
+        flexShrink: 0
       }}>
-        {/* Close button - always visible at top right of widget */}
-        <button
-          onClick={onClose || (() => console.log('No close handler provided'))}
-          style={{
-            position: 'absolute',
-            top: isMobile ? '8px' : '12px',
-            right: isMobile ? '8px' : '12px',
-            width: isMobile ? '32px' : '36px',
-            height: isMobile ? '32px' : '36px',
-            borderRadius: '50%',
-            background: 'rgba(255, 255, 255, 0.2)',
-            border: '1px solid rgba(255, 255, 255, 0.3)',
-            color: '#ffffff',
-            fontSize: isMobile ? '20px' : '24px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)',
-            zIndex: 10,
-            transition: 'all 0.2s ease',
-            lineHeight: 1,
-            padding: 0
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.3)';
-            e.currentTarget.style.transform = 'scale(1.1)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)';
-            e.currentTarget.style.transform = 'scale(1)';
-          }}
-          aria-label="Close chat"
-        >
-          ×
-        </button>
         <div>
           <div style={{ fontWeight: 600, fontSize: isMobile ? '14px' : '16px' }}>AI Customer Support</div>
           <div style={{ fontSize: isMobile ? '11px' : '12px', opacity: 0.9, marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -640,8 +596,10 @@ export default function EmbedWidget({
 
       {/* Messages Area */}
       <div style={{ 
-        flex: 1,
-        overflow: 'auto', 
+        flex: '1 1 auto',
+        flexGrow: 1,
+        overflowY: 'auto',
+        overflowX: 'hidden',
         padding: isMobile ? '12px' : '16px',
         background: 'rgba(255, 255, 255, 0.1)',
         backdropFilter: 'blur(10px)',
@@ -651,7 +609,7 @@ export default function EmbedWidget({
         gap: isMobile ? '10px' : '12px',
         position: 'relative',
         isolation: 'isolate',
-        minHeight: 0 // Allow flex shrinking on mobile
+        minHeight: 0 // Allow flex shrinking
       }}>
         {connectionError && (
           <div style={{ 

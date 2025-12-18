@@ -10,6 +10,7 @@ export default function Layout({ children }: LayoutProps) {
   const [servicesOpen, setServicesOpen] = useState(false);
   const servicesRef = useRef<HTMLDivElement>(null);
   const [chatWidgetOpen, setChatWidgetOpen] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth <= 640);
   const location = useLocation();
 
@@ -51,6 +52,15 @@ export default function Layout({ children }: LayoutProps) {
   useEffect(() => {
     setServicesOpen(false);
   }, [location.pathname]);
+
+  // Handle closing the chat widget with animation
+  const handleCloseWidget = () => {
+    setIsClosing(true);
+    setTimeout(() => {
+      setChatWidgetOpen(false);
+      setIsClosing(false);
+    }, 300); // Match animation duration
+  };
 
   return (
     <div style={{ 
@@ -309,77 +319,89 @@ export default function Layout({ children }: LayoutProps) {
       {/* Page Content */}
       {children}
 
-      {/* Floating Chat Button - Circular */}
-      {!chatWidgetOpen && (
-        <button
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            console.log('💬 Chat button clicked, opening widget...');
+      {/* Launcher Button - Always Visible */}
+      <button
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (chatWidgetOpen) {
+            handleCloseWidget();
+          } else {
             setChatWidgetOpen(true);
-          }}
-          style={{
-            position: 'fixed',
-            bottom: isMobile ? '20px' : '20px',
-            right: isMobile ? '20px' : '20px',
-            width: isMobile ? '60px' : '70px',
-            height: isMobile ? '60px' : '70px',
-            borderRadius: '50%',
-            background: 'linear-gradient(135deg, #000000 0%, #ffffff 100%)',
-            border: '2px solid rgba(255, 255, 255, 0.3)',
-            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3), 0 0 20px rgba(255, 255, 255, 0.1)',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 10000,
-            transition: 'all 0.3s ease',
-            color: '#ffffff',
-            fontSize: isMobile ? '20px' : '24px',
-            fontWeight: 'bold',
-            pointerEvents: 'auto'
-          }}
-          onMouseEnter={(e) => {
-            if (!isMobile) {
-              e.currentTarget.style.transform = 'scale(1.1)';
-              e.currentTarget.style.boxShadow = '0 6px 25px rgba(0, 0, 0, 0.4), 0 0 30px rgba(255, 255, 255, 0.2)';
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (!isMobile) {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.3), 0 0 20px rgba(255, 255, 255, 0.1)';
-            }
-          }}
-          aria-label="Open chat"
-        >
-          💬
-        </button>
-      )}
+          }
+        }}
+        style={{
+          position: 'fixed',
+          bottom: isMobile ? '10px' : '20px',
+          right: isMobile ? '10px' : '20px',
+          width: '60px',
+          height: '60px',
+          borderRadius: '50%',
+          background: 'linear-gradient(135deg, #000000 0%, #ffffff 100%)',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 99999,
+          transition: 'all 0.3s ease',
+          color: '#ffffff',
+          fontSize: '24px',
+          fontWeight: 'bold',
+          pointerEvents: 'auto',
+          border: 'none',
+          padding: 0
+        }}
+        onMouseEnter={(e) => {
+          if (!isMobile) {
+            e.currentTarget.style.transform = 'scale(1.1)';
+            e.currentTarget.style.boxShadow = '0 6px 16px rgba(0, 0, 0, 0.4)';
+          }
+        }}
+        onMouseLeave={(e) => {
+          if (!isMobile) {
+            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+          }
+        }}
+        aria-label={chatWidgetOpen ? "Close chat" : "Open chat"}
+      >
+        {chatWidgetOpen ? (
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        ) : (
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M21 15C21 15.5304 20.7893 16.0391 20.4142 16.4142C20.0391 16.7893 19.5304 17 19 17H7L3 21V5C3 4.46957 3.21071 3.96086 3.58579 3.58579C3.96086 3.21071 4.46957 3 5 3H19C19.5304 3 20.0391 3.21071 20.4142 3.58579C20.7893 3.96086 21 4.46957 21 5V15Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        )}
+      </button>
 
       {/* Chat Widget Popup */}
-      {chatWidgetOpen && (
+      {(chatWidgetOpen || isClosing) && (
         <div 
           data-chat-widget="true"
           style={{
             position: 'fixed',
-            // Desktop: standard compact widget bottom-right
-            // Mobile: full-width at bottom
-            top: isMobile ? 'auto' : 'auto',
+            // Desktop: sits above launcher button
+            // Mobile: full screen
+            top: isMobile ? 0 : 'auto',
             left: isMobile ? 0 : 'auto',
-            right: isMobile ? 0 : 20,
-            bottom: isMobile ? 0 : 20,
-            width: isMobile ? '100%' : 360,
-            height: isMobile ? '100vh' : 'auto', // inner widget capped to 520px
-            zIndex: 10001,
-            animation: 'slideUp 0.3s ease-out',
+            right: isMobile ? 0 : '20px',
+            bottom: isMobile ? 0 : '90px',
+            width: isMobile ? '100%' : '360px',
+            height: isMobile ? '100%' : '600px',
+            maxHeight: isMobile ? '100%' : '80vh',
+            zIndex: 99998,
+            animation: isClosing ? 'slideDown 0.3s ease-in forwards' : 'slideUp 0.3s ease-out',
             pointerEvents: 'auto',
-            display: 'flex',
-            alignItems: 'flex-end',
-            justifyContent: 'flex-end'
+            background: '#000000',
+            borderRadius: isMobile ? 0 : '16px',
+            boxShadow: '0 12px 24px rgba(0,0,0,0.5)',
+            overflow: 'hidden'
           }}
         >
-          <EmbedWidget onClose={() => setChatWidgetOpen(false)} />
+          <EmbedWidget onClose={handleCloseWidget} />
         </div>
       )}
 
@@ -393,6 +415,16 @@ export default function Layout({ children }: LayoutProps) {
           to {
             opacity: 1;
             transform: translateY(0);
+          }
+        }
+        @keyframes slideDown {
+          from {
+            opacity: 1;
+            transform: translateY(0);
+          }
+          to {
+            opacity: 0;
+            transform: translateY(20px);
           }
         }
       `}</style>
