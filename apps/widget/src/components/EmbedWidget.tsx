@@ -4,6 +4,16 @@ import { io, Socket } from 'socket.io-client';
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_API_BASE || 'http://localhost:4000';
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
 
+const FAQ_OPTIONS = [
+  { id: 'register', label: 'How to register?', answer: 'To register, visit the VTU Internyet portal home page and click "Student Registration". Ensure you have your USN handy.' },
+  { id: 'domain', label: 'Domain specific internship?', answer: 'Yes, you can filter internships by domain (e.g., IoT, AI/ML, Web Dev) on the dashboard.' },
+  { id: 'stipend', label: 'Internship with fees or stipend?', answer: 'The portal lists both paid (stipend) and paid-by-student (fees) internships. Check the "Type" tag on each listing.' },
+  { id: 'not_listed', label: 'Organization not listed?', answer: 'The College Internship Coordinator must request the University to add the organization to the platform for approval.' },
+  { id: 'types', label: 'What types of internships allowed?', answer: 'Allowed types: \n• BINT883A: Industry Internship \n• BINT883B: Research Internship \n• BINT883C: Skill Enhancement \n• BINT883D: Post Placement \n• BINT883E: Online Internship' },
+  { id: 'complete', label: 'How to complete successfully?', answer: 'Upload your weekly reports and get them approved by your industry mentor and college guide.' },
+  { id: 'other', label: 'Ask something else?', action: 'switch_to_chat' }
+];
+
 export default function EmbedWidget({ 
   initialSessionId,
   onAgentInitiatedChat,
@@ -43,6 +53,7 @@ export default function EmbedWidget({
   const [isButtonBlinking, setIsButtonBlinking] = useState(false);
   const [conversationConcluded, setConversationConcluded] = useState(false);
   const [streamingText, setStreamingText] = useState<string | null>(null);
+  const [isChatMode, setIsChatMode] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<number | null>(null);
   const messagesLoadedRef = useRef(false); // Track if messages have been loaded
@@ -77,6 +88,10 @@ export default function EmbedWidget({
         const loadedMessages = JSON.parse(storedMessages);
         setMessages(loadedMessages);
         messagesLoadedRef.current = true;
+        // Switch to chat mode only if sessionId exists (real session, not just FAQ Q&A)
+        if (loadedMessages.length > 0 && sid) {
+          setIsChatMode(true);
+        }
         console.log(`📥 Loaded ${loadedMessages.length} message(s) from localStorage for session ${sid}`);
       }
     } catch (err) {
@@ -321,6 +336,15 @@ export default function EmbedWidget({
         messagesLoadedRef.current = false; // Reset flag to allow loading messages
         socket.emit('join_session', { sessionId: newSessionId });
         console.log(`📱 Widget socket joined session room on start: ${newSessionId}`);
+        
+        // Check if there's a pending message to send
+        const pendingMessage = localStorage.getItem('ai-support-pending-message');
+        if (pendingMessage && socket) {
+          localStorage.removeItem('ai-support-pending-message');
+          setMessages(prev => [...prev, { sender: 'user', text: pendingMessage, ts: Date.now() }]);
+          socket.emit('user_message', { sessionId: newSessionId, text: pendingMessage });
+          startTypingIndicator();
+        }
       }
     });
     socket.on('bot_stream', (m: any) => {
@@ -339,6 +363,9 @@ export default function EmbedWidget({
 
       // Clear any in-progress streaming text immediately when final message arrives
       setStreamingText(null);
+      
+      // Switch to chat mode when receiving real bot messages from socket
+      setIsChatMode(true);
 
       setMessages(prev => {
         // Check for duplicates more thoroughly - check both exact text match and recent messages
@@ -463,6 +490,7 @@ export default function EmbedWidget({
     localStorage.removeItem(`ai-support-concluded-${sid}`); // Clear concluded state
     setStreamingText(null);
     setConversationConcluded(false);
+    // Don't reset isChatMode here - let it stay in chat mode if user initiated it
     messagesLoadedRef.current = false; // Reset loaded flag for new session
     socket.emit('start_session', { sessionId: sid, userMeta: {} });
     // Trigger blinking animation
@@ -494,9 +522,54 @@ export default function EmbedWidget({
     }
   }
 
+  function handleOptionClick(option: typeof FAQ_OPTIONS[0]) {
+    if (option.action === 'switch_to_chat') {
+      // Switch to chat mode and start session
+      setIsChatMode(true);
+      setMessages(prev => [...prev, { 
+        sender: 'system', 
+        text: "Go ahead, I'm listening. You can also ask for an agent.", 
+        ts: Date.now() 
+      }]);
+      // Start session if it doesn't exist
+      if (!sessionId) {
+        start();
+      }
+    } else {
+      // Static question - add Q&A to messages locally without starting session
+      // Keep menu visible (isChatMode stays false)
+      setMessages(prev => [
+        ...prev,
+        { sender: 'user', text: option.label, ts: Date.now() },
+        { sender: 'bot', text: option.answer, ts: Date.now() }
+      ]);
+    }
+  }
+
   function send() {
     const socket = socketRef.current;
-    if (!socket || !text.trim() || !sessionId) return;
+    if (!socket || !text.trim()) return;
+    
+    // Switch to chat mode when user sends a message
+    if (!isChatMode) {
+      setIsChatMode(true);
+    }
+    
+    // Start session if it doesn't exist
+    if (!sessionId) {
+      const messageToSend = text.trim();
+      setText(''); // Clear input immediately
+      start();
+      // Store message to send after session starts
+      // The session_started event handler will send it
+      const pendingMessage = messageToSend;
+      // Use a ref or state to store pending message, or use the session_started event
+      // For now, we'll queue it in localStorage temporarily
+      localStorage.setItem('ai-support-pending-message', pendingMessage);
+      return;
+    }
+    
+    // Normal flow: session exists
     setMessages(prev => [...prev, { sender: 'user', text: text.trim(), ts: Date.now() }]);
     socket.emit('user_message', { sessionId, text: text.trim() });
     setText('');
@@ -572,7 +645,8 @@ export default function EmbedWidget({
             )}
           </div>
         </div>
-        {(!sessionId || conversationConcluded) && (
+        {/* Only show "Start Chat" button in chat mode when session doesn't exist */}
+        {isChatMode && (!sessionId || conversationConcluded) && (
           <button 
             onClick={start}
             className={isButtonBlinking ? 'start-button-blink' : ''}
@@ -628,16 +702,7 @@ export default function EmbedWidget({
             </div>
           </div>
         )}
-        {messages.length === 0 && sessionId && !connectionError && (
-          <div style={{ 
-            textAlign: 'center', 
-            color: '#ffffff', 
-            fontSize: '14px',
-            padding: '20px'
-          }}>
-            Type your message below to get started...
-          </div>
-        )}
+        {/* Show messages in both modes (for FAQ Q&A) */}
         {messages.map((m, i) => (
           <div 
             key={i} 
@@ -717,7 +782,7 @@ export default function EmbedWidget({
             )}
           </div>
         ))}
-        {streamingText && !messages.some(msg => msg.sender === 'bot' && msg.text === streamingText) && (
+        {isChatMode && streamingText && !messages.some(msg => msg.sender === 'bot' && msg.text === streamingText) && (
           <div 
             style={{ 
               display: 'flex',
@@ -757,20 +822,80 @@ export default function EmbedWidget({
             </div>
           </div>
         )}
+        
+        {/* Show FAQ menu when not in chat mode and no session exists */}
+        {!isChatMode && !sessionId && (
+          <>
+            <div style={{ 
+              textAlign: 'left', 
+              color: '#ffffff', 
+              fontSize: isMobile ? '14px' : '16px',
+              padding: isMobile ? '16px' : '20px',
+              paddingTop: messages.length > 0 ? '20px' : (isMobile ? '16px' : '20px'),
+              fontWeight: 500
+            }}>
+              {messages.length === 0 ? 'Hello! How Can i Help You:' : 'Select another topic:'}
+            </div>
+            {FAQ_OPTIONS.map((option) => (
+              <button
+                key={option.id}
+                onClick={() => handleOptionClick(option)}
+                style={{
+                  width: '100%',
+                  textAlign: 'left',
+                  padding: isMobile ? '12px' : '16px',
+                  marginBottom: isMobile ? '8px' : '10px',
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '8px',
+                  color: '#ffffff',
+                  fontSize: isMobile ? '13px' : '14px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  fontWeight: 400
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)';
+                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+                }}
+              >
+                {option.label}
+              </button>
+            ))}
+          </>
+        )}
+        
+        {/* Show empty state only in chat mode */}
+        {isChatMode && messages.length === 0 && sessionId && !connectionError && (
+          <div style={{ 
+            textAlign: 'center', 
+            color: '#ffffff', 
+            fontSize: '14px',
+            padding: '20px'
+          }}>
+            Type your message below to get started...
+          </div>
+        )}
+        
         <div ref={messagesEndRef} />
       </div>
 
       {/* Input Area */}
-      <div style={{ 
-        padding: isMobile ? '12px' : '16px',
-        background: 'rgba(255, 255, 255, 0.1)',
-        backdropFilter: 'blur(56px)',
-        WebkitBackdropFilter: 'blur(56px)',
-        borderTop: '1px solid rgba(255, 255, 255, 0.2)',
-        display: 'flex',
-        gap: isMobile ? '6px' : '8px',
-        flexShrink: 0 // Prevent input area from shrinking
-      }}>
+      {isChatMode && (
+        <div style={{ 
+          padding: isMobile ? '12px' : '16px',
+          background: 'rgba(255, 255, 255, 0.1)',
+          backdropFilter: 'blur(56px)',
+          WebkitBackdropFilter: 'blur(56px)',
+          borderTop: '1px solid rgba(255, 255, 255, 0.2)',
+          display: 'flex',
+          gap: isMobile ? '6px' : '8px',
+          flexShrink: 0 // Prevent input area from shrinking
+        }}>
         <input 
           value={text} 
           onChange={e => setText(e.target.value)}
@@ -816,7 +941,23 @@ export default function EmbedWidget({
         >
           Send
         </button>
-      </div>
+        </div>
+      )}
+      {!isChatMode && (
+        <div style={{ 
+          padding: isMobile ? '12px' : '16px',
+          background: 'rgba(255, 255, 255, 0.1)',
+          backdropFilter: 'blur(56px)',
+          WebkitBackdropFilter: 'blur(56px)',
+          borderTop: '1px solid rgba(255, 255, 255, 0.2)',
+          textAlign: 'center',
+          color: 'rgba(255, 255, 255, 0.7)',
+          fontSize: isMobile ? '12px' : '13px',
+          flexShrink: 0
+        }}>
+          Select an option above
+        </div>
+      )}
     </div>
   );
 }
