@@ -7,7 +7,7 @@
   'use strict';
 
   // Configuration
-  const WIDGET_URL = 'https://ai-support-production-4276.up.railway.app/';
+  const WIDGET_URL = 'https://charming-nourishment-production.up.railway.app/';
 
   // Prevent duplicate widget injection
   if (document.getElementById('ai-widget-iframe')) {
