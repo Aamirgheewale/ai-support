@@ -10,17 +10,17 @@ COPY . .
 # 3. Install Dependencies
 RUN pnpm install --no-frozen-lockfile
 
-# 4. Bake in Environment Variables (these must be set at build time for Vite)
+# 4. Bake in Environment Variables
 ARG VITE_API_BASE
 ARG VITE_SOCKET_URL
 ENV VITE_API_BASE=$VITE_API_BASE
 ENV VITE_SOCKET_URL=$VITE_SOCKET_URL
 
-# 5. Build Widget (THE FIX: Change directory explicitly)
-# We use 'cd' instead of '--filter' to guarantee it finds the project
+# 5. Build Widget
 RUN cd apps/widget && pnpm run build
 
 # --- DEBUG: Verify Build ---
+# Check for index.html (Main App)
 RUN if [ ! -f /app/apps/widget/dist/index.html ]; then \
         echo "❌ ERROR: index.html NOT found in /app/apps/widget/dist!"; \
         ls -la /app/apps/widget; \
@@ -29,7 +29,16 @@ RUN if [ ! -f /app/apps/widget/dist/index.html ]; then \
         echo "✅ SUCCESS: Widget index.html found!"; \
     fi
 
-# 6. Set working directory to widget folder and start Express server
+# 👇 NEW: Check for embed.js (The Script) 👇
+RUN if [ ! -f /app/apps/widget/dist/embed.js ]; then \
+        echo "❌ ERROR: embed.js NOT found in dist folder! Make sure it is in the 'public' folder locally."; \
+        ls -la /app/apps/widget/dist; \
+        exit 1; \
+    else \
+        echo "✅ SUCCESS: embed.js found!"; \
+    fi
+
+# 6. Start Express server
 WORKDIR /app/apps/widget
 ENV PORT=8080
 CMD ["node", "server.js"]

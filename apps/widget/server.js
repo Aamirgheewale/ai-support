@@ -16,10 +16,32 @@ app.use((req, res, next) => {
   next();
 });
 
-// 2. Serve Static Files (from 'dist' folder)
-app.use(express.static(path.join(__dirname, 'dist')));
+// 2. Explicitly handle embed.js route FIRST (ensures it's always served correctly with CORS)
+app.get('/embed.js', (req, res) => {
+  const embedPath = path.join(__dirname, 'dist', 'embed.js');
+  res.setHeader('Content-Type', 'application/javascript');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.sendFile(embedPath, (err) => {
+    if (err) {
+      console.error('Error serving embed.js:', err);
+      res.status(404).send('// embed.js not found. Make sure you have built the project.');
+    }
+  });
+});
 
-// 3. Handle SPA Fallback (return index.html for unknown routes)
+// 3. Serve Static Files (from 'dist' folder) - with CORS headers for all files
+app.use(express.static(path.join(__dirname, 'dist'), {
+  setHeaders: (res, filePath) => {
+    // Ensure all JavaScript files are served with proper CORS headers
+    if (filePath.endsWith('.js')) {
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+    }
+  }
+}));
+
+// 4. Handle SPA Fallback (return index.html for unknown routes)
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Widget Embed</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #333;
+        }
+        .info {
+            background: #f0f0f0;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Widget Embed Test Page</h1>
+    <div class="info">
+        <p><strong>Instructions:</strong></p>
+        <ol>
+            <li>Make sure your widget server is running on port 3000 (or your configured PORT)</li>
+            <li>This page should load the embed.js script from your local server</li>
+            <li>The widget should appear in the bottom-right corner</li>
+        </ol>
+    </div>
+    
+    <p>If you see the widget in the bottom-right corner, the embed is working! 🎉</p>
+    
+    <!-- Load embed.js from local server -->
+    <script src="http://localhost:3000/embed.js"></script>
+</body>
+</html>
+
