@@ -54,6 +54,8 @@
       // Resize iframe back to small bubble size
       iframe.style.width = '150px';
       iframe.style.height = '150px';
+      iframe.style.border = '5px';
+      iframe.style.borderColor = 'red';
     }
   });
 
