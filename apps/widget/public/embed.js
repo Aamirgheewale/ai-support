@@ -18,9 +18,14 @@
   // Create iframe element
   const iframe = document.createElement('iframe');
 
+  // Get host page data to pass to widget
+  const hostTitle = encodeURIComponent(document.title);
+  const hostUrl = encodeURIComponent(window.location.href);
+  const widgetUrlWithParams = `${WIDGET_URL}?hostTitle=${hostTitle}&hostUrl=${hostUrl}`;
+
   // Set iframe attributes
   iframe.id = 'ai-widget-iframe';
-  iframe.src = WIDGET_URL;
+  iframe.src = widgetUrlWithParams;
   iframe.setAttribute('allow', 'microphone; camera');
   iframe.setAttribute('frameborder', '0');
 

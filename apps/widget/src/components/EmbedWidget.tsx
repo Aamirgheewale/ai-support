@@ -59,6 +59,27 @@ export default function EmbedWidget({
   const messagesLoadedRef = useRef(false); // Track if messages have been loaded
   const socketRef = useRef<Socket | null>(null); // Store socket instance
 
+  // Extract host page data from query parameters (passed by embed.js)
+  const getHostPageData = () => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const hostTitle = params.get('hostTitle');
+      const hostUrl = params.get('hostUrl');
+      return {
+        title: hostTitle ? decodeURIComponent(hostTitle) : document.title,
+        url: hostUrl ? decodeURIComponent(hostUrl) : window.location.href,
+        referrer: document.referrer
+      };
+    } catch (err) {
+      console.warn('Failed to parse query parameters, using fallback:', err);
+      return {
+        title: document.title,
+        url: window.location.href,
+        referrer: document.referrer
+      };
+    }
+  };
+
   // Apply theme from CSS variables
   function applyTheme(themeVars: Record<string, string>) {
     const root = document.documentElement;
@@ -139,12 +160,13 @@ export default function EmbedWidget({
     // Helper function to emit visitor_join
     const emitVisitorJoin = () => {
       if (socket && socket.connected) {
+        const hostData = getHostPageData();
         socket.emit('visitor_join', {
-          url: window.location.href,
-          title: document.title,
-          referrer: document.referrer
+          url: hostData.url,
+          title: hostData.title,
+          referrer: hostData.referrer
         });
-        console.log('👤 Visitor join event emitted');
+        console.log('👤 Visitor join event emitted:', { title: hostData.title, url: hostData.url });
       } else {
         console.warn('⚠️  Cannot emit visitor_join: socket not connected');
       }
@@ -492,7 +514,16 @@ export default function EmbedWidget({
     setConversationConcluded(false);
     // Don't reset isChatMode here - let it stay in chat mode if user initiated it
     messagesLoadedRef.current = false; // Reset loaded flag for new session
-    socket.emit('start_session', { sessionId: sid, userMeta: {} });
+    
+    // Include host page data in userMeta
+    const hostData = getHostPageData();
+    const userMeta = {
+      title: hostData.title,
+      url: hostData.url,
+      referrer: hostData.referrer
+    };
+    
+    socket.emit('start_session', { sessionId: sid, userMeta });
     // Trigger blinking animation
     setIsButtonBlinking(true);
     setTimeout(() => setIsButtonBlinking(false), 2000); // Stop after 2 seconds
