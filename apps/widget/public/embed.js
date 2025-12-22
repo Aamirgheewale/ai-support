@@ -53,8 +53,8 @@
       iframe.style.border = 'none';
     } else if (event.data === 'chat-closed') {
       // Resize iframe back to small bubble size
-      iframe.style.width = '150px';
-      iframe.style.height = '150px';
+      iframe.style.width = '100px';
+      iframe.style.height = '100px';
       iframe.style.border = '2px solid red';
     }
   });
