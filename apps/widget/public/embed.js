@@ -35,11 +35,11 @@
   iframe.style.right = '20px';
   iframe.style.width = '90px';
   iframe.style.height = '90px';
-  iframe.style.border = 'none';
+  iframe.style.border = '2px solid red';
   iframe.style.zIndex = '999999';
   iframe.style.boxShadow = 'none';
   iframe.style.background = 'transparent';
-  iframe.style.transition = 'width 0.3s ease, height 0.3s ease';
+  iframe.style.transition = 'width 0.3s ease, height 0.3s ease, border 0.3s ease';
 
   // Listen for messages from the iframe to resize it
   window.addEventListener('message', function(event) {
@@ -50,12 +50,12 @@
       // Resize iframe to full chat widget size
       iframe.style.width = '400px';
       iframe.style.height = '680px';
+      iframe.style.border = 'none';
     } else if (event.data === 'chat-closed') {
       // Resize iframe back to small bubble size
       iframe.style.width = '150px';
       iframe.style.height = '150px';
-      iframe.style.border = '5px';
-      iframe.style.borderColor = 'red';
+      iframe.style.border = '2px solid red';
     }
   });
 
