@@ -538,11 +538,13 @@ export default function EmbedWidget({
     } else {
       // Static question - add Q&A to messages locally without starting session
       // Keep menu visible (isChatMode stays false)
-      setMessages(prev => [
-        ...prev,
-        { sender: 'user', text: option.label, ts: Date.now() },
-        { sender: 'bot', text: option.answer, ts: Date.now() }
-      ]);
+      if (option.answer) {
+        setMessages(prev => [
+          ...prev,
+          { sender: 'user', text: option.label, ts: Date.now() },
+          { sender: 'bot', text: option.answer, ts: Date.now() }
+        ]);
+      }
     }
   }
 
@@ -597,33 +599,47 @@ export default function EmbedWidget({
   }, []);
 
   return (
-    <div style={{ 
+    <div 
+      className="ai-chat-widget"
+      style={{ 
       // Fill parent container completely
       width: '100%',
       height: '100%',
+      maxWidth: '100%',
+      maxHeight: '100%',
       overflow: 'hidden',
+      overflowX: 'hidden',
       display: 'flex',
       flexDirection: 'column',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-      background: 'transparent',
+      background: '#000000',
       pointerEvents: 'auto',
-      position: 'relative'
+      position: 'relative',
+      boxSizing: 'border-box',
+      margin: 0,
+      padding: 0,
+      borderRadius: '15px'
     }}>
       {/* Header */}
       <div style={{ 
-        background: 'linear-gradient(to bottom right, #000000, #ffffff)',
+        background: '#000000',
         color: 'white',
-        padding: isMobile ? '12px 16px' : '16px 20px',
+        padding: '16px',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
-        minHeight: isMobile ? '56px' : 'auto',
+        minHeight: '60px',
         position: 'relative',
-        flexShrink: 0
+        flexShrink: 0,
+        width: '100%',
+        maxWidth: '100%',
+        boxSizing: 'border-box',
+        overflow: 'hidden',
+        margin: 0
       }}>
-        <div>
-          <div style={{ fontWeight: 600, fontSize: isMobile ? '14px' : '16px' }}>AI Customer Support</div>
-          <div style={{ fontSize: isMobile ? '11px' : '12px', opacity: 0.9, marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', marginRight: '8px' }}>
+          <div style={{ fontWeight: 600, fontSize: '16px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: '1.2' }}>AI Customer Support</div>
+          <div style={{ fontSize: '12px', opacity: 0.9, marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px', lineHeight: '1.2' }}>
             {isConnected ? (
               <>
                 <span className="online-indicator" style={{
@@ -645,46 +661,83 @@ export default function EmbedWidget({
             )}
           </div>
         </div>
-        {/* Only show "Start Chat" button in chat mode when session doesn't exist */}
-        {isChatMode && (!sessionId || conversationConcluded) && (
-          <button 
-            onClick={start}
-            className={isButtonBlinking ? 'start-button-blink' : ''}
-            style={{
-              background: 'linear-gradient(to top left, #000000, #ffffff)',
-              border: '1px solid rgba(255,255,255,0.2)',
-              color: 'white',
-              padding: isMobile ? '8px 14px' : '6px 16px',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontWeight: 500,
-              fontSize: isMobile ? '13px' : '14px',
-              transition: 'all 0.3s ease',
-              whiteSpace: 'nowrap'
-            }}
-          >
-            {conversationConcluded ? 'Start New Chat' : 'Start Chat'}
-          </button>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {/* Only show "Start Chat" button in chat mode when session doesn't exist */}
+          {isChatMode && (!sessionId || conversationConcluded) && (
+            <button 
+              onClick={start}
+              className={isButtonBlinking ? 'start-button-blink' : ''}
+              style={{
+                background: 'linear-gradient(to top left, #000000, #ffffff)',
+                border: '1px solid rgba(255,255,255,0.2)',
+                color: 'white',
+                padding: isMobile ? '8px 14px' : '6px 16px',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontWeight: 500,
+                fontSize: isMobile ? '13px' : '14px',
+                transition: 'all 0.3s ease',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              {conversationConcluded ? 'Start New Chat' : 'Start Chat'}
+            </button>
+          )}
+          {/* Close button */}
+          {onClose && (
+            <button
+              onClick={onClose}
+              style={{
+                background: 'rgba(255, 255, 255, 0.1)',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                color: 'white',
+                width: isMobile ? '28px' : '32px',
+                height: isMobile ? '28px' : '32px',
+                borderRadius: '50%',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: isMobile ? '16px' : '18px',
+                fontWeight: 'bold',
+                transition: 'all 0.2s ease',
+                padding: 0,
+                lineHeight: 1
+              }}
+              aria-label="Close chat"
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+              }}
+            >
+              ×
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Messages Area */}
-      <div style={{ 
-        flex: '1 1 auto',
-        flexGrow: 1,
-        overflowY: 'auto',
-        overflowX: 'hidden',
-        padding: isMobile ? '12px' : '16px',
-        background: 'rgba(255, 255, 255, 0.1)',
-        backdropFilter: 'blur(10px)',
-        WebkitBackdropFilter: 'blur(56px)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: isMobile ? '10px' : '12px',
-        position: 'relative',
-        isolation: 'isolate',
-        minHeight: 0 // Allow flex shrinking
-      }}>
+      <div 
+        className="chat-messages-container"
+        style={{ 
+          flex: 1,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          padding: '16px',
+          background: '#000000',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '12px',
+          position: 'relative',
+          isolation: 'isolate',
+          minHeight: 0,
+          width: '100%',
+          maxWidth: '100%',
+          boxSizing: 'border-box',
+          margin: 0
+        }}>
         {connectionError && (
           <div style={{ 
             textAlign: 'center', 
@@ -714,8 +767,8 @@ export default function EmbedWidget({
             }}
           >
             <div style={{
-              maxWidth: isMobile ? '85%' : '75%',
-              padding: isMobile ? '10px 12px' : '10px 14px',
+              maxWidth: '75%',
+              padding: '10px 14px',
               borderRadius: '12px',
               background: m.sender === 'user' 
                 ? '#ffffff'
@@ -723,12 +776,15 @@ export default function EmbedWidget({
                 ? '#000000'
                 : '#ffffff',
               color: m.sender === 'system' ? '#ffffff' : (m.sender === 'user' ? '#000000' : '#000000'),
-              fontSize: isMobile ? '13px' : '14px',
+              fontSize: '14px',
               lineHeight: '1.5',
               boxShadow: m.sender !== 'system' ? '0 1px 2px rgba(0,0,0,0.1)' : 'none',
               border: m.sender === 'system' ? '1px solid rgba(255, 255, 255, 0.2)' : 'none',
               wordWrap: 'break-word',
-              overflowWrap: 'break-word'
+              overflowWrap: 'break-word',
+              boxSizing: 'border-box',
+              overflow: 'hidden',
+              margin: 0
             }}>
               {m.text}
             </div>
@@ -737,8 +793,10 @@ export default function EmbedWidget({
                 marginTop: '8px',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: isMobile ? '6px' : '8px',
-                width: isMobile ? '85%' : '75%'
+                gap: '8px',
+                maxWidth: '75%',
+                boxSizing: 'border-box',
+                width: '100%'
               }}>
                 {m.options.map((option, optIdx) => (
                   <button
@@ -792,16 +850,19 @@ export default function EmbedWidget({
             }}
           >
             <div style={{
-              maxWidth: isMobile ? '85%' : '75%',
-              padding: isMobile ? '10px 12px' : '10px 14px',
+              maxWidth: '75%',
+              padding: '10px 14px',
               borderRadius: '12px',
               background: '#000000',
               color: '#ffffff',
-              fontSize: isMobile ? '13px' : '14px',
+              fontSize: '14px',
               lineHeight: '1.5',
               boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
               wordWrap: 'break-word',
-              overflowWrap: 'break-word'
+              overflowWrap: 'break-word',
+              boxSizing: 'border-box',
+              overflow: 'hidden',
+              margin: 0
             }}>
               {streamingText}
             </div>
@@ -829,10 +890,12 @@ export default function EmbedWidget({
             <div style={{ 
               textAlign: 'left', 
               color: '#ffffff', 
-              fontSize: isMobile ? '14px' : '16px',
-              padding: isMobile ? '16px' : '20px',
-              paddingTop: messages.length > 0 ? '20px' : (isMobile ? '16px' : '20px'),
-              fontWeight: 500
+              fontSize: '16px',
+              padding: messages.length > 0 ? '8px 0' : '12px 0',
+              fontWeight: 500,
+              margin: 0,
+              width: '100%',
+              boxSizing: 'border-box'
             }}>
               {messages.length === 0 ? 'Hello! How Can i Help You:' : 'Select another topic:'}
             </div>
@@ -842,17 +905,22 @@ export default function EmbedWidget({
                 onClick={() => handleOptionClick(option)}
                 style={{
                   width: '100%',
+                  maxWidth: '100%',
                   textAlign: 'left',
-                  padding: isMobile ? '12px' : '16px',
-                  marginBottom: isMobile ? '8px' : '10px',
+                  padding: '12px 16px',
+                  marginBottom: '8px',
                   background: 'rgba(255, 255, 255, 0.1)',
                   border: '1px solid rgba(255, 255, 255, 0.2)',
                   borderRadius: '8px',
                   color: '#ffffff',
-                  fontSize: isMobile ? '13px' : '14px',
+                  fontSize: '14px',
                   cursor: 'pointer',
                   transition: 'all 0.2s ease',
-                  fontWeight: 400
+                  fontWeight: 400,
+                  boxSizing: 'border-box',
+                  overflow: 'hidden',
+                  wordWrap: 'break-word',
+                  overflowWrap: 'break-word'
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)';
@@ -887,14 +955,17 @@ export default function EmbedWidget({
       {/* Input Area */}
       {isChatMode && (
         <div style={{ 
-          padding: isMobile ? '12px' : '16px',
-          background: 'rgba(255, 255, 255, 0.1)',
-          backdropFilter: 'blur(56px)',
-          WebkitBackdropFilter: 'blur(56px)',
+          padding: '16px',
+          background: '#000000',
           borderTop: '1px solid rgba(255, 255, 255, 0.2)',
           display: 'flex',
-          gap: isMobile ? '6px' : '8px',
-          flexShrink: 0 // Prevent input area from shrinking
+          gap: '8px',
+          flexShrink: 0,
+          width: '100%',
+          maxWidth: '100%',
+          boxSizing: 'border-box',
+          overflow: 'hidden',
+          margin: 0
         }}>
         <input 
           value={text} 
@@ -903,13 +974,17 @@ export default function EmbedWidget({
           disabled={!sessionId || conversationConcluded}
           style={{ 
             flex: 1, 
-            padding: isMobile ? '10px 12px' : '10px 14px',
+            padding: '10px 14px',
             border: '1px solid #e0e0e0',
             borderRadius: '8px',
-            fontSize: isMobile ? '13px' : '14px',
+            fontSize: '14px',
             outline: 'none',
             background: (sessionId && !conversationConcluded) ? 'white' : '#f5f5f5',
-            minWidth: 0 // Allow input to shrink properly
+            minWidth: 0,
+            maxWidth: '100%',
+            boxSizing: 'border-box',
+            width: '100%',
+            margin: 0
           }} 
           placeholder={
             conversationConcluded 
@@ -923,7 +998,7 @@ export default function EmbedWidget({
           onClick={send}
           disabled={!sessionId || !text.trim() || conversationConcluded}
           style={{
-            padding: isMobile ? '10px 16px' : '10px 20px',
+            padding: '10px 16px',
             background: (sessionId && text.trim() && !conversationConcluded)
               ? 'linear-gradient(135deg, #000000 0%, #ffffff 100%)'
               : '#ccc',
@@ -933,10 +1008,12 @@ export default function EmbedWidget({
             borderRadius: '8px',
             cursor: (sessionId && text.trim() && !conversationConcluded) ? 'pointer' : 'not-allowed',
             fontWeight: 500,
-            fontSize: isMobile ? '13px' : '14px',
+            fontSize: '14px',
             transition: 'all 0.2s ease',
             whiteSpace: 'nowrap',
-            flexShrink: 0
+            flexShrink: 0,
+            boxSizing: 'border-box',
+            margin: 0
           }}
         >
           Send
@@ -945,15 +1022,18 @@ export default function EmbedWidget({
       )}
       {!isChatMode && (
         <div style={{ 
-          padding: isMobile ? '12px' : '16px',
-          background: 'rgba(255, 255, 255, 0.1)',
-          backdropFilter: 'blur(56px)',
-          WebkitBackdropFilter: 'blur(56px)',
+          padding: '16px',
+          background: '#000000',
           borderTop: '1px solid rgba(255, 255, 255, 0.2)',
           textAlign: 'center',
           color: 'rgba(255, 255, 255, 0.7)',
-          fontSize: isMobile ? '12px' : '13px',
-          flexShrink: 0
+          fontSize: '13px',
+          flexShrink: 0,
+          width: '100%',
+          maxWidth: '100%',
+          boxSizing: 'border-box',
+          overflow: 'hidden',
+          margin: 0
         }}>
           Select an option above
         </div>

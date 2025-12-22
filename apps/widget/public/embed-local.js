@@ -1,13 +1,14 @@
 /**
- * AI Support Widget Embed Script
+ * AI Support Widget Embed Script - LOCAL VERSION
  * This script injects the chat widget into any website via an iframe.
+ * Use this for local testing only!
  */
 
 (function() {
   'use strict';
 
-  // Configuration
-  const WIDGET_URL = 'https://charming-nourishment-production.up.railway.app/';
+  // Configuration - LOCAL TESTING
+  const WIDGET_URL = 'http://localhost:5173/'; // Change to your local widget URL
 
   // Prevent duplicate widget injection
   if (document.getElementById('ai-widget-iframe')) {
@@ -39,7 +40,8 @@
   // Listen for messages from the iframe to resize it
   window.addEventListener('message', function(event) {
     // Security: Verify origin if needed (optional but recommended)
-    // if (event.origin !== 'https://charming-nourishment-production.up.railway.app') return;
+    // For local testing, we allow all origins
+    // if (event.origin !== 'http://localhost:5173') return;
     
     if (event.data === 'chat-opened') {
       // Resize iframe to full chat widget size

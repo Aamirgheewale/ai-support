@@ -5,7 +5,7 @@
 
   color-scheme: light dark;
   color: rgba(255, 255, 255, 0.87);
-  background-color: #000;
+  background-color: transparent !important;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -17,7 +17,16 @@
   width: 100%;
   min-height: 100vh;
   position: relative;
-  overflow: visible;
+  overflow: hidden;
+  background-color: transparent !important;
+  pointer-events: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Widget elements should have pointer-events enabled */
+#root > * {
+  pointer-events: auto;
 }
 
 a {
@@ -30,10 +39,11 @@ a:hover {
 }
 
 html {
-  background-color: #000;
+  background-color: transparent !important;
+  background-image: none !important;
   height: 100%;
   overflow-x: hidden;
-  overflow-y: auto;
+  overflow-y: hidden;
   -webkit-text-size-adjust: 100%;
   -ms-text-size-adjust: 100%;
 }
@@ -41,11 +51,12 @@ html {
 body {
   margin: 0;
   padding: 0;
-  min-width: 320px;
+  min-width: 0;
   min-height: 100vh;
-  background-color: #000;
+  background-color: transparent !important;
+  background-image: none !important;
   overflow-x: hidden;
-  overflow-y: auto;
+  overflow-y: hidden;
   position: relative;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -79,7 +90,7 @@ button:focus-visible {
 @media (prefers-color-scheme: light) {
   :root {
     color: #ffffff;
-    background-color: #000;
+    background-color: transparent !important;
   }
   a:hover {
     color: #747bff;
@@ -174,4 +185,22 @@ button:focus-visible {
     opacity: 0;
     transform: translateY(20px);
   }
+}
+
+/* Hide scrollbar for chat messages area */
+.chat-messages-container {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+
+.chat-messages-container::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+}
+
+/* Box-sizing reset for widget - ensures all elements respect container boundaries */
+.ai-chat-widget,
+.ai-chat-widget *,
+.ai-chat-widget *::before,
+.ai-chat-widget *::after {
+  box-sizing: border-box;
 }

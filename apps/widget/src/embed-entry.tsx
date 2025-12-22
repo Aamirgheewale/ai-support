@@ -17,18 +17,34 @@ function ChatWidgetWithButton({ initialSessionId }: { initialSessionId?: string 
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // Send postMessage when chat opens/closes
+  useEffect(() => {
+    if (window.parent && window.parent !== window) {
+      if (chatWidgetOpen) {
+        window.parent.postMessage('chat-opened', '*');
+      } else {
+        window.parent.postMessage('chat-closed', '*');
+      }
+    }
+  }, [chatWidgetOpen]);
+
   return (
-    <>
+    <div style={{
+      width: '100%',
+      height: '100%',
+      position: 'relative',
+      overflow: 'hidden'
+    }}>
       {/* Floating Chat Button - Circular */}
       {!chatWidgetOpen && (
         <button
           onClick={() => setChatWidgetOpen(true)}
           style={{
-            position: 'fixed',
-            bottom: isMobile ? '20px' : '20px',
-            right: isMobile ? '20px' : '20px',
-            width: isMobile ? '60px' : '70px',
-            height: isMobile ? '60px' : '70px',
+            position: 'absolute',
+            bottom: '0',
+            right: '0',
+            width: '70px',
+            height: '70px',
             borderRadius: '50%',
             background: 'linear-gradient(135deg, #000000 0%, #ffffff 100%)',
             border: '2px solid rgba(255, 255, 255, 0.3)',
@@ -40,8 +56,9 @@ function ChatWidgetWithButton({ initialSessionId }: { initialSessionId?: string 
             zIndex: 10000,
             transition: 'all 0.3s ease',
             color: '#ffffff',
-            fontSize: isMobile ? '20px' : '24px',
-            fontWeight: 'bold'
+            fontSize: '24px',
+            fontWeight: 'bold',
+            pointerEvents: 'auto'
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = 'scale(1.1)';
@@ -60,21 +77,19 @@ function ChatWidgetWithButton({ initialSessionId }: { initialSessionId?: string 
       {/* Chat Widget Popup */}
       {chatWidgetOpen && (
         <div style={{
-          position: 'fixed',
-          // Desktop: bottom-right floating widget (standard size)
-          // Mobile: full-width docked to bottom
-          bottom: isMobile ? 0 : 20,
-          right: isMobile ? 0 : 20,
-          left: isMobile ? 0 : 'auto',
-          top: isMobile ? 'auto' : 'auto',
-          transform: 'none',
-          width: isMobile ? '100%' : 360,
-          maxHeight: isMobile ? '100vh' : 520,
+          position: 'absolute',
+          bottom: 0,
+          right: 0,
+          left: 0,
+          top: 0,
+          width: '100%',
+          height: '100%',
           zIndex: 10001,
           animation: 'slideUp 0.3s ease-out',
           display: 'flex',
           alignItems: 'flex-end',
-          justifyContent: 'flex-end'
+          justifyContent: 'flex-end',
+          pointerEvents: 'auto'
         }}>
           {/* Chat widget */}
           <EmbedWidget 
@@ -98,7 +113,7 @@ function ChatWidgetWithButton({ initialSessionId }: { initialSessionId?: string 
           }
         }
       `}</style>
-    </>
+    </div>
   );
 }
 
