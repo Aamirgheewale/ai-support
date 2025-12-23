@@ -187,14 +187,29 @@ button:focus-visible {
   }
 }
 
-/* Hide scrollbar for chat messages area */
+/* Custom scrollbar styling for chat messages area - Dark Mode friendly */
 .chat-messages-container {
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE and Edge */
+  /* Firefox */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
 }
 
+/* Chrome, Safari, Opera */
 .chat-messages-container::-webkit-scrollbar {
-  display: none; /* Chrome, Safari, Opera */
+  width: 6px;
+}
+
+.chat-messages-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-messages-container::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 20px;
+}
+
+.chat-messages-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4);
 }
 
 /* Box-sizing reset for widget - ensures all elements respect container boundaries */

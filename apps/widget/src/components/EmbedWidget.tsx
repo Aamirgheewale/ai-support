@@ -566,6 +566,18 @@ export default function EmbedWidget({
       if (!sessionId) {
         start();
       }
+      
+      // Emit request_human event to trigger ring notification on admin dashboard
+      const socket = socketRef.current;
+      if (socket && socket.connected) {
+        socket.emit('request_human', {
+          sessionId: sessionId || `s_${Date.now()}`,
+          reason: 'user_clicked_ask_something_else'
+        });
+        console.log('📢 Emitted request_human event to trigger admin ring notification');
+      } else {
+        console.warn('⚠️  Cannot emit request_human: socket not connected');
+      }
     } else {
       // Static question - add Q&A to messages locally without starting session
       // Keep menu visible (isChatMode stays false)
@@ -827,7 +839,8 @@ export default function EmbedWidget({
                 gap: '8px',
                 maxWidth: '75%',
                 boxSizing: 'border-box',
-                width: '100%'
+                width: '100%',
+                flexShrink: 0
               }}>
                 {m.options.map((option, optIdx) => (
                   <button
@@ -835,7 +848,9 @@ export default function EmbedWidget({
                     onClick={() => handleConclusionOption(option.value, option.text)}
                     disabled={conversationConcluded}
                     style={{
-                      padding: isMobile ? '10px 14px' : '10px 16px',
+                      padding: '10px 12px',
+                      minHeight: '40px',
+                      height: 'auto',
                       background: conversationConcluded 
                         ? 'rgba(200, 200, 200, 0.1)' 
                         : 'rgba(102, 126, 234, 0.1)',
@@ -849,7 +864,12 @@ export default function EmbedWidget({
                       fontWeight: 500,
                       transition: 'all 0.2s',
                       textAlign: 'left',
-                      opacity: conversationConcluded ? 0.5 : 1
+                      opacity: conversationConcluded ? 0.5 : 1,
+                      flexShrink: 0,
+                      whiteSpace: 'normal',
+                      wordWrap: 'break-word',
+                      overflowWrap: 'break-word',
+                      boxSizing: 'border-box'
                     }}
                     onMouseEnter={(e) => {
                       if (!conversationConcluded) {
@@ -938,7 +958,9 @@ export default function EmbedWidget({
                   width: '100%',
                   maxWidth: '100%',
                   textAlign: 'left',
-                  padding: '12px 16px',
+                  padding: '10px 12px',
+                  minHeight: '40px',
+                  height: 'auto',
                   marginBottom: '8px',
                   background: 'rgba(255, 255, 255, 0.1)',
                   border: '1px solid rgba(255, 255, 255, 0.2)',
@@ -949,7 +971,8 @@ export default function EmbedWidget({
                   transition: 'all 0.2s ease',
                   fontWeight: 400,
                   boxSizing: 'border-box',
-                  overflow: 'hidden',
+                  flexShrink: 0,
+                  whiteSpace: 'normal',
                   wordWrap: 'break-word',
                   overflowWrap: 'break-word'
                 }}

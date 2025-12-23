@@ -56,7 +56,7 @@
 
     } else if (event.data === 'chat-closed') {
       // Resize iframe back to small bubble size
-      iframe.style.width = '95px';
+      iframe.style.width = '90px';
       iframe.style.height = '100px';
       iframe.style.border = '2px solid red';
 

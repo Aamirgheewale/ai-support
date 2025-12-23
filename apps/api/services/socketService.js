@@ -324,6 +324,23 @@ function initializeSocket(dependencies) {
       io.to(socket.id).emit('live_visitors_update', Array.from(liveVisitors.values()));
     });
     
+    // Handle request_human event from widget (when user clicks "Ask something else")
+    socket.on('request_human', (data) => {
+      const { sessionId, reason } = data || {};
+      console.log(`🔔 request_human event received: sessionId=${sessionId}, reason=${reason}`);
+      
+      // Broadcast ring sound notification to all admins in admin_feed room
+      io.to('admin_feed').emit('admin_ring_sound', {
+        sessionId: sessionId,
+        reason: reason || 'user_requested_agent',
+        timestamp: Date.now()
+      });
+      
+      const adminFeedRoom = io.sockets.adapter.rooms.get('admin_feed');
+      const adminFeedSize = adminFeedRoom ? adminFeedRoom.size : 0;
+      console.log(`   📢 Broadcasted admin_ring_sound to admin_feed (${adminFeedSize} admin(s) online)`);
+    });
+    
     // Handle visitor join (tracked when widget connects)
     socket.on('visitor_join', (data) => {
       const visitorData = {

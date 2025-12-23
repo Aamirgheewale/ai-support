@@ -118,12 +118,33 @@ export default function AudioNotifications() {
         }])
       }
     })
+    
+    // Listen for admin_ring_sound event (when user requests agent or clicks "Ask something else")
+    sock.on('admin_ring_sound', (data: any) => {
+      const { sessionId, reason } = data || {}
+      console.log('🔔 [AUDIO] Received admin_ring_sound event:', data)
+      if (sessionId) {
+        console.log('🔔 Ring notification triggered:', sessionId, reason)
+        playRingRef.current()
+        
+        // Show toast notification
+        const toastId = `ring-${sessionId}-${Date.now()}`
+        setToasts(prev => [...prev, {
+          id: toastId,
+          message: '🔔 User requested agent assistance!',
+          type: 'info'
+        }])
+      } else {
+        console.warn('⚠️ [AUDIO] admin_ring_sound event missing sessionId:', data)
+      }
+    })
 
     setSocket(sock)
 
     return () => {
       sock.off('session_started')
       sock.off('user_message_for_agent')
+      sock.off('admin_ring_sound')
       sock.disconnect()
     }
   }, []) // Empty dependency array - socket should only be created once
