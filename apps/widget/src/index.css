@@ -3,9 +3,10 @@
   line-height: 1.5;
   font-weight: 400;
 
-  color-scheme: light dark;
+  color-scheme: only light;
   color: rgba(255, 255, 255, 0.87);
   background-color: transparent !important;
+  background-image: none !important;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -19,6 +20,8 @@
   position: relative;
   overflow: hidden;
   background-color: transparent !important;
+  background-image: none !important;
+  color-scheme: only light;
   pointer-events: none;
   margin: 0;
   padding: 0;
@@ -41,6 +44,7 @@ a:hover {
 html {
   background-color: transparent !important;
   background-image: none !important;
+  color-scheme: only light;
   height: 100%;
   overflow-x: hidden;
   overflow-y: hidden;
@@ -55,6 +59,7 @@ body {
   min-height: 100vh;
   background-color: transparent !important;
   background-image: none !important;
+  color-scheme: only light;
   overflow-x: hidden;
   overflow-y: hidden;
   position: relative;
@@ -91,12 +96,53 @@ button:focus-visible {
   :root {
     color: #ffffff;
     background-color: transparent !important;
+    background-image: none !important;
+    color-scheme: only light;
+  }
+  html {
+    background-color: transparent !important;
+    background-image: none !important;
+    color-scheme: only light;
+  }
+  body {
+    background-color: transparent !important;
+    background-image: none !important;
+    color-scheme: only light;
+  }
+  #root {
+    background-color: transparent !important;
+    background-image: none !important;
+    color-scheme: only light;
   }
   a:hover {
     color: #747bff;
   }
   button {
     background-color: #f9f9f9;
+  }
+}
+
+/* Force transparency even in dark mode */
+@media (prefers-color-scheme: dark) {
+  :root {
+    background-color: transparent !important;
+    background-image: none !important;
+    color-scheme: only light;
+  }
+  html {
+    background-color: transparent !important;
+    background-image: none !important;
+    color-scheme: only light;
+  }
+  body {
+    background-color: transparent !important;
+    background-image: none !important;
+    color-scheme: only light;
+  }
+  #root {
+    background-color: transparent !important;
+    background-image: none !important;
+    color-scheme: only light;
   }
 }
 

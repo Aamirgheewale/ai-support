@@ -29,6 +29,7 @@
   iframe.src = widgetUrlWithParams;
   iframe.setAttribute('allow', 'microphone; camera');
   iframe.setAttribute('frameborder', '0');
+  iframe.setAttribute('allowtransparency', 'true');
 
   // Apply default styling (Closed State - small bubble size)
   iframe.style.position = 'fixed';
@@ -39,7 +40,9 @@
   iframe.style.border = 'none';
   iframe.style.zIndex = '999999';
   iframe.style.boxShadow = 'none';
+  iframe.style.backgroundColor = 'transparent';
   iframe.style.background = 'transparent';
+  iframe.style.colorScheme = 'none';
   iframe.style.transition = 'width 0.3s ease, height 0.3s ease';
 
   // Listen for messages from the iframe to resize it
