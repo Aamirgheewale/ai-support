@@ -36,7 +36,6 @@
   iframe.style.right = '20px';
   iframe.style.width = '90px';
   iframe.style.height = '90px';
-  iframe.style.border = '2px solid red';
   iframe.style.zIndex = '999999';
   iframe.style.boxShadow = 'none';
   iframe.style.backgroundColor = 'transparent';
