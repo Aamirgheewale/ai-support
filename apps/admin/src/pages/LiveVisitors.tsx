@@ -158,7 +158,7 @@ export default function LiveVisitors() {
           Live Visitors
         </h1>
         <p style={{ color: '#6b7280', fontSize: '14px' }}>
-          Real-time tracking of visitors on your site (Tawk.to-style dashboard)
+          Real-time tracking of visitors on your site 
         </p>
       </div>
 

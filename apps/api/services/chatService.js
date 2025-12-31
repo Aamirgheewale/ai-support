@@ -291,7 +291,7 @@ function createChatService(dependencies) {
   /**
    * Save message to Appwrite
    * @param {string} sessionId - Session identifier
-   * @param {string} sender - Message sender ('user', 'bot', 'agent', or 'internal')
+   * @param {string} sender - Message sender ('user', 'bot', 'agent', 'system', or 'internal')
    * @param {string} text - Message text
    * @param {Object} metadata - Message metadata (optional)
    * @param {string} visibility - Message visibility ('public' or 'internal', default: 'public')
@@ -502,9 +502,10 @@ function createChatService(dependencies) {
    * Assign agent to session
    * @param {string} sessionId - Session identifier
    * @param {string} agentId - Agent identifier
+   * @param {string} agentName - Agent name (optional, for system messages)
    * @returns {Promise<void>}
    */
-  async function assignAgentToSession(sessionId, agentId) {
+  async function assignAgentToSession(sessionId, agentId, agentName = null) {
     if (!databases || !databaseId || !sessionsCollectionId) {
       console.warn(`⚠️  Appwrite not configured - cannot assign agent`);
       return;

@@ -18,7 +18,7 @@ interface Session {
 }
 
 export default function SessionsList() {
-  const { hasAnyRole, token } = useAuth()
+  const { hasRole, hasAnyRole, token } = useAuth()
   const [sessions, setSessions] = useState<Session[]>([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('')
@@ -245,9 +245,9 @@ export default function SessionsList() {
 
   return (
     <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
-      <h1>AI Support Admin - Sessions</h1>
+      <h1>Customer Support - Sessions</h1>
       
-      <div style={{ marginTop: '20px', marginBottom: '20px' }}>
+      <div style={{ marginTop: '50px', marginBottom: '20px' }}>
         {/* Main Search Bar */}
         <div style={{ display: 'flex', gap: '10px', marginBottom: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
           <input
@@ -287,7 +287,7 @@ export default function SessionsList() {
           >
             {showFilters ? 'Hide Filters' : 'More Filters'}
           </button>
-          {selectedSessions.size > 0 && hasAnyRole(['admin', 'super_admin']) && (
+          {selectedSessions.size > 0 && hasRole('admin') && (
             <button
               onClick={() => setShowBulkModal(true)}
               disabled={bulkExporting}
@@ -446,7 +446,7 @@ export default function SessionsList() {
                   {session.startTime ? new Date(session.startTime).toLocaleString() : session.$createdAt ? new Date(session.$createdAt).toLocaleString() : '-'}
                 </td>
                 <td style={{ padding: '12px' }} onClick={(e) => e.stopPropagation()}>
-                  {hasAnyRole(['admin', 'super_admin']) ? (
+                  {(hasRole('admin') || hasRole('agent')) ? (
                     <div style={{ position: 'relative', display: 'inline-block' }}>
                       <button
                         onClick={(e) => {

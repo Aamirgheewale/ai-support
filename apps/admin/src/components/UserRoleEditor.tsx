@@ -7,10 +7,12 @@ interface UserRoleEditorProps {
   onCancel: () => void;
 }
 
-const AVAILABLE_ROLES = ['super_admin', 'admin', 'agent', 'viewer'];
+const AVAILABLE_ROLES = ['admin', 'agent'];
 
 export default function UserRoleEditor({ userId, currentRoles, onSave, onCancel }: UserRoleEditorProps) {
-  const [selectedRoles, setSelectedRoles] = useState<string[]>(currentRoles);
+  // Filter out invalid roles (super_admin, viewer) and only keep valid ones (admin, agent)
+  const validCurrentRoles = currentRoles.filter(role => AVAILABLE_ROLES.includes(role));
+  const [selectedRoles, setSelectedRoles] = useState<string[]>(validCurrentRoles.length > 0 ? validCurrentRoles : ['agent']);
   const [saving, setSaving] = useState(false);
 
   const toggleRole = (role: string) => {
@@ -22,9 +24,23 @@ export default function UserRoleEditor({ userId, currentRoles, onSave, onCancel 
   };
 
   const handleSave = async () => {
+    // Ensure at least one role is selected
+    if (selectedRoles.length === 0) {
+      alert('Please select at least one role');
+      return;
+    }
+    
+    // Filter out any invalid roles just to be safe
+    const validSelectedRoles = selectedRoles.filter(role => AVAILABLE_ROLES.includes(role));
+    
+    if (validSelectedRoles.length === 0) {
+      alert('Please select at least one valid role');
+      return;
+    }
+    
     setSaving(true);
     try {
-      await onSave(selectedRoles);
+      await onSave(validSelectedRoles);
     } finally {
       setSaving(false);
     }
@@ -47,7 +63,7 @@ export default function UserRoleEditor({ userId, currentRoles, onSave, onCancel 
               />
               <span className="text-sm">
                 {role}
-                {role === 'super_admin' && <span className="text-red-600 ml-1">(all permissions)</span>}
+                {role === 'admin' && <span className="text-red-600 ml-1">(all permissions)</span>}
               </span>
             </label>
           ))}

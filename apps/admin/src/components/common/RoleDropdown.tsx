@@ -1,10 +1,8 @@
 import React from 'react'
 
 export const ROLE_OPTIONS = [
-  { value: 'super_admin', label: 'Super Admin' },
   { value: 'admin', label: 'Admin' },
-  { value: 'agent', label: 'Agent' },
-  { value: 'viewer', label: 'Viewer' }
+  { value: 'agent', label: 'Agent' }
 ]
 
 interface RoleDropdownProps {

@@ -6,10 +6,8 @@ const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000'
 const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET || 'dev-secret-change-me'
 
 const ROLE_OPTIONS = [
-  { value: 'super_admin', label: 'Super Admin' },
   { value: 'admin', label: 'Admin' },
-  { value: 'agent', label: 'Agent' },
-  { value: 'viewer', label: 'Viewer' }
+  { value: 'agent', label: 'Agent' }
 ]
 
 export default function SignupPage() {
@@ -22,11 +20,11 @@ export default function SignupPage() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
-  if (!hasRole('super_admin')) {
+  if (!hasRole('admin')) {
     return (
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <p className="text-red-800">Access denied. Super admin role required.</p>
+          <p className="text-red-800">Access denied. Admin role required.</p>
         </div>
       </div>
     )

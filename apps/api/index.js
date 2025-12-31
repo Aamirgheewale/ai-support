@@ -1139,9 +1139,16 @@ async function setUserRoles(userId, rolesArray) {
     // Audit log
     await logRoleChange(userId, 'system', oldRoles, newRoles);
     
+    console.log(`✅ Successfully updated roles for user ${userId} from [${oldRoles.join(', ')}] to [${newRoles.join(', ')}]`);
     return true;
   } catch (err) {
-    console.error('Error setting user roles:', err);
+    console.error(`❌ Error setting user roles for ${userId}:`, err);
+    console.error(`   Error details:`, {
+      message: err?.message,
+      code: err?.code,
+      type: err?.type,
+      response: err?.response
+    });
     return false;
   }
 }
@@ -1152,7 +1159,7 @@ async function isUserInRole(userId, role) {
     return false;
   }
   const roles = Array.isArray(user.roles) ? user.roles : [];
-  return roles.includes(role) || roles.includes('super_admin'); // super_admin has all permissions
+  return roles.includes(role); // admin has all permissions
 }
 
 // Helper to check if users collection exists
@@ -1203,18 +1210,31 @@ async function logRoleChange(userId, changedBy, oldRoles, newRoles) {
 
 // Token authorization helper
 async function authorizeSocketToken(token) {
-  // For dev: if token matches ADMIN_SHARED_SECRET, map to super_admin
-  if (token === ADMIN_SHARED_SECRET) {
-    // In dev mode we no longer auto-create the dev-admin record in Appwrite.
-    // Instead return an in-memory super_admin user so the DB isn't mutated implicitly.
-    return { userId: 'dev-admin', email: 'dev@admin.local', roles: ['super_admin'] };
+  if (!token) {
+    return null;
   }
   
-  // TODO: For production, validate Appwrite session token here
-  // const { Account } = require('node-appwrite');
-  // const account = new Account(awClient);
-  // const session = await account.getSession('current');
-  // return { userId: session.userId, email: session.email };
+  // For dev: if token matches ADMIN_SHARED_SECRET, map to admin
+  if (token === ADMIN_SHARED_SECRET) {
+    // In dev mode we no longer auto-create the dev-admin record in Appwrite.
+    // Instead return an in-memory admin user so the DB isn't mutated implicitly.
+    return { userId: 'dev-admin', email: 'dev@admin.local', roles: ['admin'] };
+  }
+  
+  // Token is userId for email-based auth (same as requireAuth middleware)
+  try {
+    const user = await getUserById(token);
+    if (user) {
+      return {
+        userId: user.userId,
+        email: user.email,
+        roles: Array.isArray(user.roles) ? user.roles : []
+      };
+    }
+  } catch (err) {
+    console.error('Error validating socket token:', err);
+    // Continue to return null
+  }
   
   return null;
 }
@@ -1234,10 +1254,10 @@ async function requireAuth(req, res, next) {
     return res.status(401).json({ error: 'Missing or invalid authorization' });
   }
   
-  // For dev: map ADMIN_SHARED_SECRET to super_admin
+  // For dev: map ADMIN_SHARED_SECRET to admin
   if (token === ADMIN_SHARED_SECRET) {
-    // Dev mode: just set an in-memory super_admin user. Do not auto-create in Appwrite.
-    req.user = { userId: 'dev-admin', email: 'dev@admin.local', roles: ['super_admin'] };
+    // Dev mode: just set an in-memory admin user. Do not auto-create in Appwrite.
+    req.user = { userId: 'dev-admin', email: 'dev@admin.local', roles: ['admin'] };
     return next();
   }
   
@@ -1272,7 +1292,7 @@ function requireRole(allowedRoles) {
     
     // Check if user has roles in req.user (for dev mode fallback)
     if (req.user.roles && Array.isArray(req.user.roles)) {
-      const hasRole = roles.some(role => req.user.roles.includes(role) || req.user.roles.includes('super_admin'));
+      const hasRole = roles.some(role => req.user.roles.includes(role));
       if (hasRole) {
         return next();
       }
@@ -1290,7 +1310,7 @@ function requireRole(allowedRoles) {
     } catch (err) {
       // If collection doesn't exist, allow if user has roles in req.user (dev mode)
       if (req.user.roles && Array.isArray(req.user.roles)) {
-        hasRole = roles.some(role => req.user.roles.includes(role) || req.user.roles.includes('super_admin'));
+        hasRole = roles.some(role => req.user.roles.includes(role));
       }
     }
     
@@ -1305,7 +1325,7 @@ function requireRole(allowedRoles) {
 // Legacy admin auth (now uses RBAC)
 function requireAdminAuth(req, res, next) {
   requireAuth(req, res, () => {
-    requireRole(['admin', 'super_admin'])(req, res, next);
+    requireRole(['admin', 'agent'])(req, res, next);
   });
 }
 
@@ -1793,6 +1813,123 @@ app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
   }
 });
 
+// GET /admin/sessions/agent/:agentId - Get all sessions assigned to a specific agent
+// NOTE: This route must come BEFORE /admin/sessions/:sessionId/messages to avoid route conflicts
+app.get('/admin/sessions/agent/:agentId', requireAuth, requireRole(['admin', 'agent']), async (req, res) => {
+  try {
+    const { agentId } = req.params;
+    
+    if (!agentId) {
+      return res.status(400).json({ error: 'agentId is required' });
+    }
+    
+    if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_SESSIONS_COLLECTION_ID) {
+      return res.status(500).json({ error: 'Appwrite not configured' });
+    }
+    
+    console.log(`📋 Fetching sessions for agent: ${agentId}`);
+    
+    // Fetch ALL sessions with pagination (since assignedAgent might be in userMeta, we can't query it directly)
+    // Use the same pagination pattern as streamAllSessions
+    const limit = 100;
+    let offset = 0;
+    let hasMore = true;
+    const allSessions = [];
+    
+    while (hasMore) {
+      let queries = [];
+      // CRITICAL: Add Query.limit() and Query.offset() to queries array
+      // Appwrite defaults to 25 documents per request, so we must use Query.limit() in queries array
+      if (Query) {
+        queries.push(Query.limit(limit));
+        queries.push(Query.offset(offset));
+      }
+      
+      const result = await awDatabases.listDocuments(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_SESSIONS_COLLECTION_ID,
+        queries.length > 0 ? queries : undefined
+      );
+      
+      allSessions.push(...result.documents);
+      offset += result.documents.length;
+      
+      // Check if there are more documents
+      if (result.total !== undefined) {
+        hasMore = offset < result.total;
+      } else {
+        // Fallback: assume more if we got a full page
+        hasMore = result.documents.length === limit;
+      }
+      
+      // Safety check: prevent infinite loops
+      if (offset > 100000) {
+        console.warn('⚠️  Reached safety limit of 100K sessions, stopping pagination');
+        break;
+      }
+    }
+    
+    console.log(`📊 Total sessions fetched from database: ${allSessions.length}`);
+    
+    // Filter sessions where assignedAgent matches agentId
+    // Also check userMeta for assignedAgent (for backward compatibility)
+    const agentSessions = allSessions
+      .map(doc => {
+        let assignedAgent = doc.assignedAgent || null;
+        
+        // If assignedAgent field doesn't exist, try to get it from userMeta
+        if (!assignedAgent && doc.userMeta) {
+          try {
+            const userMeta = typeof doc.userMeta === 'string' ? JSON.parse(doc.userMeta) : doc.userMeta;
+            if (userMeta && userMeta.assignedAgent) {
+              assignedAgent = userMeta.assignedAgent;
+            }
+          } catch (e) {
+            // Ignore parse errors
+          }
+        }
+        
+        return {
+          ...doc,
+          assignedAgent: assignedAgent
+        };
+      })
+      .filter(session => {
+        const matches = session.assignedAgent === agentId;
+        if (matches) {
+          console.log(`✅ Found matching session: ${session.sessionId} (assignedAgent: ${session.assignedAgent})`);
+        }
+        return matches;
+      })
+      .map(session => ({
+        sessionId: session.sessionId,
+        status: session.status || 'active',
+        startTime: session.startTime || session.$createdAt,
+        lastSeen: session.lastSeen || session.$updatedAt,
+        assignedAgent: session.assignedAgent,
+        createdAt: session.createdAt || session.$createdAt,
+        updatedAt: session.updatedAt || session.$updatedAt
+      }))
+      .sort((a, b) => {
+        // Sort by startTime descending (newest first)
+        const dateA = new Date(a.startTime || 0).getTime();
+        const dateB = new Date(b.startTime || 0).getTime();
+        return dateB - dateA;
+      });
+    
+    console.log(`✅ Found ${agentSessions.length} session(s) for agent ${agentId}`);
+    
+    res.json({
+      sessions: agentSessions,
+      total: agentSessions.length,
+      agentId: agentId
+    });
+  } catch (err) {
+    console.error('Error fetching agent sessions:', err);
+    res.status(500).json({ error: err?.message || 'Failed to fetch agent sessions' });
+  }
+});
+
 // GET /admin/sessions/:sessionId/messages - List messages for a session with pagination
 app.get('/admin/sessions/:sessionId/messages', requireAdminAuth, async (req, res) => {
   try {
@@ -1968,20 +2105,41 @@ app.get('/admin/sessions/:sessionId/messages', requireAdminAuth, async (req, res
 });
 
 // POST /admin/sessions/:sessionId/assign - Assign session to agent
-app.post('/admin/sessions/:sessionId/assign', requireAdminAuth, async (req, res) => {
+// Allow both admin and agent roles (agents can assign to themselves)
+app.post('/admin/sessions/:sessionId/assign', requireAuth, requireRole(['admin', 'agent']), async (req, res) => {
   try {
     const { sessionId } = req.params;
-    const { agentId } = req.body;
+    const { agentId, agentName } = req.body;
     
     if (!agentId) {
       return res.status(400).json({ error: 'agentId required' });
     }
     
-    await chatService.assignAgentToSession(sessionId, agentId);
-    notifyAgentIfOnline(agentId, { type: 'assignment', sessionId });
-    io.to(sessionId).emit('agent_joined', { agentId });
+    // Assign agent to session (updates userMeta and direct field)
+    await chatService.assignAgentToSession(sessionId, agentId, agentName);
     
-    res.json({ success: true, sessionId, agentId });
+    // Create system message: "Agent {agentName} has joined the conversation."
+    const systemMessageText = `Agent ${agentName || agentId} has joined the conversation.`;
+    await chatService.saveMessageToAppwrite(
+      sessionId,
+      'system',
+      systemMessageText,
+      { type: 'agent_joined', agentId, agentName },
+      'public'
+    );
+    
+    // Notify agent if online
+    notifyAgentIfOnline(agentId, { type: 'assignment', sessionId });
+    
+    // Emit socket events
+    // Only emit agent_joined - the system message is already saved to DB and will be loaded naturally
+    // Don't emit new_message for system messages to avoid duplicates
+    io.to(sessionId).emit('agent_joined', { agentId, agentName });
+    
+    // Notify admin dashboard to refresh session list
+    io.to('admin_feed').emit('session_updated', { sessionId, assignedAgent: agentId });
+    
+    res.json({ success: true, sessionId, agentId, agentName });
   } catch (err) {
     console.error('Error assigning session:', err);
     res.status(500).json({ error: err?.message || 'Failed to assign session' });
@@ -3404,25 +3562,25 @@ app.post('/auth/signup', async (req, res) => {
     }
     
     // Determine role assignment
-    let assignedRole = 'viewer'; // Default
+    let assignedRole = 'agent'; // Default
     const authHeader = req.headers.authorization;
-    const isSuperAdmin = authHeader && authHeader.startsWith('Bearer ') && 
+    const isAdmin = authHeader && authHeader.startsWith('Bearer ') && 
                          authHeader.substring(7) === ADMIN_SHARED_SECRET;
     
     // Allow any user to select their role during signup
     // Validate role if provided
     if (role) {
       console.log(`🔍 Role received from request: "${role}" (type: ${typeof role})`);
-      const validRoles = ['super_admin', 'admin', 'agent', 'viewer'];
+      const validRoles = ['admin', 'agent'];
       if (validRoles.includes(role)) {
         assignedRole = role;
         console.log(`✅ Role validated and assigned: ${assignedRole}`);
       } else {
-        console.warn(`⚠️  Invalid role provided: "${role}", defaulting to 'viewer'`);
+        console.warn(`⚠️  Invalid role provided: "${role}", defaulting to 'agent'`);
         console.warn(`   Valid roles are: ${validRoles.join(', ')}`);
       }
     } else {
-      console.log(`ℹ️  No role provided in request, using default: 'viewer'`);
+      console.log(`ℹ️  No role provided in request, using default: 'agent'`);
     }
     
     // Generate userId
@@ -3470,7 +3628,7 @@ app.post('/auth/signup', async (req, res) => {
       }
       
       // Log audit entry
-      console.log(`📝 [AUDIT] User created: ${email} (${userId}) with role: ${assignedRole} by ${isSuperAdmin ? 'admin' : 'self-signup'}`);
+      console.log(`📝 [AUDIT] User created: ${email} (${userId}) with role: ${assignedRole} by ${isAdmin ? 'admin' : 'self-signup'}`);
       
       // Return user info
       res.status(201).json({
@@ -3597,7 +3755,7 @@ app.get('/me', requireAuth, async (req, res) => {
         userId: req.user.userId,
         email: req.user.email || 'dev@admin.local',
         name: 'Dev Admin',
-        roles: req.user.roles || ['super_admin']
+        roles: req.user.roles || ['admin']
       });
     }
     
@@ -3608,7 +3766,7 @@ app.get('/me', requireAuth, async (req, res) => {
         userId: req.user.userId,
         email: req.user.email || 'dev@admin.local',
         name: 'Dev Admin',
-        roles: req.user.roles || ['super_admin']
+        roles: req.user.roles || ['admin']
       });
     }
     res.json({
@@ -3627,7 +3785,7 @@ app.get('/me', requireAuth, async (req, res) => {
       userId: req.user.userId,
       email: req.user.email || 'dev@admin.local',
       name: 'Dev Admin',
-      roles: req.user.roles || ['super_admin'],
+      roles: req.user.roles || ['admin'],
       createdAt: new Date().toISOString(),
       lastSeen: new Date().toISOString(),
       userMeta: {}
@@ -3668,8 +3826,109 @@ app.get('/users/:userId/profile', requireAuth, async (req, res) => {
   }
 });
 
-// GET /admin/users - List all users (super_admin only)
-app.get('/admin/users', requireAuth, requireRole(['super_admin']), async (req, res) => {
+// GET /admin/users/agents - List all agents (admin/agent only)
+// NOTE: This route must come BEFORE /admin/users to avoid route conflicts
+app.get('/admin/users/agents', requireAuth, requireRole(['admin', 'agent']), async (req, res) => {
+  try {
+    if (!awDatabases || !APPWRITE_DATABASE_ID) {
+      return res.json({ agents: [], total: 0, error: 'Appwrite not configured' });
+    }
+    
+    console.log('📋 Fetching all agents...');
+    console.log(`📊 Current agentSockets Map size: ${agentSockets.size}`);
+    console.log(`📊 Current agentSockets keys:`, Array.from(agentSockets.keys()));
+    
+    // Fetch all users and filter for agents
+    // Note: Appwrite doesn't support array contains queries directly, so we fetch all and filter
+    const allUsers = await awDatabases.listDocuments(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_USERS_COLLECTION_ID,
+      [],
+      1000 // Fetch up to 1000 users (adjust if needed)
+    );
+    
+    // Filter users who have 'agent' role
+    const agents = allUsers.documents
+      .filter(doc => {
+        const roles = Array.isArray(doc.roles) ? doc.roles : [];
+        return roles.includes('agent');
+      })
+      .map(doc => {
+        const userId = doc.userId;
+        // Check if agent is online by checking agentSockets Map
+        // agentSockets maps agentId -> socketId, where agentId can be userId or custom agentId
+        // First check if userId exists as a key in agentSockets
+        let isOnline = agentSockets.has(userId);
+        
+        // If not found by userId, check all connected sockets for matching userId
+        if (!isOnline && io && io.sockets) {
+          try {
+            // Get all connected sockets from the Socket.IO server
+            const sockets = io.sockets.sockets; // This is a Map of socketId -> socket
+            console.log(`📊 Checking ${sockets.size} connected sockets for userId: ${userId}`);
+            
+            // Iterate through all sockets and check for matching userId
+            for (const [socketId, socket] of sockets.entries()) {
+              const socketUserId = socket.data?.userId;
+              const socketAgentId = socket.data?.agentId;
+              const isAuthenticated = socket.data?.authenticated;
+              
+              // Debug: log all socket data for troubleshooting
+              if (socketUserId || socketAgentId) {
+                console.log(`🔍 Socket ${socketId}: userId=${socketUserId}, agentId=${socketAgentId}, authenticated=${isAuthenticated}, connected=${socket.connected}`);
+              }
+              
+              // Match if socket has this userId and is authenticated, OR if agentId matches userId
+              if (isAuthenticated && (socketUserId === userId || socketAgentId === userId)) {
+                console.log(`✅ Found matching socket for userId ${userId}: socketId=${socketId}, agentId=${socketAgentId}, authenticated=${isAuthenticated}`);
+                isOnline = true;
+                break;
+              }
+            }
+          } catch (err) {
+            console.warn('Error checking socket connections:', err);
+            // Fallback to Map check only
+          }
+        }
+        
+        if (isOnline) {
+          console.log(`✅ Agent ${userId} (${doc.email}) is ONLINE`);
+        } else {
+          console.log(`❌ Agent ${userId} (${doc.email}) is OFFLINE`);
+        }
+        
+        return {
+          userId: userId,
+          email: doc.email,
+          name: doc.name,
+          role: 'agent',
+          roles: Array.isArray(doc.roles) ? doc.roles : [],
+          createdAt: doc.createdAt || doc.$createdAt,
+          updatedAt: doc.updatedAt || doc.$updatedAt,
+          isOnline: isOnline
+        };
+      })
+      .sort((a, b) => {
+        // Sort by createdAt descending (newest first)
+        const dateA = new Date(a.createdAt || 0).getTime();
+        const dateB = new Date(b.createdAt || 0).getTime();
+        return dateB - dateA;
+      });
+    
+    console.log(`✅ Found ${agents.length} agent(s)`);
+    
+    res.json({
+      agents,
+      total: agents.length
+    });
+  } catch (err) {
+    console.error('Error listing agents:', err);
+    res.status(500).json({ error: err?.message || 'Failed to list agents' });
+  }
+});
+
+// GET /admin/users - List all users (admin only)
+app.get('/admin/users', requireAuth, requireRole(['admin']), async (req, res) => {
   try {
     // Validate pagination params
     try {
@@ -3731,8 +3990,8 @@ app.get('/admin/users', requireAuth, requireRole(['super_admin']), async (req, r
   }
 });
 
-// POST /admin/users - Create user (super_admin only)
-app.post('/admin/users', requireAuth, requireRole(['super_admin']), async (req, res) => {
+// POST /admin/users - Create user (admin only)
+app.post('/admin/users', requireAuth, requireRole(['admin']), async (req, res) => {
   try {
     if (!awDatabases || !APPWRITE_DATABASE_ID) {
       return res.status(503).json({ error: 'Appwrite not configured' });
@@ -3935,8 +4194,8 @@ app.post('/admin/users', requireAuth, requireRole(['super_admin']), async (req, 
   }
 });
 
-// PUT /admin/users/:userId/roles - Update user roles (super_admin only)
-app.put('/admin/users/:userId/roles', requireAuth, requireRole(['super_admin']), async (req, res) => {
+// PUT /admin/users/:userId/roles - Update user roles (admin only)
+app.put('/admin/users/:userId/roles', requireAuth, requireRole(['admin']), async (req, res) => {
   try {
     const { userId } = req.params;
     const { roles } = req.body;
@@ -3946,7 +4205,7 @@ app.put('/admin/users/:userId/roles', requireAuth, requireRole(['super_admin']),
     }
     
     // Validate roles
-    const validRoles = ['super_admin', 'admin', 'agent', 'viewer'];
+    const validRoles = ['admin', 'agent'];
     for (const role of roles) {
       if (!validRoles.includes(role)) {
         return res.status(400).json({ error: `Invalid role: ${role}` });
@@ -3992,10 +4251,21 @@ app.put('/admin/users/:userId/roles', requireAuth, requireRole(['super_admin']),
     }
     
     const oldRoles = Array.isArray(user.roles) ? [...user.roles] : [];
+    
+    // Filter out any invalid roles (like super_admin or viewer) from old roles for logging
+    const filteredOldRoles = oldRoles.filter(role => ['admin', 'agent'].includes(role));
+    
+    console.log(`📝 Updating roles for user ${userId}:`, {
+      oldRoles: oldRoles,
+      newRoles: roles,
+      filteredOldRoles: filteredOldRoles
+    });
+    
     const success = await setUserRoles(userId, roles);
     
     if (!success) {
-      return res.status(500).json({ error: 'Failed to update roles' });
+      console.error(`❌ setUserRoles returned false for user ${userId}`);
+      return res.status(500).json({ error: 'Failed to update roles. Check server logs for details.' });
     }
     
     // Log audit
@@ -4012,8 +4282,8 @@ app.put('/admin/users/:userId/roles', requireAuth, requireRole(['super_admin']),
   }
 });
 
-// DELETE /admin/users/:userId - Delete user (super_admin only)
-app.delete('/admin/users/:userId', requireAuth, requireRole(['super_admin']), async (req, res) => {
+// DELETE /admin/users/:userId - Delete user (admin only)
+app.delete('/admin/users/:userId', requireAuth, requireRole(['admin']), async (req, res) => {
   try {
     if (!awDatabases || !APPWRITE_DATABASE_ID) {
       return res.status(503).json({ error: 'Appwrite not configured' });
@@ -4053,7 +4323,7 @@ const accuracyStatsCache = new LRUCache({
 });
 
 // GET /admin/accuracy - List accuracy records with filtering and pagination
-app.get('/admin/accuracy', requireAuth, requireRole(['admin', 'super_admin']), async (req, res) => {
+app.get('/admin/accuracy', requireAuth, requireRole(['admin']), async (req, res) => {
   try {
     // Validate pagination params
     try {
@@ -4131,7 +4401,7 @@ app.get('/admin/accuracy', requireAuth, requireRole(['admin', 'super_admin']), a
 });
 
 // GET /admin/accuracy/stats - Get aggregated accuracy statistics
-app.get('/admin/accuracy/stats', requireAuth, requireRole(['admin', 'super_admin']), async (req, res) => {
+app.get('/admin/accuracy/stats', requireAuth, requireRole(['admin']), async (req, res) => {
   try {
     if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_AI_ACCURACY_COLLECTION_ID) {
       return res.status(503).json({ error: 'Appwrite not configured' });
@@ -4223,7 +4493,7 @@ app.get('/admin/accuracy/stats', requireAuth, requireRole(['admin', 'super_admin
 });
 
 // GET /admin/accuracy/:accuracyId - Get single accuracy record
-app.get('/admin/accuracy/:accuracyId', requireAuth, requireRole(['admin', 'super_admin']), async (req, res) => {
+app.get('/admin/accuracy/:accuracyId', requireAuth, requireRole(['admin']), async (req, res) => {
   try {
     if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_AI_ACCURACY_COLLECTION_ID) {
       return res.status(503).json({ error: 'Appwrite not configured' });
@@ -4377,7 +4647,7 @@ app.post('/session/:sessionId/feedback', async (req, res) => {
 });
 
 // POST /admin/accuracy/:accuracyId/evaluate - Admin evaluation
-app.post('/admin/accuracy/:accuracyId/evaluate', requireAuth, requireRole(['admin', 'super_admin']), async (req, res) => {
+app.post('/admin/accuracy/:accuracyId/evaluate', requireAuth, requireRole(['admin']), async (req, res) => {
   try {
     if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_AI_ACCURACY_COLLECTION_ID) {
       return res.status(503).json({ error: 'Appwrite not configured' });
@@ -4453,7 +4723,7 @@ app.post('/admin/accuracy/:accuracyId/evaluate', requireAuth, requireRole(['admi
 });
 
 // GET /admin/accuracy/export - Export accuracy logs
-app.get('/admin/accuracy/export', requireAuth, requireRole(['admin', 'super_admin']), async (req, res) => {
+app.get('/admin/accuracy/export', requireAuth, requireRole(['admin']), async (req, res) => {
   try {
     if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_AI_ACCURACY_COLLECTION_ID) {
       return res.status(503).json({ error: 'Appwrite not configured' });
@@ -4535,9 +4805,9 @@ app.get('/admin/accuracy/export', requireAuth, requireRole(['admin', 'super_admi
   }
 });
 
-// POST /admin/accuracy/cleanup - Cleanup old records (super_admin only)
+// POST /admin/accuracy/cleanup - Cleanup old records (admin only)
 // TODO: Schedule as cron/Appwrite Function in production
-app.post('/admin/accuracy/cleanup', requireAuth, requireRole(['super_admin']), async (req, res) => {
+app.post('/admin/accuracy/cleanup', requireAuth, requireRole(['admin']), async (req, res) => {
   try {
     if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_AI_ACCURACY_COLLECTION_ID) {
       return res.status(503).json({ error: 'Appwrite not configured' });
@@ -4586,7 +4856,7 @@ app.post('/admin/accuracy/cleanup', requireAuth, requireRole(['super_admin']), a
 // ============================================================================
 
 // ============================================================================
-// ENCRYPTION MANAGEMENT ENDPOINTS (super_admin only)
+// ENCRYPTION MANAGEMENT ENDPOINTS (admin only)
 // ============================================================================
 
 const APPWRITE_ENCRYPTION_AUDIT_COLLECTION_ID = 'encryption_audit';
@@ -4616,7 +4886,7 @@ async function logEncryptionAction(action, adminId, stats = {}) {
 }
 
 // GET /admin/encryption/status - Get encryption status
-app.get('/admin/encryption/status', requireAuth, requireRole(['super_admin']), async (req, res) => {
+app.get('/admin/encryption/status', requireAuth, requireRole(['admin']), async (req, res) => {
   try {
     const status = {
       encryptionEnabled: ENCRYPTION_ENABLED,
@@ -4678,7 +4948,7 @@ app.get('/admin/encryption/status', requireAuth, requireRole(['super_admin']), a
 });
 
 // POST /admin/encryption/reencrypt - Trigger key rotation (synchronous for small sets)
-app.post('/admin/encryption/reencrypt', requireAuth, requireRole(['super_admin']), async (req, res) => {
+app.post('/admin/encryption/reencrypt', requireAuth, requireRole(['admin']), async (req, res) => {
   try {
     const { newMasterKeyBase64 } = req.body;
     
@@ -4712,7 +4982,7 @@ app.post('/admin/encryption/reencrypt', requireAuth, requireRole(['super_admin']
 });
 
 // POST /admin/encryption/cleanup-plaintext - Remove plaintext backup fields
-app.post('/admin/encryption/cleanup-plaintext', requireAuth, requireRole(['super_admin']), async (req, res) => {
+app.post('/admin/encryption/cleanup-plaintext', requireAuth, requireRole(['admin']), async (req, res) => {
   try {
     if (!awDatabases || !APPWRITE_DATABASE_ID) {
       return res.status(503).json({ error: 'Appwrite not configured' });
@@ -4744,7 +5014,7 @@ app.post('/admin/encryption/cleanup-plaintext', requireAuth, requireRole(['super
 });
 
 // GET /admin/encryption/audit - Get encryption audit log
-app.get('/admin/encryption/audit', requireAuth, requireRole(['super_admin']), async (req, res) => {
+app.get('/admin/encryption/audit', requireAuth, requireRole(['admin']), async (req, res) => {
   try {
     if (!awDatabases || !APPWRITE_DATABASE_ID) {
       return res.json({ logs: [], message: 'Appwrite not configured' });

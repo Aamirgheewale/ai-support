@@ -11,7 +11,15 @@ interface UseSoundOptions {
  */
 export function useSound(options: UseSoundOptions = {}) {
   const { enabled = true, volume = 0.7 } = options
-  const [audioEnabled, setAudioEnabled] = useState(false)
+  
+  // Load audio enabled state from localStorage (shared across all instances)
+  const getStoredAudioEnabled = () => {
+    if (typeof window === 'undefined') return false
+    const stored = localStorage.getItem('ai-support-audio-enabled')
+    return stored === 'true'
+  }
+  
+  const [audioEnabled, setAudioEnabled] = useState(getStoredAudioEnabled)
   const [userInteracted, setUserInteracted] = useState(false)
   
   const ringSoundRef = useRef<HTMLAudioElement | null>(null)
@@ -46,13 +54,47 @@ export function useSound(options: UseSoundOptions = {}) {
     }
   }, [volume])
 
+  // Custom setAudioEnabled that updates both state and localStorage
+  const updateAudioEnabled = (value: boolean) => {
+    setAudioEnabled(value)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('ai-support-audio-enabled', String(value))
+      // Dispatch custom event for same-tab synchronization
+      window.dispatchEvent(new CustomEvent('audio-enabled-changed', { detail: value }))
+    }
+  }
+
+  // Listen for audio enabled changes (from other components in same tab)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    
+    const handleAudioEnabledChange = (e: CustomEvent) => {
+      setAudioEnabled(e.detail)
+    }
+    
+    // Listen for storage events (when other tabs update it)
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'ai-support-audio-enabled') {
+        setAudioEnabled(e.newValue === 'true')
+      }
+    }
+    
+    window.addEventListener('audio-enabled-changed', handleAudioEnabledChange as EventListener)
+    window.addEventListener('storage', handleStorageChange)
+    
+    return () => {
+      window.removeEventListener('audio-enabled-changed', handleAudioEnabledChange as EventListener)
+      window.removeEventListener('storage', handleStorageChange)
+    }
+  }, [])
+
   // Enable audio on first user interaction (click, touch, keypress)
   useEffect(() => {
     if (userInteracted || !enabled) return
 
     const enableAudio = () => {
       setUserInteracted(true)
-      setAudioEnabled(true)
+      updateAudioEnabled(true)
     }
 
     const events = ['click', 'touchstart', 'keydown']
@@ -68,7 +110,9 @@ export function useSound(options: UseSoundOptions = {}) {
   }, [enabled, userInteracted])
 
   const playRing = async () => {
-    if (!enabled || !audioEnabled || !ringSoundRef.current) return
+    // Check localStorage for current audio enabled state (shared across components)
+    const isAudioEnabled = typeof window !== 'undefined' && localStorage.getItem('ai-support-audio-enabled') === 'true'
+    if (!enabled || !isAudioEnabled || !ringSoundRef.current) return
     
     try {
       // Reset to start if already playing
@@ -83,7 +127,9 @@ export function useSound(options: UseSoundOptions = {}) {
   }
 
   const playPop = async () => {
-    if (!enabled || !audioEnabled || !popSoundRef.current) return
+    // Check localStorage for current audio enabled state (shared across components)
+    const isAudioEnabled = typeof window !== 'undefined' && localStorage.getItem('ai-support-audio-enabled') === 'true'
+    if (!enabled || !isAudioEnabled || !popSoundRef.current) return
     
     try {
       // Reset to start if already playing
@@ -127,7 +173,7 @@ export function useSound(options: UseSoundOptions = {}) {
     isRingPlaying,
     isPopPlaying,
     audioEnabled,
-    setAudioEnabled
+    setAudioEnabled: updateAudioEnabled
   }
 }
 

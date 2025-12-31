@@ -262,7 +262,7 @@ function notifyAgentIfOnline(io, agentSockets, agentId, payload) {
 // LIVE VISITOR TRACKING
 // ============================================================================
 
-// In-memory store for active visitors (Tawk.to-style tracking)
+// In-memory store for active visitors (.to-style tracking)
 const liveVisitors = new Map();
 
 // ============================================================================
@@ -634,19 +634,35 @@ function initializeSocket(dependencies) {
                   ? JSON.parse(currentSession.userMeta || '{}') 
                   : (currentSession.userMeta || {});
                 userMeta.conversationConcluded = true;
+                
+                // Update session: mark as concluded AND close the session
                 await databases.updateDocument(
                   databaseId,
                   sessionsCollectionId,
                   sessionId,
-                  { userMeta: JSON.stringify(userMeta) }
+                  { 
+                    userMeta: JSON.stringify(userMeta),
+                    status: 'closed',
+                    lastSeen: new Date().toISOString()
+                  }
                 );
+                
+                // Clear from in-memory assignment cache if it exists
+                if (sessionAssignments) {
+                  sessionAssignments.delete(sessionId);
+                }
+                
+                console.log(`✅ Session ${sessionId} closed automatically after user thanked`);
               }
             } catch (err) {
-              console.warn('Failed to mark conversation as concluded:', err?.message || err);
+              console.warn('Failed to mark conversation as concluded and close session:', err?.message || err);
             }
           }
           
+          // Emit bot message and conversation closed event
           io.to(sessionId).emit('bot_message', { text: finalMessage, type: 'conclusion_final' });
+          io.to(sessionId).emit('conversation_closed', { sessionId });
+          
           return;
         } else if (trimmedLower === 'want to ask more' || trimmedLower === 'continue conversation' ||
                    trimmedLower.includes('want to ask') || trimmedLower.includes('ask more')) {
@@ -1198,8 +1214,15 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
     
     // Agent authentication and connection
     socket.on('agent_auth', async (data) => {
+      console.log(`🔐 Received agent_auth event from socket ${socket.id}:`, { 
+        hasToken: !!data?.token, 
+        agentId: data?.agentId,
+        socketId: socket.id 
+      });
+      
       const { token, agentId } = data || {};
       if (!token) {
+        console.error('❌ agent_auth: Token required');
         socket.emit('auth_error', { error: 'Token required' });
         setTimeout(() => socket.disconnect(), 1000);
         return;
@@ -1208,15 +1231,18 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
       try {
         const authResult = await authorizeSocketToken(token);
         if (!authResult || !authResult.userId) {
+          console.error('❌ agent_auth: Invalid token');
           socket.emit('auth_error', { error: 'Invalid token' });
           setTimeout(() => socket.disconnect(), 1000);
           return;
         }
         
         const userId = authResult.userId;
+        console.log(`🔍 Checking agent role for userId: ${userId}`);
         const hasAgentRole = await isUserInRole(userId, 'agent');
         
         if (!hasAgentRole) {
+          console.error(`❌ agent_auth: User ${userId} does not have agent role`);
           socket.emit('auth_error', { error: 'Insufficient permissions: agent role required' });
           setTimeout(() => socket.disconnect(), 1000);
           return;
@@ -1229,10 +1255,11 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
         socket.data.userId = userId;
         socket.data.agentId = finalAgentId;
         
-        console.log(`👤 Agent authenticated and connected: ${finalAgentId} (user: ${userId}, socket: ${socket.id})`);
+        console.log(`✅ Agent authenticated and connected: ${finalAgentId} (user: ${userId}, socket: ${socket.id})`);
+        console.log(`📊 agentSockets Map now has ${agentSockets.size} entries:`, Array.from(agentSockets.keys()));
         socket.emit('agent_connected', { agentId: finalAgentId, userId });
       } catch (err) {
-        console.error('Error authenticating agent:', err);
+        console.error('❌ Error authenticating agent:', err);
         socket.emit('auth_error', { error: 'Authentication failed' });
         setTimeout(() => socket.disconnect(), 1000);
       }
@@ -1492,4 +1519,6 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
 }
 
 module.exports = { initializeSocket };
+
+
 

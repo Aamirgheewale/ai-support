@@ -7,13 +7,13 @@ const AccuracyPage: React.FC = () => {
   const { hasRole } = useAuth();
   const [activeTab, setActiveTab] = useState<'list' | 'stats'>('stats');
 
-  // Check if user has admin or super_admin role
-  if (!hasRole('admin') && !hasRole('super_admin')) {
+  // Check if user has admin role
+  if (!hasRole('admin')) {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
           <p className="text-yellow-800">
-            You don't have permission to view accuracy logs. Admin or super_admin role required.
+            You don't have permission to view accuracy logs. Admin role required.
           </p>
         </div>
       </div>

@@ -453,7 +453,30 @@ export default function EmbedWidget({
         socket.emit('join_session', { sessionId });
         console.log(`📱 Widget socket rejoined session room on agent join: ${sessionId}`);
       }
-      setMessages(prev => [...prev, { sender: 'system', text: `Agent ${data.agentId} joined the conversation`, ts: Date.now() }]);
+      // Use agentName if available, otherwise fall back to agentId
+      const agentDisplayName = data.agentName || data.agentId || 'Agent';
+      const messageText = `Agent ${agentDisplayName} joined the conversation`;
+      
+      // Check for duplicates before adding (prevent duplicate "Agent joined" messages)
+      setMessages(prev => {
+        // Check if a similar "Agent joined" message already exists
+        // This catches both exact matches and variations (e.g., with name vs ID)
+        const duplicate = prev.some(msg => 
+          msg.sender === 'system' && 
+          msg.text && 
+          msg.text.includes('Agent') && 
+          msg.text.includes('joined the conversation') &&
+          msg.ts && Date.now() - msg.ts < 10000 // Within 10 seconds
+        );
+        
+        if (duplicate) {
+          console.log('⚠️  Duplicate agent_joined message detected, skipping');
+          return prev;
+        }
+        
+        console.log('✅ Adding agent_joined message to widget');
+        return [...prev, { sender: 'system', text: messageText, ts: Date.now() }];
+      });
     });
     socket.on('session_error', (err: any) => {
       stopTypingIndicator();

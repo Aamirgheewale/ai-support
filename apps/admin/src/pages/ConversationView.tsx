@@ -8,7 +8,7 @@ const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_API_B
 const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET || 'dev-secret-change-me'
 
 interface Message {
-  sender: 'user' | 'agent' | 'bot' | 'internal'
+  sender: 'user' | 'agent' | 'bot' | 'internal' | 'system'
   text: string
   timestamp: string
   agentId?: string
@@ -17,7 +17,7 @@ interface Message {
 export default function ConversationView() {
   const { sessionId } = useParams<{ sessionId: string }>()
   const navigate = useNavigate()
-  const { hasAnyRole, user, token } = useAuth()
+  const { hasRole, hasAnyRole, user, token } = useAuth()
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(true)
   const [agentId, setAgentId] = useState('')
@@ -26,9 +26,14 @@ export default function ConversationView() {
   const [socket, setSocket] = useState<any>(null)
   const [sessionStatus, setSessionStatus] = useState<string>('')
   const [assignedAgentId, setAssignedAgentId] = useState<string>('')
+  const [onlineAgents, setOnlineAgents] = useState<Array<{ userId: string; name: string; email: string; isOnline?: boolean }>>([])
+  const [selectedAgentId, setSelectedAgentId] = useState<string>('')
+  const [loadingAgents, setLoadingAgents] = useState(false)
   
-  // Check if current user can send messages (agent, admin, or super_admin)
-  const canSendMessages = hasAnyRole(['agent', 'admin', 'super_admin'])
+  // Check if current user can send messages (agent or admin)
+  const canSendMessages = hasAnyRole(['agent', 'admin'])
+  const isAdmin = hasRole('admin')
+  const isAgent = hasRole('agent')
   
   // Debug logging for close button visibility
   useEffect(() => {
@@ -235,6 +240,41 @@ export default function ConversationView() {
       console.log(`✅ Auto-filled agentId from assignedAgentId: ${assignedAgentId}`)
     }
   }, [assignedAgentId])
+
+  // Fetch online agents for admin dropdown
+  const loadOnlineAgents = async () => {
+    if (!isAdmin) return
+    
+    setLoadingAgents(true)
+    try {
+      const res = await fetch(`${API_BASE}/admin/users/agents`, {
+        headers: {
+          'Authorization': `Bearer ${token || ADMIN_SECRET}`
+        },
+        credentials: 'include'
+      })
+
+      if (!res.ok) {
+        throw new Error('Failed to load agents')
+      }
+
+      const data = await res.json()
+      // Filter only online agents
+      const online = (data.agents || []).filter((agent: any) => agent.isOnline === true)
+      setOnlineAgents(online)
+    } catch (err) {
+      console.error('Failed to load online agents:', err)
+    } finally {
+      setLoadingAgents(false)
+    }
+  }
+
+  // Load online agents when component mounts (for admins)
+  useEffect(() => {
+    if (isAdmin && sessionId) {
+      loadOnlineAgents()
+    }
+  }, [isAdmin, sessionId])
   
   // Separate effect to reconnect when agentId changes
   useEffect(() => {
@@ -402,12 +442,40 @@ export default function ConversationView() {
   }
 
   async function assignToMe() {
-    if (!sessionId || !agentId) {
-      alert('Please enter an agent ID')
+    try {
+      const agentId = user?.userId
+      if (!agentId) {
+        alert('Cannot assign: User ID not found')
+        return
+      }
+
+      const agentName = user?.name || user?.email || agentId
+      await assignSession(agentId, agentName)
+    } catch (err) {
+      console.error('Failed to assign session:', err)
+      alert('Failed to assign session: ' + (err instanceof Error ? err.message : 'Unknown error'))
+    }
+  }
+
+  async function assignToSelectedAgent() {
+    if (!selectedAgentId) {
+      alert('Please select an agent from the dropdown')
       return
     }
+
+    const selectedAgent = onlineAgents.find(a => a.userId === selectedAgentId)
+    const agentName = selectedAgent?.name || selectedAgent?.email || selectedAgentId
     
+    await assignSession(selectedAgentId, agentName)
+  }
+
+  async function assignSession(agentId: string, agentName: string) {
     try {
+      if (!agentId) {
+        alert('Cannot assign: Agent ID not found')
+        return
+      }
+      
       // Ensure socket is connected and registered as agent
       if (!socket) {
         alert('Socket not connected. Please wait...')
@@ -426,7 +494,7 @@ export default function ConversationView() {
       // Wait a bit for connection to register
       await new Promise(resolve => setTimeout(resolve, 100))
       
-      // Assign session via API
+      // Assign session via API with agentName
       const res = await fetch(`${API_BASE}/admin/sessions/${sessionId}/assign`, {
         method: 'POST',
         headers: {
@@ -434,7 +502,7 @@ export default function ConversationView() {
           'Content-Type': 'application/json'
         },
         credentials: 'include', // Include cookies as fallback
-        body: JSON.stringify({ agentId })
+        body: JSON.stringify({ agentId, agentName })
       })
       const data = await res.json()
       if (data.success) {
@@ -442,6 +510,8 @@ export default function ConversationView() {
         
         // Update assignedAgentId state immediately so close button appears
         setAssignedAgentId(agentId)
+        setAgentId(agentId) // Also update agentId for sending messages
+        setSelectedAgentId('') // Reset dropdown selection
         
         // Also emit takeover event
         socket.emit('agent_takeover', { sessionId, agentId })
@@ -450,7 +520,7 @@ export default function ConversationView() {
         // Reload session info to get latest status and assignment
         await loadSessionInfo()
         
-        // Reload messages to get latest
+        // Reload messages to get latest (including system message)
         loadMessages()
       } else {
         alert('Failed to assign session: ' + (data.error || 'Unknown error'))
@@ -608,7 +678,7 @@ export default function ConversationView() {
           <h1 style={{ display: 'inline', marginLeft: '10px', marginRight: '10px' }}>Session: {sessionId}</h1>
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-          {hasAnyRole(['admin', 'super_admin']) && (
+          {(hasRole('admin') || hasRole('agent')) && (
             <div style={{ position: 'relative', display: 'inline-block' }} data-export-menu>
               <button
                 onClick={() => setShowExportMenu(!showExportMenu)}
@@ -701,15 +771,48 @@ export default function ConversationView() {
           >
             🔄 Refresh
           </button>
-          {hasAnyRole(['agent', 'admin', 'super_admin']) && (
+          {hasAnyRole(['agent', 'admin']) && (
             <>
-              <input
-                type="text"
-                placeholder="Agent ID"
-                value={agentId}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAgentId(e.target.value)}
-                style={{ padding: '8px', border: '1px solid #ddd', borderRadius: '4px', width: '120px', marginLeft: '10px' }}
-              />
+              {isAdmin && !assignedAgentId && (
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginLeft: '10px' }}>
+                  <select
+                    value={selectedAgentId}
+                    onChange={(e) => setSelectedAgentId(e.target.value)}
+                    disabled={loadingAgents}
+                    style={{
+                      padding: '8px 12px',
+                      border: '1px solid #ddd',
+                      borderRadius: '4px',
+                      fontSize: '14px',
+                      minWidth: '200px',
+                      background: 'white',
+                      cursor: loadingAgents ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    <option value="">Select an agent...</option>
+                    {onlineAgents.map((agent) => (
+                      <option key={agent.userId} value={agent.userId}>
+                        {agent.name || agent.email} {agent.isOnline ? '🟢' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={assignToSelectedAgent}
+                    disabled={!selectedAgentId || loadingAgents}
+                    style={{
+                      padding: '8px 16px',
+                      background: selectedAgentId && !loadingAgents ? '#28a745' : '#ccc',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: selectedAgentId && !loadingAgents ? 'pointer' : 'not-allowed',
+                      fontSize: '14px'
+                    }}
+                  >
+                    Assign
+                  </button>
+                </div>
+              )}
               {assignedAgentId && canSendMessages && sessionStatus === 'agent_assigned' ? (
                 <>
                   <button onClick={closeConversation} style={{ padding: '8px 16px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', marginLeft: '10px' }}>
@@ -725,7 +828,7 @@ export default function ConversationView() {
                     Assigned to: {assignedAgentId}
                   </span>
                   {/* Only show reassign button if current user is NOT the assigned agent */}
-                  {agentId && agentId !== assignedAgentId && user?.userId !== assignedAgentId && (
+                  {user?.userId !== assignedAgentId && (
                     <button onClick={assignToMe} style={{ padding: '8px 16px', background: '#ffc107', color: '#333', border: 'none', borderRadius: '4px', cursor: 'pointer', marginLeft: '10px' }}>
                       Reassign to Me
                     </button>
@@ -779,10 +882,12 @@ export default function ConversationView() {
                   background: msg.sender === 'user' ? '#667eea' : 
                               msg.sender === 'agent' ? '#28a745' : 
                               msg.sender === 'bot' ? '#6c757d' : 
-                              msg.sender === 'internal' ? '#fff3cd' : '#f8f9fa',
+                              msg.sender === 'internal' ? '#fff3cd' : 
+                              msg.sender === 'system' ? '#e7f3ff' : '#f8f9fa',
                   color: msg.sender === 'user' ? 'white' : 
                          msg.sender === 'bot' ? 'white' : 
-                         msg.sender === 'internal' ? '#856404' : '#333',
+                         msg.sender === 'internal' ? '#856404' : 
+                         msg.sender === 'system' ? '#004085' : '#333',
                   alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start',
                   maxWidth: '70%',
                   border: msg.sender === 'internal' ? '2px dashed #ffc107' : 'none'
@@ -792,6 +897,7 @@ export default function ConversationView() {
                   {msg.sender === 'bot' ? '🤖 Bot' : 
                    msg.sender === 'agent' ? `👤 Agent${msg.agentId ? ` (${msg.agentId})` : ''}` : 
                    msg.sender === 'internal' ? '🔒 Private Note' : 
+                   msg.sender === 'system' ? 'ℹ️ System' :
                    '👤 User'}
                 </div>
                 <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{msg.text}</div>

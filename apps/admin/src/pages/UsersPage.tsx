@@ -31,12 +31,12 @@ export default function UsersPage() {
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
 
-  // Check if user has super_admin role
-  if (!hasRole('super_admin')) {
+  // Check if user has admin role
+  if (!hasRole('admin')) {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <p className="text-red-800">Access denied. Super admin role required.</p>
+          <p className="text-red-800">Access denied. Admin role required.</p>
         </div>
       </div>
     );
@@ -116,7 +116,8 @@ export default function UsersPage() {
       });
 
       if (!res.ok) {
-        throw new Error('Failed to update roles');
+        const errorData = await res.json().catch(() => ({ error: 'Failed to update roles' }));
+        throw new Error(errorData.error || 'Failed to update roles');
       }
 
       setEditingUser(null);
@@ -332,7 +333,7 @@ export default function UsersPage() {
                   Roles
                 </label>
                 <div className="space-y-2">
-                  {['super_admin', 'admin', 'agent', 'viewer'].map((role) => (
+                  {['admin', 'agent'].map((role) => (
                     <label key={role} className="flex items-center space-x-2">
                       <input
                         type="checkbox"

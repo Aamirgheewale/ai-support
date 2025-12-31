@@ -20,15 +20,15 @@ export default function Toast({ message, type, onClose, duration = 3000 }: Toast
                    'bg-blue-50 border-blue-200 text-blue-800'
 
   return (
-    <div className={`rounded-lg border p-4 shadow-lg ${bgColor} animate-slide-in min-w-[300px]`}>
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-medium">{message}</span>
+    <div className={`rounded-lg border p-2.5 shadow-lg ${bgColor} animate-slide-in min-w-[200px] max-w-[400px]`}>
+      <div className="flex items-start justify-between gap-2">
+        <span className="text-xs font-medium flex-1 break-words">{message}</span>
         <button
           onClick={onClose}
-          className="ml-4 text-gray-400 hover:text-gray-600 focus:outline-none"
+          className="text-gray-400 hover:text-gray-600 focus:outline-none flex-shrink-0 mt-0.5"
           aria-label="Close"
         >
-          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import PermissionDeniedPage from '../pages/PermissionDeniedPage';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
 const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET || 'dev-secret-change-me';
@@ -55,7 +56,7 @@ interface AuthContextType {
   loading: boolean;
   hasRole: (role: string) => boolean;
   hasAnyRole: (roles: string[]) => boolean;
-  isSuperAdmin: () => boolean;
+  isAdmin: () => boolean;
   signin: (credentials: { email: string; remember?: boolean }) => Promise<void>;
   signup: (data: { name: string; email: string; role?: string }) => Promise<void>;
   signout: () => Promise<void>;
@@ -108,7 +109,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             userId: 'dev-admin',
             email: 'dev@admin.local',
             name: 'Dev Admin',
-            roles: ['super_admin']
+            roles: ['admin']
           };
           setUser(devUser);
           return devUser;
@@ -127,7 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           userId: 'dev-admin',
           email: 'dev@admin.local',
           name: 'Dev Admin',
-          roles: ['super_admin']
+          roles: ['admin']
         };
         setUser(devUser);
         return devUser;
@@ -146,7 +147,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Only try to fetch user if we have a token;
       // don't auto-authenticate with dev-admin on initial load.
       if (storedToken) {
-        await fetchUser(storedToken);
+        const userData = await fetchUser(storedToken);
+        
+        // Auto-connect agent to Socket.IO if they have agent role and are already logged in
+        if (userData && userData.roles && userData.roles.includes('agent') && typeof window !== 'undefined') {
+          try {
+            const { io } = await import('socket.io-client');
+            const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_API_BASE || 'http://localhost:4000';
+            const socket = io(SOCKET_URL, {
+              withCredentials: true,
+              transports: ['websocket', 'polling']
+            });
+            
+            socket.on('connect', () => {
+              console.log('🔌 Agent auto-connected to Socket.IO for online status (on page load)');
+              // Authenticate as agent using userId
+              socket.emit('agent_auth', {
+                token: storedToken,
+                agentId: userData.userId
+              });
+            });
+            
+            socket.on('agent_connected', (data: any) => {
+              console.log('✅ Agent authenticated successfully:', data);
+            });
+            
+            socket.on('auth_error', (error: any) => {
+              console.error('❌ Agent authentication failed:', error);
+            });
+            
+            socket.on('disconnect', () => {
+              console.log('🔌 Agent Socket disconnected');
+            });
+            
+            // If socket is already connected, authenticate immediately
+            if (socket.connected) {
+              console.log('🔌 Socket already connected, authenticating immediately');
+              socket.emit('agent_auth', {
+                token: storedToken,
+                agentId: userData.userId
+              });
+            }
+            
+            // Store socket reference
+            (window as any).__agentSocket = socket;
+          } catch (err) {
+            console.warn('Failed to auto-connect agent to Socket.IO:', err);
+          }
+        }
       } else {
         setUser(null);
       }
@@ -185,6 +233,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!userData) {
       throw new Error('Failed to load user profile');
     }
+    
+    // Automatically connect agent to Socket.IO if they have agent role
+    if (userData.roles && userData.roles.includes('agent') && typeof window !== 'undefined') {
+      try {
+        const { io } = await import('socket.io-client');
+        const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_API_BASE || 'http://localhost:4000';
+        const socket = io(SOCKET_URL, {
+          withCredentials: true,
+          transports: ['websocket', 'polling']
+        });
+        
+        socket.on('connect', () => {
+          console.log('🔌 Agent auto-connected to Socket.IO for online status');
+          // Authenticate as agent using userId
+          socket.emit('agent_auth', {
+            token: data.token,
+            agentId: userData.userId
+          });
+        });
+        
+        socket.on('agent_connected', (authData: any) => {
+          console.log('✅ Agent authenticated successfully after login:', authData);
+        });
+        
+        socket.on('auth_error', (error: any) => {
+          console.error('❌ Agent authentication failed after login:', error);
+        });
+        
+        socket.on('disconnect', () => {
+          console.log('🔌 Agent Socket disconnected after login');
+        });
+        
+        // If socket is already connected, authenticate immediately
+        if (socket.connected) {
+          console.log('🔌 Socket already connected, authenticating immediately after login');
+          socket.emit('agent_auth', {
+            token: data.token,
+            agentId: userData.userId
+          });
+        }
+        
+        // Store socket reference (will be cleaned up on logout)
+        (window as any).__agentSocket = socket;
+      } catch (err) {
+        console.warn('Failed to auto-connect agent to Socket.IO:', err);
+      }
+    }
   };
 
   const signup = async (signupData: { name: string; email: string; role?: string }) => {
@@ -192,7 +287,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const payload: any = {
       name: signupData.name,
       email: signupData.email,
-      role: signupData.role || 'viewer' // Always include role, default to viewer
+      role: signupData.role || 'agent' // Always include role, default to agent
     };
 
     console.log('📤 Signup payload being sent to API:', payload);
@@ -217,6 +312,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signout = async () => {
+    // Disconnect agent socket if it exists
+    if (typeof window !== 'undefined' && (window as any).__agentSocket) {
+      try {
+        (window as any).__agentSocket.disconnect();
+        delete (window as any).__agentSocket;
+        console.log('🔌 Agent socket disconnected on logout');
+      } catch (err) {
+        console.warn('Error disconnecting agent socket:', err);
+      }
+    }
+    
     // Clear token from memory
     setToken(null);
     setUser(null);
@@ -242,7 +348,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const hasRole = (role: string): boolean => {
     if (!user) return false;
-    return user.roles.includes(role) || user.roles.includes('super_admin');
+    return user.roles.includes(role);
   };
 
   const hasAnyRole = (roles: string[]): boolean => {
@@ -250,8 +356,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return roles.some(role => hasRole(role));
   };
 
-  const isSuperAdmin = (): boolean => {
-    return hasRole('super_admin');
+  const isAdmin = (): boolean => {
+    return hasRole('admin');
   };
 
   return (
@@ -261,7 +367,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading, 
       hasRole, 
       hasAnyRole, 
-      isSuperAdmin,
+      isAdmin,
       signin, 
       signup, 
       signout, 
@@ -289,6 +395,7 @@ interface ProtectedRouteProps {
 export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) {
   const { user, loading, hasRole, hasAnyRole } = useAuth();
   const [shouldRedirect, setShouldRedirect] = useState(false);
+  const [showPermissionDenied, setShowPermissionDenied] = useState(false);
 
   useEffect(() => {
     if (!loading) {
@@ -297,7 +404,8 @@ export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) 
       } else if (requiredRole) {
         const roles = Array.isArray(requiredRole) ? requiredRole : [requiredRole];
         if (!hasAnyRole(roles)) {
-          setShouldRedirect(true);
+          // Show permission denied page instead of redirecting
+          setShowPermissionDenied(true);
         }
       }
     }
@@ -314,6 +422,10 @@ export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) 
   if (shouldRedirect) {
     window.location.href = '/auth';
     return null;
+  }
+
+  if (showPermissionDenied) {
+    return <PermissionDeniedPage />;
   }
 
   return <>{children}</>;

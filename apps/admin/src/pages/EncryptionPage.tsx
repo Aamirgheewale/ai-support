@@ -2,7 +2,7 @@
  * Encryption Management Page
  * 
  * UI for managing encryption settings, running migrations, and viewing encryption status.
- * Restricted to super_admin role only.
+ * Restricted to admin role only.
  * 
  * Placement: Add link in Navigation component under Admin/Settings
  * See screenshot: /mnt/data/9543afb1-4904-4dca-89b9-ba4235054337.png for placement reference
@@ -49,7 +49,7 @@ export default function EncryptionPage() {
       return;
     }
     
-    if (hasRole('super_admin')) {
+    if (hasRole('admin')) {
       loadStatus();
       loadAuditLogs();
     } else {
@@ -188,8 +188,8 @@ export default function EncryptionPage() {
     }
   };
 
-  // Check if user has super_admin role (after all hooks)
-  if (!hasRole('super_admin')) {
+  // Check if user has admin role (after all hooks)
+  if (!hasRole('admin')) {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">

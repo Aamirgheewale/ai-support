@@ -11,13 +11,13 @@ const DEV_ALLOW_SIGNUP_ROLE = import.meta.env.VITE_DEV_ALLOW_SIGNUP_ROLE === 'tr
 
 export default function AuthPage() {
   const navigate = useNavigate()
-  const { signin, signup, isSuperAdmin, user, loading } = useAuth()
+  const { signin, signup, user, loading } = useAuth()
   const [activeTab, setActiveTab] = useState<'signup' | 'signin'>('signin')
   
   // Sign Up state
   const [signupName, setSignupName] = useState('')
   const [signupEmail, setSignupEmail] = useState('')
-  const [signupRole, setSignupRole] = useState('viewer')
+  const [signupRole, setSignupRole] = useState('agent')
   const [signupErrors, setSignupErrors] = useState<Record<string, string>>({})
   const [signupLoading, setSignupLoading] = useState(false)
   
@@ -98,7 +98,7 @@ export default function AuthPage() {
       const signupData: any = {
         name: signupName.trim(),
         email: signupEmail.trim(),
-        role: signupRole || 'viewer' // Always include role selection, default to viewer if empty
+        role: signupRole || 'agent' // Always include role selection, default to agent if empty
       }
       
       console.log('📤 Signup data being sent:', signupData)
@@ -109,7 +109,7 @@ export default function AuthPage() {
       setToast({ message: 'Account created successfully! Please sign in.', type: 'success' })
       setSignupName('')
       setSignupEmail('')
-      setSignupRole('viewer')
+      setSignupRole('agent')
       
       // Switch to sign in tab after 1 second
       setTimeout(() => {
@@ -162,7 +162,7 @@ export default function AuthPage() {
   }
   
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex items-center justify-center px-4 py-12">
+    <div className="fixed inset-0 bg-white flex items-center justify-center px-4 py-12 z-50">
       {toast && (
         <Toast
           message={toast.message}
@@ -173,7 +173,7 @@ export default function AuthPage() {
       <UserProfileModal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)} />
       
       <div className="w-full max-w-md">
-        <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
+        <div className="bg-white rounded-2xl overflow-hidden" style={{ boxShadow: '0 20px 60px -12px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(0, 0, 0, 0.08)' }}>
           {/* Tab Navigation */}
           <div className="flex border-b border-gray-200">
             <button
