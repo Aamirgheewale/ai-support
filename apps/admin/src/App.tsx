@@ -11,16 +11,22 @@ import AgentsOnline from './pages/AgentsOnline'
 import SignupPage from './pages/SignupPage'
 import AuthPage from './pages/AuthPage'
 import PermissionDeniedPage from './pages/PermissionDeniedPage'
+import PendingQueries from './pages/PendingQueries'
 import UserProfileModal from './components/common/UserProfileModal'
 import AudioNotifications from './components/common/AudioNotifications'
 import AudioControls from './components/common/AudioControls'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 function Navigation() {
   const { hasRole, user, isAdmin, loading } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false)
+  const [isPendingQueriesOpen, setIsPendingQueriesOpen] = useState(false)
+  const prevPathnameRef = useRef<string>('')
+
+  // Check if pending queries sub-menu should be open
+  const isPendingQueriesActive = location.pathname === '/pending-queries'
 
   // Keyboard shortcuts: g p for profile, g u for users
   // MUST be called before any early returns (Rules of Hooks)
@@ -54,6 +60,17 @@ function Navigation() {
     window.addEventListener('keydown', handleKeyPress)
     return () => window.removeEventListener('keydown', handleKeyPress)
   }, [navigate, isAdmin, location.pathname, user])
+
+  // Auto-expand pending queries menu only when navigating TO that route (not when already on it)
+  // MUST be called before any early returns (Rules of Hooks)
+  useEffect(() => {
+    // Only auto-expand if we just navigated TO pending-queries (not if we were already on it)
+    if (isPendingQueriesActive && prevPathnameRef.current !== '/pending-queries') {
+      setIsPendingQueriesOpen(true)
+    }
+    // Update the ref to track the current pathname
+    prevPathnameRef.current = location.pathname
+  }, [location.pathname, isPendingQueriesActive])
 
   // Don't show navigation on auth/signup pages
   if (location.pathname === '/signup' || location.pathname === '/auth') {
@@ -144,6 +161,68 @@ function Navigation() {
               </svg>
               Agents Online
             </Link>
+          )}
+
+          {/* Pending Queries accordion - visible to admin/agent */}
+          {(hasRole('admin') || hasRole('agent')) && (
+            <div>
+              <button
+                onClick={() => {
+                  if (isPendingQueriesOpen) {
+                    // If already open, just collapse it
+                    setIsPendingQueriesOpen(false);
+                  } else {
+                    // If closed, open it and navigate to pending
+                    setIsPendingQueriesOpen(true);
+                    navigate('/pending-queries?status=pending');
+                  }
+                }}
+                className={`w-full flex items-center justify-between px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+                  isPendingQueriesActive
+                    ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-700'
+                    : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                }`}
+              >
+                <div className="flex items-center">
+                  <svg className="w-5 h-5 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <span>Pending Queries</span>
+                </div>
+                <svg
+                  className={`w-4 h-4 transition-transform duration-200 ${isPendingQueriesOpen ? 'transform rotate-90' : ''}`}
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+              {isPendingQueriesOpen && (
+                <div className="ml-4 mt-1 space-y-1">
+                  <Link
+                    to="/pending-queries?status=pending"
+                    className={`flex items-center px-4 py-2 text-xs font-medium rounded-lg transition-colors ${
+                      location.pathname === '/pending-queries' && (location.search === '' || location.search === '?status=pending')
+                        ? 'bg-blue-50 text-blue-700'
+                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                    }`}
+                  >
+                    <span className="ml-2">Pending</span>
+                  </Link>
+                  <Link
+                    to="/pending-queries?status=resolved"
+                    className={`flex items-center px-4 py-2 text-xs font-medium rounded-lg transition-colors ${
+                      location.pathname === '/pending-queries' && location.search === '?status=resolved'
+                        ? 'bg-blue-50 text-blue-700'
+                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                    }`}
+                  >
+                    <span className="ml-2">Resolved</span>
+                  </Link>
+                </div>
+              )}
+            </div>
           )}
 
           {/* Analytics link - visible to admin */}
@@ -268,6 +347,30 @@ function Navigation() {
               Agents
             </Link>
           )}
+          {(hasRole('admin') || hasRole('agent')) && (
+            <>
+              <Link
+                to="/pending-queries?status=pending"
+                className={`px-3 py-1.5 text-xs font-medium rounded-md ${
+                  location.pathname === '/pending-queries' && (location.search === '' || location.search === '?status=pending')
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                Pending
+              </Link>
+              <Link
+                to="/pending-queries?status=resolved"
+                className={`px-3 py-1.5 text-xs font-medium rounded-md ${
+                  location.pathname === '/pending-queries' && location.search === '?status=resolved'
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                Resolved
+              </Link>
+            </>
+          )}
           {hasRole('admin') && (
             <Link
               to="/analytics"
@@ -335,6 +438,7 @@ function App() {
               <Route path="/sessions" element={<ProtectedRoute><SessionsList /></ProtectedRoute>} />
               <Route path="/sessions/:sessionId" element={<ProtectedRoute><ConversationView /></ProtectedRoute>} />
               <Route path="/live" element={<ProtectedRoute><LiveVisitors /></ProtectedRoute>} />
+              <Route path="/pending-queries" element={<ProtectedRoute requiredRole={['admin', 'agent']}><PendingQueries /></ProtectedRoute>} />
               <Route path="/analytics" element={<ProtectedRoute requiredRole="admin"><AnalyticsPage /></ProtectedRoute>} />
               <Route path="/accuracy" element={<ProtectedRoute requiredRole="admin"><AccuracyPage /></ProtectedRoute>} />
               <Route path="/users" element={<ProtectedRoute><UsersRoute /></ProtectedRoute>} />

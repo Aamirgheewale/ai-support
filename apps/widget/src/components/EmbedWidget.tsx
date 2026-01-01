@@ -14,11 +14,11 @@ const FAQ_OPTIONS = [
   { id: 'other', label: 'Ask something else?', action: 'switch_to_chat' }
 ];
 
-export default function EmbedWidget({ 
+export default function EmbedWidget({
   initialSessionId,
   onAgentInitiatedChat,
   onClose
-}: { 
+}: {
   initialSessionId?: string;
   onAgentInitiatedChat?: () => void;
   onClose?: () => void;
@@ -54,10 +54,44 @@ export default function EmbedWidget({
   const [conversationConcluded, setConversationConcluded] = useState(false);
   const [streamingText, setStreamingText] = useState<string | null>(null);
   const [isChatMode, setIsChatMode] = useState(false);
+  const [showOfflineForm, setShowOfflineForm] = useState(false);
+  const [offlineFormData, setOfflineFormData] = useState({ name: '', email: '', mobile: '', query: '' });
+  const [formSubmitted, setFormSubmitted] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<number | null>(null);
   const messagesLoadedRef = useRef(false); // Track if messages have been loaded
   const socketRef = useRef<Socket | null>(null); // Store socket instance
+  const chatTimeoutRef = useRef<number | null>(null); // 3-minute timer
+
+  // Business hours check (Mon-Fri, 09:00 - 17:00)
+  // TEST MODE: Add ?testBusinessHours=false to URL to force offline form
+  // Add ?testBusinessHours=true to force business hours (show chat)
+  const isBusinessHours = (): boolean => {
+    // Check for test override in URL parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const testOverride = urlParams.get('testBusinessHours');
+    if (testOverride === 'false') {
+      console.log('🧪 TEST MODE: Forcing offline (business hours = false)');
+      return false;
+    }
+    if (testOverride === 'true') {
+      console.log('🧪 TEST MODE: Forcing business hours (business hours = true)');
+      return true;
+    }
+
+    // Normal business hours check
+    const now = new Date();
+    const day = now.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+    const hour = now.getHours();
+
+    // Monday to Friday (1-5)
+    if (day >= 1 && day <= 5) {
+      // 09:00 to 17:00
+      return hour >= 9 && hour < 17;
+    }
+    return false;
+  };
 
   // Extract host page data from query parameters (passed by embed.js)
   const getHostPageData = () => {
@@ -102,9 +136,9 @@ export default function EmbedWidget({
         console.log(`🧹 Session ${sid} was concluded - cleared localStorage and skipping message load`);
         return;
       }
-      
+
       const storedMessages = localStorage.getItem(`ai-support-messages-${sid}`);
-      
+
       if (storedMessages) {
         const loadedMessages = JSON.parse(storedMessages);
         setMessages(loadedMessages);
@@ -156,7 +190,7 @@ export default function EmbedWidget({
       console.error('❌ Failed to create socket connection:', error);
       return;
     }
-    
+
     // Helper function to emit visitor_join
     const emitVisitorJoin = () => {
       if (socket && socket.connected) {
@@ -171,16 +205,16 @@ export default function EmbedWidget({
         console.warn('⚠️  Cannot emit visitor_join: socket not connected');
       }
     };
-    
+
     // Emit visitor_join on connect (this will fire when socket connects)
     socket.on('connect', () => {
       console.log('ws connected', socket.id);
       setIsConnected(true);
       setConnectionError(null); // Clear any previous errors
-      
+
       // Emit visitor_join immediately upon connection (before chat starts)
       emitVisitorJoin();
-      
+
       // Join session room if sessionId exists
       if (sessionId) {
         socket.emit('join_session', { sessionId });
@@ -191,7 +225,7 @@ export default function EmbedWidget({
         }
       }
     });
-    
+
     socket.on('disconnect', (reason) => {
       setIsConnected(false);
       console.log('ws disconnected:', reason);
@@ -207,7 +241,7 @@ export default function EmbedWidget({
       setIsConnected(false);
       setConnectionError(`Cannot connect to server. Please ensure the API server is running on ${SOCKET_URL}`);
     });
-    
+
     socket.on('reconnect', () => {
       console.log('ws reconnected', socket.id);
       setIsConnected(true);
@@ -219,34 +253,34 @@ export default function EmbedWidget({
       // Re-emit visitor_join on reconnect
       emitVisitorJoin();
     });
-    
+
     // Listen for agent-initiated chat (proactive chat) - MUST be in same useEffect as socket creation
     socket.on('agent_initiated_chat', (data: any) => {
       console.log('📨 Received agent_initiated_chat:', data);
       const { sessionId: newSessionId, text, sender = 'bot' } = data || {};
-      
+
       if (!newSessionId || !text) {
         console.warn('⚠️  Invalid agent_initiated_chat payload:', data);
         return;
       }
-      
+
       // 1. Set isOpen to true (via callback)
       if (onAgentInitiatedChat) {
         onAgentInitiatedChat();
       }
-      
+
       // 2. Save sessionId to localStorage
       localStorage.setItem('ai-support-session-id', newSessionId);
-      
+
       // 3. Update sessionId state
       setSessionId(newSessionId);
       messagesLoadedRef.current = false;
-      
+
       // 4. Append the received message to messages state as 'bot' message
       setMessages(prev => {
         // Check for duplicates
-        const exists = prev.some(msg => 
-          msg.sender === sender && 
+        const exists = prev.some(msg =>
+          msg.sender === sender &&
           msg.text === text &&
           (msg.ts && Date.now() - msg.ts < 2000)
         );
@@ -255,19 +289,19 @@ export default function EmbedWidget({
           return prev;
         }
         console.log(`   ✅ Adding ${sender} message to widget (initiated chat)`);
-        return [...prev, { 
+        return [...prev, {
           sender: sender, // Use 'bot' as sender so it appears as bot message
-          text: text, 
+          text: text,
           ts: Date.now()
         }];
       });
-      
+
       // Join the session room (this connects the widget to the session created by admin)
       console.log(`🔗 Connecting widget to session ${newSessionId} (created by admin initiate_chat)`);
       socket.emit('join_session', { sessionId: newSessionId });
       console.log(`📱 Widget joined session room for agent-initiated chat: ${newSessionId}`);
       console.log(`   ✅ Widget is now connected to the same session that was created by admin`);
-      
+
       // 5. Play notification sound
       try {
         const popSound = new Audio('/sounds/pop.mp3');
@@ -279,13 +313,13 @@ export default function EmbedWidget({
         console.warn('Could not play notification sound:', err);
       }
     });
-    
+
     // Also load messages on initial mount if sessionId exists
     const storedSessionId = getStoredSessionId();
     if (storedSessionId && !messagesLoadedRef.current) {
       loadMessagesFromStorage(storedSessionId);
     }
-    
+
     return () => {
       socket.off('connect');
       socket.off('disconnect');
@@ -340,7 +374,7 @@ export default function EmbedWidget({
   useEffect(() => {
     const socket = socketRef.current;
     if (!socket) return;
-    
+
     // Update sessionId dependency - rejoin room when sessionId changes
     if (sessionId) {
       socket.emit('join_session', { sessionId });
@@ -349,7 +383,7 @@ export default function EmbedWidget({
         loadMessagesFromStorage(sessionId);
       }
     }
-    
+
     socket.on('session_started', ({ sessionId: newSessionId }: any) => {
       setSessionId(newSessionId);
       // Store sessionId in localStorage for persistence
@@ -358,7 +392,7 @@ export default function EmbedWidget({
         messagesLoadedRef.current = false; // Reset flag to allow loading messages
         socket.emit('join_session', { sessionId: newSessionId });
         console.log(`📱 Widget socket joined session room on start: ${newSessionId}`);
-        
+
         // Check if there's a pending message to send
         const pendingMessage = localStorage.getItem('ai-support-pending-message');
         if (pendingMessage && socket) {
@@ -375,7 +409,7 @@ export default function EmbedWidget({
       if (!m || typeof m.text !== 'string') return;
       stopTypingIndicator();
       console.log('📨 Widget received bot_stream:', m);
-      
+
       // Update streaming text - it will be hidden automatically if a matching bot_message exists
       setStreamingText(m.text);
     });
@@ -385,14 +419,33 @@ export default function EmbedWidget({
 
       // Clear any in-progress streaming text immediately when final message arrives
       setStreamingText(null);
-      
+
+      // Clear chat timeout when bot responds
+      if (chatTimeoutRef.current) {
+        window.clearTimeout(chatTimeoutRef.current);
+        chatTimeoutRef.current = null;
+      }
+
+      // AI Failure Detection: If confidence === 0, show offline form
+      if (m.confidence === 0) {
+        console.log('❌ AI failed (confidence === 0), showing offline form');
+        setShowOfflineForm(true);
+        setOfflineFormData(prev => ({ ...prev, query: prev.query || m.text || '' }));
+        setMessages(prev => [...prev, {
+          sender: 'system',
+          text: 'Our AI is having trouble. Please fill this form so a Agent can help.',
+          ts: Date.now()
+        }]);
+        return;
+      }
+
       // Switch to chat mode when receiving real bot messages from socket
       setIsChatMode(true);
 
       setMessages(prev => {
         // Check for duplicates more thoroughly - check both exact text match and recent messages
-        const exists = prev.some(msg => 
-          msg.sender === 'bot' && 
+        const exists = prev.some(msg =>
+          msg.sender === 'bot' &&
           msg.text === m.text &&
           // Also check if it's a very recent duplicate (within last 2 seconds)
           (msg.ts && Date.now() - msg.ts < 2000)
@@ -401,15 +454,15 @@ export default function EmbedWidget({
           console.log('   ⚠️  Duplicate bot message detected, skipping');
           return prev;
         }
-        return [...prev, { 
-          sender: 'bot', 
-          text: m.text, 
+        return [...prev, {
+          sender: 'bot',
+          text: m.text,
           ts: Date.now(),
           type: m.type,
           options: m.options
         }];
       });
-      
+
       // Check if conversation is concluded
       if (m.type === 'conclusion_final') {
         setConversationConcluded(true);
@@ -425,6 +478,15 @@ export default function EmbedWidget({
     socket.on('agent_message', (m: any) => {
       stopTypingIndicator();
       console.log('📨 Widget received agent_message:', m);
+
+      // Clear chat timeout when agent responds
+      if (chatTimeoutRef.current) {
+        window.clearTimeout(chatTimeoutRef.current);
+        chatTimeoutRef.current = null;
+      }
+
+      setShowOfflineForm(false); // Hide offline form when agent responds
+
       setMessages(prev => {
         const exists = prev.some(msg => msg.sender === 'agent' && msg.text === m.text);
         if (exists) {
@@ -434,7 +496,7 @@ export default function EmbedWidget({
         console.log('   ✅ Adding agent message to widget');
         return [...prev, { sender: 'agent', text: m.text, ts: Date.now() }];
       });
-      
+
       // Play notification sound for agent messages
       try {
         const popSound = new Audio('/sounds/pop.mp3');
@@ -456,24 +518,24 @@ export default function EmbedWidget({
       // Use agentName if available, otherwise fall back to agentId
       const agentDisplayName = data.agentName || data.agentId || 'Agent';
       const messageText = `Agent ${agentDisplayName} joined the conversation`;
-      
+
       // Check for duplicates before adding (prevent duplicate "Agent joined" messages)
       setMessages(prev => {
         // Check if a similar "Agent joined" message already exists
         // This catches both exact matches and variations (e.g., with name vs ID)
-        const duplicate = prev.some(msg => 
-          msg.sender === 'system' && 
-          msg.text && 
-          msg.text.includes('Agent') && 
+        const duplicate = prev.some(msg =>
+          msg.sender === 'system' &&
+          msg.text &&
+          msg.text.includes('Agent') &&
           msg.text.includes('joined the conversation') &&
           msg.ts && Date.now() - msg.ts < 10000 // Within 10 seconds
         );
-        
+
         if (duplicate) {
           console.log('⚠️  Duplicate agent_joined message detected, skipping');
           return prev;
         }
-        
+
         console.log('✅ Adding agent_joined message to widget');
         return [...prev, { sender: 'system', text: messageText, ts: Date.now() }];
       });
@@ -482,7 +544,7 @@ export default function EmbedWidget({
       stopTypingIndicator();
       setMessages(prev => [...prev, { sender: 'system', text: `Error: ${err.error}`, ts: Date.now() }]);
     });
-    
+
     socket.on('conversation_closed', (data: any) => {
       const { sessionId: closedSessionId } = data || {};
       // Only reset if this is the current session
@@ -524,7 +586,16 @@ export default function EmbedWidget({
   function start() {
     const socket = socketRef.current;
     if (!socket) return;
-    
+
+    // Check business hours before starting chat - ALLOW offline chat for AI
+    // if (!isBusinessHours()) {
+    //   setShowOfflineForm(true);
+    //   return;
+    // }
+
+    // Hide offline form when starting chat (whether in business hours or not)
+    setShowOfflineForm(false);
+
     const sid = sessionId || `s_${Date.now()}`;
     setSessionId(sid);
     // Store sessionId in localStorage
@@ -537,7 +608,7 @@ export default function EmbedWidget({
     setConversationConcluded(false);
     // Don't reset isChatMode here - let it stay in chat mode if user initiated it
     messagesLoadedRef.current = false; // Reset loaded flag for new session
-    
+
     // Include host page data in userMeta
     const hostData = getHostPageData();
     const userMeta = {
@@ -545,21 +616,21 @@ export default function EmbedWidget({
       url: hostData.url,
       referrer: hostData.referrer
     };
-    
+
     socket.emit('start_session', { sessionId: sid, userMeta });
     // Trigger blinking animation
     setIsButtonBlinking(true);
     setTimeout(() => setIsButtonBlinking(false), 2000); // Stop after 2 seconds
   }
-  
+
   function handleConclusionOption(optionValue: string, optionText: string) {
     const socket = socketRef.current;
     if (!socket || !sessionId || conversationConcluded) return; // Don't allow clicks if conversation is concluded
-    
+
     // Send the selected option as a user message
     setMessages(prev => [...prev, { sender: 'user', text: optionText, ts: Date.now() }]);
     socket.emit('user_message', { sessionId, text: optionText });
-    
+
     if (optionValue === 'thank_you') {
       // Option 1: Thank you - conversation is ending, clear localStorage immediately
       startTypingIndicator();
@@ -578,28 +649,39 @@ export default function EmbedWidget({
 
   function handleOptionClick(option: typeof FAQ_OPTIONS[0]) {
     if (option.action === 'switch_to_chat') {
+      // Check business hours - ALLOW offline chat for AI (remove blocker)
+      // if (!isBusinessHours()) {
+      //   setShowOfflineForm(true);
+      //   return;
+      // }
+
       // Switch to chat mode and start session
       setIsChatMode(true);
-      setMessages(prev => [...prev, { 
-        sender: 'system', 
-        text: "Go ahead, I'm listening. You can also ask for an agent.", 
-        ts: Date.now() 
+      setMessages(prev => [...prev, {
+        sender: 'system',
+        text: "Go ahead, I'm listening. You can also ask for an agent.",
+        ts: Date.now()
       }]);
       // Start session if it doesn't exist
       if (!sessionId) {
         start();
       }
-      
-      // Emit request_human event to trigger ring notification on admin dashboard
-      const socket = socketRef.current;
-      if (socket && socket.connected) {
-        socket.emit('request_human', {
-          sessionId: sessionId || `s_${Date.now()}`,
-          reason: 'user_clicked_ask_something_else'
-        });
-        console.log('📢 Emitted request_human event to trigger admin ring notification');
+
+      // Emit request_human event ONLY during business hours
+      // Outside business hours, we rely on AI response and fallback to form if AI fails
+      if (isBusinessHours()) {
+        const socket = socketRef.current;
+        if (socket && socket.connected) {
+          socket.emit('request_human', {
+            sessionId: sessionId || `s_${Date.now()}`,
+            reason: 'user_clicked_ask_something_else'
+          });
+          console.log('📢 Emitted request_human event to trigger admin ring notification');
+        } else {
+          console.warn('⚠️  Cannot emit request_human: socket not connected');
+        }
       } else {
-        console.warn('⚠️  Cannot emit request_human: socket not connected');
+        console.log('🌙 Outside business hours - suppressed request_human event. User will interact with AI.');
       }
     } else {
       // Static question - add Q&A to messages locally without starting session
@@ -617,12 +699,12 @@ export default function EmbedWidget({
   function send() {
     const socket = socketRef.current;
     if (!socket || !text.trim()) return;
-    
+
     // Switch to chat mode when user sends a message
     if (!isChatMode) {
       setIsChatMode(true);
     }
-    
+
     // Start session if it doesn't exist
     if (!sessionId) {
       const messageToSend = text.trim();
@@ -636,13 +718,30 @@ export default function EmbedWidget({
       localStorage.setItem('ai-support-pending-message', pendingMessage);
       return;
     }
-    
+
     // Normal flow: session exists
-    setMessages(prev => [...prev, { sender: 'user', text: text.trim(), ts: Date.now() }]);
-    socket.emit('user_message', { sessionId, text: text.trim() });
+    const userMessage = text.trim();
+    setMessages(prev => [...prev, { sender: 'user', text: userMessage, ts: Date.now() }]);
+    socket.emit('user_message', { sessionId, text: userMessage });
     setText('');
     setStreamingText(null);
     startTypingIndicator();
+
+    // Start 3-minute timer when user sends a message
+    if (chatTimeoutRef.current) {
+      window.clearTimeout(chatTimeoutRef.current);
+    }
+    chatTimeoutRef.current = window.setTimeout(() => {
+      console.log('⏰ 3-minute timeout expired, showing offline form');
+      setShowOfflineForm(true);
+      setOfflineFormData(prev => ({ ...prev, query: prev.query || userMessage }));
+      setMessages(prev => [...prev, {
+        sender: 'system',
+        text: 'Sorry, agents are busy. Please fill this form and we will get back to you.',
+        ts: Date.now()
+      }]);
+      chatTimeoutRef.current = null;
+    }, 60 * 1000); // 3 minutes 3*60*1000
   }
 
   function handleKeyPress(e: React.KeyboardEvent) {
@@ -652,42 +751,138 @@ export default function EmbedWidget({
     }
   }
 
+  // Handle offline form submission
+  const handleFormSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+
+    if (!offlineFormData.name || !offlineFormData.email || !offlineFormData.query) {
+      setFormError('Please fill in all required fields');
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE}/api/tickets`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: offlineFormData.name,
+          email: offlineFormData.email,
+          mobile: offlineFormData.mobile,
+          query: offlineFormData.query,
+          sessionId: sessionId || null
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ error: 'Failed to submit ticket' }));
+        throw new Error(error.error || 'Failed to submit ticket');
+      }
+
+      setFormSubmitted(true);
+      setMessages(prev => [...prev, {
+        sender: 'system',
+        text: 'Query noted. Check your mail.',
+        ts: Date.now()
+      }]);
+
+      // Clear chat after 3 seconds
+      setTimeout(() => {
+        clearChatState();
+      }, 3000);
+    } catch (err: any) {
+      console.error('Error submitting ticket:', err);
+      setFormError(err?.message || 'Failed to submit ticket. Please try again.');
+    }
+  };
+
+  // Function to clear chat state
+  const clearChatState = () => {
+    // Clear messages
+    setMessages([]);
+
+    // Clear session data
+    if (sessionId) {
+      localStorage.removeItem('ai-support-session-id');
+      localStorage.removeItem(`ai-support-messages-${sessionId}`);
+      localStorage.removeItem(`ai-support-concluded-${sessionId}`);
+    }
+
+    // Clear form state
+    setFormSubmitted(false);
+    setShowOfflineForm(false);
+    setOfflineFormData({ name: '', email: '', mobile: '', query: '' });
+    setFormError(null);
+
+    // Reset chat mode
+    setIsChatMode(false);
+    setSessionId(null);
+    setConversationConcluded(false);
+    setStreamingText(null);
+
+    // Clear timers
+    if (chatTimeoutRef.current) {
+      window.clearTimeout(chatTimeoutRef.current);
+      chatTimeoutRef.current = null;
+    }
+
+    console.log('🧹 Chat state cleared');
+  };
+
+  // Check business hours on mount - show offline form if outside business hours and no active session
+  useEffect(() => {
+    if (!isBusinessHours() && !sessionId && !showOfflineForm && !isChatMode) {
+      setShowOfflineForm(true);
+    }
+  }, []); // Only run on mount
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (chatTimeoutRef.current) {
+        window.clearTimeout(chatTimeoutRef.current);
+      }
+    };
+  }, []);
+
   // Hook to detect mobile on resize - use 640px as mobile breakpoint
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth <= 640);
-  
+
   useEffect(() => {
     const handleResize = () => {
       setIsMobile(window.innerWidth <= 640);
     };
-    
+
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   return (
-    <div 
+    <div
       className="ai-chat-widget"
-      style={{ 
-      // Fill parent container completely
-      width: '100%',
-      height: '100%',
-      maxWidth: '100%',
-      maxHeight: '100%',
-      overflow: 'hidden',
-      overflowX: 'hidden',
-      display: 'flex',
-      flexDirection: 'column',
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-      background: '#000000',
-      pointerEvents: 'auto',
-      position: 'relative',
-      boxSizing: 'border-box',
-      margin: 0,
-      padding: 0,
-      borderRadius: '15px'
-    }}>
+      style={{
+        // Fill parent container completely
+        width: '100%',
+        height: '100%',
+        maxWidth: '100%',
+        maxHeight: '100%',
+        overflow: 'hidden',
+        overflowX: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+        background: '#000000',
+        pointerEvents: 'auto',
+        position: 'relative',
+        boxSizing: 'border-box',
+        margin: 0,
+        padding: 0,
+        borderRadius: '15px'
+      }}>
       {/* Header */}
-      <div style={{ 
+      <div style={{
         background: '#000000',
         color: 'white',
         padding: '16px',
@@ -730,7 +925,7 @@ export default function EmbedWidget({
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {/* Only show "Start Chat" button in chat mode when session doesn't exist */}
           {isChatMode && (!sessionId || conversationConcluded) && (
-            <button 
+            <button
               onClick={start}
               className={isButtonBlinking ? 'start-button-blink' : ''}
               style={{
@@ -785,9 +980,9 @@ export default function EmbedWidget({
       </div>
 
       {/* Messages Area */}
-      <div 
+      <div
         className="chat-messages-container"
-        style={{ 
+        style={{
           flex: 1,
           overflowY: 'auto',
           overflowX: 'hidden',
@@ -804,10 +999,138 @@ export default function EmbedWidget({
           boxSizing: 'border-box',
           margin: 0
         }}>
+        {/* Offline Form */}
+        {showOfflineForm && (
+          <div style={{
+            background: 'white',
+            padding: '20px',
+            borderRadius: '12px',
+            margin: '12px 0',
+            color: '#000000'
+          }}>
+            {formSubmitted ? (
+              <div style={{ textAlign: 'center', color: '#4CAF50' }}>
+                <p style={{ fontSize: '16px', fontWeight: 500, margin: 0 }}>✓ Query noted. Check your mail.</p>
+              </div>
+            ) : (
+              <form onSubmit={handleFormSubmit}>
+                <h3 style={{ marginTop: 0, marginBottom: '16px', fontSize: '18px', fontWeight: 600 }}>Contact Form</h3>
+                {formError && (
+                  <div style={{
+                    background: '#ffebee',
+                    color: '#c62828',
+                    padding: '10px',
+                    borderRadius: '6px',
+                    marginBottom: '16px',
+                    fontSize: '14px'
+                  }}>
+                    {formError}
+                  </div>
+                )}
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: 500 }}>
+                    Name <span style={{ color: 'red' }}>*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={offlineFormData.name}
+                    onChange={(e) => setOfflineFormData(prev => ({ ...prev, name: e.target.value }))}
+                    required
+                    style={{
+                      width: '100%',
+                      padding: '10px',
+                      border: '1px solid #ddd',
+                      borderRadius: '6px',
+                      fontSize: '14px',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: 500 }}>
+                    Email <span style={{ color: 'red' }}>*</span>
+                  </label>
+                  <input
+                    type="email"
+                    value={offlineFormData.email}
+                    onChange={(e) => setOfflineFormData(prev => ({ ...prev, email: e.target.value }))}
+                    required
+                    style={{
+                      width: '100%',
+                      padding: '10px',
+                      border: '1px solid #ddd',
+                      borderRadius: '6px',
+                      fontSize: '14px',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: 500 }}>
+                    Mobile
+                  </label>
+                  <input
+                    type="tel"
+                    value={offlineFormData.mobile}
+                    onChange={(e) => setOfflineFormData(prev => ({ ...prev, mobile: e.target.value }))}
+                    style={{
+                      width: '100%',
+                      padding: '10px',
+                      border: '1px solid #ddd',
+                      borderRadius: '6px',
+                      fontSize: '14px',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: 500 }}>
+                    Query <span style={{ color: 'red' }}>*</span>
+                  </label>
+                  <textarea
+                    value={offlineFormData.query}
+                    onChange={(e) => setOfflineFormData(prev => ({ ...prev, query: e.target.value }))}
+                    required
+                    rows={4}
+                    style={{
+                      width: '100%',
+                      padding: '10px',
+                      border: '1px solid #ddd',
+                      borderRadius: '6px',
+                      fontSize: '14px',
+                      resize: 'vertical',
+                      fontFamily: 'inherit',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    background: 'linear-gradient(135deg, #000000 0%, #ffffff 100%)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontSize: '16px',
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                    transition: 'opacity 0.2s'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
+                  onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+                >
+                  Submit Query
+                </button>
+              </form>
+            )}
+          </div>
+        )}
         {connectionError && (
-          <div style={{ 
-            textAlign: 'center', 
-            color: '#ff6b6b', 
+          <div style={{
+            textAlign: 'center',
+            color: '#ff6b6b',
             fontSize: isMobile ? '12px' : '13px',
             padding: '16px',
             background: 'rgba(255, 107, 107, 0.1)',
@@ -823,9 +1146,9 @@ export default function EmbedWidget({
         )}
         {/* Show messages in both modes (for FAQ Q&A) */}
         {messages.map((m, i) => (
-          <div 
-            key={i} 
-            style={{ 
+          <div
+            key={i}
+            style={{
               display: 'flex',
               flexDirection: 'column',
               alignItems: m.sender === 'user' ? 'flex-end' : 'flex-start',
@@ -836,11 +1159,11 @@ export default function EmbedWidget({
               maxWidth: '75%',
               padding: '10px 14px',
               borderRadius: '12px',
-              background: m.sender === 'user' 
+              background: m.sender === 'user'
                 ? '#ffffff'
                 : m.sender === 'system'
-                ? '#000000'
-                : '#ffffff',
+                  ? '#000000'
+                  : '#ffffff',
               color: m.sender === 'system' ? '#ffffff' : (m.sender === 'user' ? '#000000' : '#000000'),
               fontSize: '14px',
               lineHeight: '1.5',
@@ -874,11 +1197,11 @@ export default function EmbedWidget({
                       padding: '10px 12px',
                       minHeight: '40px',
                       height: 'auto',
-                      background: conversationConcluded 
-                        ? 'rgba(200, 200, 200, 0.1)' 
+                      background: conversationConcluded
+                        ? 'rgba(200, 200, 200, 0.1)'
                         : 'rgba(102, 126, 234, 0.1)',
-                      border: conversationConcluded 
-                        ? '1px solid rgba(200, 200, 200, 0.3)' 
+                      border: conversationConcluded
+                        ? '1px solid rgba(200, 200, 200, 0.3)'
                         : '1px solid rgba(102, 126, 234, 0.3)',
                       borderRadius: '8px',
                       color: '#ffffff',
@@ -915,8 +1238,8 @@ export default function EmbedWidget({
           </div>
         ))}
         {isChatMode && streamingText && !messages.some(msg => msg.sender === 'bot' && msg.text === streamingText) && (
-          <div 
-            style={{ 
+          <div
+            style={{
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'flex-start',
@@ -943,8 +1266,8 @@ export default function EmbedWidget({
           </div>
         )}
         {isBotTyping && (
-          <div 
-            style={{ 
+          <div
+            style={{
               display: 'flex',
               justifyContent: 'flex-start',
               marginBottom: '4px'
@@ -957,13 +1280,13 @@ export default function EmbedWidget({
             </div>
           </div>
         )}
-        
-        {/* Show FAQ menu when not in chat mode and no session exists */}
-        {!isChatMode && !sessionId && (
+
+        {/* Show FAQ menu when not in chat mode, no session exists, and not showing offline form */}
+        {!isChatMode && !sessionId && !showOfflineForm && (
           <>
-            <div style={{ 
-              textAlign: 'left', 
-              color: '#ffffff', 
+            <div style={{
+              textAlign: 'left',
+              color: '#ffffff',
               fontSize: '16px',
               padding: messages.length > 0 ? '8px 0' : '12px 0',
               fontWeight: 500,
@@ -1013,25 +1336,25 @@ export default function EmbedWidget({
             ))}
           </>
         )}
-        
+
         {/* Show empty state only in chat mode */}
         {isChatMode && messages.length === 0 && sessionId && !connectionError && (
-          <div style={{ 
-            textAlign: 'center', 
-            color: '#ffffff', 
+          <div style={{
+            textAlign: 'center',
+            color: '#ffffff',
             fontSize: '14px',
             padding: '20px'
           }}>
             Type your message below to get started...
           </div>
         )}
-        
+
         <div ref={messagesEndRef} />
       </div>
 
       {/* Input Area */}
-      {isChatMode && (
-        <div style={{ 
+      {isChatMode && !showOfflineForm && (
+        <div style={{
           padding: '16px',
           background: '#000000',
           borderTop: '1px solid rgba(255, 255, 255, 0.2)',
@@ -1044,61 +1367,61 @@ export default function EmbedWidget({
           overflow: 'hidden',
           margin: 0
         }}>
-        <input 
-          value={text} 
-          onChange={e => setText(e.target.value)}
-          onKeyPress={handleKeyPress}
-          disabled={!sessionId || conversationConcluded}
-          style={{ 
-            flex: 1, 
-            padding: '10px 14px',
-            border: '1px solid #e0e0e0',
-            borderRadius: '8px',
-            fontSize: '14px',
-            outline: 'none',
-            background: (sessionId && !conversationConcluded) ? 'white' : '#f5f5f5',
-            minWidth: 0,
-            maxWidth: '100%',
-            boxSizing: 'border-box',
-            width: '100%',
-            margin: 0
-          }} 
-          placeholder={
-            conversationConcluded 
-              ? "Conversation ended. Click 'Start Chat' for a new session" 
-              : sessionId 
-              ? "Type your message..." 
-              : "Click 'Start Chat' to begin"
-          } 
-        />
-        <button 
-          onClick={send}
-          disabled={!sessionId || !text.trim() || conversationConcluded}
-          style={{
-            padding: '10px 16px',
-            background: (sessionId && text.trim() && !conversationConcluded)
-              ? 'linear-gradient(135deg, #000000 0%, #ffffff 100%)'
-              : '#ccc',
-            color: (sessionId && text.trim() && !conversationConcluded) ? '#ffffff' : '#666',
-            textShadow: (sessionId && text.trim() && !conversationConcluded) ? '0 1px 2px rgba(0, 0, 0, 0.5)' : 'none',
-            border: 'none',
-            borderRadius: '8px',
-            cursor: (sessionId && text.trim() && !conversationConcluded) ? 'pointer' : 'not-allowed',
-            fontWeight: 500,
-            fontSize: '14px',
-            transition: 'all 0.2s ease',
-            whiteSpace: 'nowrap',
-            flexShrink: 0,
-            boxSizing: 'border-box',
-            margin: 0
-          }}
-        >
-          Send
-        </button>
+          <input
+            value={text}
+            onChange={e => setText(e.target.value)}
+            onKeyPress={handleKeyPress}
+            disabled={!sessionId || conversationConcluded}
+            style={{
+              flex: 1,
+              padding: '10px 14px',
+              border: '1px solid #e0e0e0',
+              borderRadius: '8px',
+              fontSize: '14px',
+              outline: 'none',
+              background: (sessionId && !conversationConcluded) ? 'white' : '#f5f5f5',
+              minWidth: 0,
+              maxWidth: '100%',
+              boxSizing: 'border-box',
+              width: '100%',
+              margin: 0
+            }}
+            placeholder={
+              conversationConcluded
+                ? "Conversation ended. Click 'Start Chat' for a new session"
+                : sessionId
+                  ? "Type your message..."
+                  : "Click 'Start Chat' to begin"
+            }
+          />
+          <button
+            onClick={send}
+            disabled={!sessionId || !text.trim() || conversationConcluded}
+            style={{
+              padding: '10px 16px',
+              background: (sessionId && text.trim() && !conversationConcluded)
+                ? 'linear-gradient(135deg, #000000 0%, #ffffff 100%)'
+                : '#ccc',
+              color: (sessionId && text.trim() && !conversationConcluded) ? '#ffffff' : '#666',
+              textShadow: (sessionId && text.trim() && !conversationConcluded) ? '0 1px 2px rgba(0, 0, 0, 0.5)' : 'none',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: (sessionId && text.trim() && !conversationConcluded) ? 'pointer' : 'not-allowed',
+              fontWeight: 500,
+              fontSize: '14px',
+              transition: 'all 0.2s ease',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+              boxSizing: 'border-box',
+              margin: 0
+            }}
+          >
+            Send
+          </button>
         </div>
       )}
       {!isChatMode && (
-        <div style={{ 
+        <div style={{
           padding: '16px',
           background: '#000000',
           borderTop: '1px solid rgba(255, 255, 255, 0.2)',

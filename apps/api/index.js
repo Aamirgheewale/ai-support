@@ -100,12 +100,12 @@ async function createUserRow(payload) {
     if (!APPWRITE_USERS_COLLECTION_ID) missing.push('APPWRITE_USERS_COLLECTION_ID');
     throw new Error(`Appwrite not configured: ${missing.join(', ')}`);
   }
-  
+
   try {
     const { ID } = require('node-appwrite');
     console.log(`📤 Creating user document in collection: ${APPWRITE_USERS_COLLECTION_ID}`);
     console.log(`📤 Payload keys: ${Object.keys(payload).join(', ')}`);
-    
+
     // Remove any attributes that might not exist in the collection schema
     // Only keep: userId, email, name, roles (core attributes)
     const safePayload = {
@@ -114,7 +114,7 @@ async function createUserRow(payload) {
       name: payload.name,
       roles: payload.roles
     };
-    
+
     // Use Appwrite SDK to create document in users collection
     const result = await awDatabases.createDocument(
       APPWRITE_DATABASE_ID,
@@ -149,7 +149,7 @@ async function createUserRow(payload) {
         throw retryErr;
       }
     }
-    
+
     console.error(`❌ Error creating user document:`, {
       message: err.message,
       code: err.code,
@@ -203,7 +203,7 @@ if (APPWRITE_ENDPOINT && APPWRITE_PROJECT_ID && APPWRITE_API_KEY) {
     awClient.setKey(APPWRITE_API_KEY);
     awDatabases = new Databases(awClient);
     console.log('✅ Appwrite client initialized');
-    
+
     // Log configuration status
     console.log('📋 Appwrite Configuration:');
     console.log(`   Endpoint: ${APPWRITE_ENDPOINT}`);
@@ -212,7 +212,7 @@ if (APPWRITE_ENDPOINT && APPWRITE_PROJECT_ID && APPWRITE_API_KEY) {
     console.log(`   Sessions Collection: ${APPWRITE_SESSIONS_COLLECTION_ID ? '✅ Set' : '❌ Missing'}`);
     console.log(`   Messages Collection: ${APPWRITE_MESSAGES_COLLECTION_ID ? '✅ Set' : '❌ Missing'}`);
     console.log(`   Ai Accuracy: ${APPWRITE_AI_ACCURACY_COLLECTION_ID ? '✅ Set' : '❌ Missing'}`);
-    
+
     if (!APPWRITE_DATABASE_ID || !APPWRITE_MESSAGES_COLLECTION_ID) {
       console.warn('⚠️  Messages will NOT be saved until APPWRITE_DATABASE_ID and APPWRITE_MESSAGES_COLLECTION_ID are set');
     }
@@ -222,6 +222,20 @@ if (APPWRITE_ENDPOINT && APPWRITE_PROJECT_ID && APPWRITE_API_KEY) {
 } else {
   console.log('ℹ️  Appwrite env vars not set — Appwrite features disabled');
   console.log('   Required: APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID, APPWRITE_API_KEY');
+}
+
+// Resend email client
+let resend = null;
+try {
+  const { Resend } = require('resend');
+  if (process.env.RESEND_API_KEY) {
+    resend = new Resend(process.env.RESEND_API_KEY);
+    console.log('✅ Resend email client initialized');
+  } else {
+    console.warn('⚠️  RESEND_API_KEY missing — email features disabled');
+  }
+} catch (e) {
+  console.warn('⚠️  Resend package not available — email features disabled:', e?.message || e);
 }
 
 // Gemini client — using @google/generative-ai SDK
@@ -235,7 +249,7 @@ try {
     geminiClient = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const preferredModel = process.env.GEMINI_MODEL;
     // Use models that work with free tier (gemini-2.5-flash-lite is preferred)
-    const modelCandidates = preferredModel 
+    const modelCandidates = preferredModel
       ? [preferredModel]
       : ['gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro'];
     geminiModelName = modelCandidates[0];
@@ -335,7 +349,7 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
 
     // Check for existing user by userId first
     let existing = await getUserById(targetUserId);
-    
+
     // Also check by email (in case userId is NULL in database)
     if (!existing) {
       existing = await getUserByEmail(email);
@@ -374,7 +388,7 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
         }
       }
     }
-    
+
     if (existing) {
       // Update existing user
       const { ID } = require('node-appwrite');
@@ -411,7 +425,7 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
       // Before creating, do a comprehensive check for existing users
       // This prevents unique constraint violations
       let existingUser = null;
-      
+
       // Check by email first
       try {
         existingUser = await getUserByEmail(email);
@@ -456,7 +470,7 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
       } catch (emailErr) {
         console.warn(`⚠️  Error checking by email:`, emailErr.message);
       }
-      
+
       // Check by userId
       try {
         existingUser = await getUserById(targetUserId);
@@ -467,7 +481,7 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
       } catch (idErr) {
         console.warn(`⚠️  Error checking by userId:`, idErr.message);
       }
-      
+
       // Final comprehensive check: list all users and search manually
       // This catches edge cases where queries might fail but user exists
       try {
@@ -477,7 +491,7 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
           [],
           100
         );
-        const matchingUser = allUsers.documents.find(doc => 
+        const matchingUser = allUsers.documents.find(doc =>
           (doc.email && doc.email === email) || (doc.userId && doc.userId === targetUserId)
         );
         if (matchingUser) {
@@ -501,11 +515,11 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
       } catch (listErr) {
         console.warn(`⚠️  Could not perform comprehensive list check:`, listErr.message);
       }
-      
+
       // Create new user
       // Add a small delay to allow any previous operations to complete and indexes to sync
       await new Promise(resolve => setTimeout(resolve, 100));
-      
+
       const { ID } = require('node-appwrite');
       const buildUserDocumentPayload = (includeTimestamps = true) => {
         const base = {
@@ -537,7 +551,7 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
           // Ignore if document isn't found
         }
       };
-      
+
       // Try creating document - handle missing attributes gracefully
       let docId;
       try {
@@ -552,10 +566,10 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
           buildUserDocumentPayload()
         );
         console.log(`✅ Successfully created user with document ID: ${docId}`);
-        
+
         // Add delay to allow index sync, then verify user exists
         await new Promise(resolve => setTimeout(resolve, 200));
-        
+
         // Verify the user exists by querying (with fallback to list)
         try {
           const verifyUser = await getUserById(targetUserId) || await getUserByEmail(email);
@@ -578,7 +592,7 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
           console.warn(`⚠️  Could not verify user after creation, but creation succeeded:`, verifyErr.message);
           // Return the doc anyway since creation succeeded
         }
-        
+
         return doc;
       } catch (e) {
         // Check if it's a unique constraint violation (email or userId already exists) or document ID conflict
@@ -587,23 +601,23 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
           await deleteDocIfExists(typeof docId !== 'undefined' ? docId : null);
           console.log(`⚠️  Conflict detected during creation (409), performing comprehensive search...`);
           console.log(`   Error details: ${e.message}`);
-          
+
           // When we get a 409, it could be:
           // 1. Document ID already exists (shouldn't happen with ID.unique() but might due to race condition)
           // 2. Unique constraint on email/userId (user exists)
           // 3. Index sync delay (user was created but not queryable yet)
-          
+
           // First, try to find existing user by email/userId (this handles case 2 and 3)
           let foundUser = null;
           const maxRetries = 3; // Reduced retries - faster response
           const delays = [300, 500, 1000]; // Shorter delays
-          
+
           for (let attempt = 0; attempt < maxRetries && !foundUser; attempt++) {
             if (attempt > 0) {
               console.log(`   Retry ${attempt}/${maxRetries - 1}: Waiting ${delays[attempt - 1]}ms for index sync...`);
               await new Promise(resolve => setTimeout(resolve, delays[attempt - 1]));
             }
-            
+
             // Try all search methods
             try {
               foundUser = await getUserByEmail(email);
@@ -614,7 +628,7 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
             } catch (err) {
               // Ignore
             }
-            
+
             if (!foundUser) {
               try {
                 foundUser = await getUserById(targetUserId);
@@ -627,7 +641,7 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
                 // Ignore
               }
             }
-            
+
             // Always try listing all documents (no filters = no index dependency)
             if (!foundUser) {
               try {
@@ -638,7 +652,7 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
                   [], // No queries = no index dependency
                   1000 // Get more documents
                 );
-                foundUser = allUsers.documents.find(doc => 
+                foundUser = allUsers.documents.find(doc =>
                   (doc.email && doc.email === email) || (doc.userId && doc.userId === targetUserId)
                 );
                 if (foundUser) {
@@ -650,19 +664,19 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
               }
             }
           }
-          
+
           if (foundUser) {
             console.log(`✅ User found after conflict resolution, returning existing record`);
             return foundUser;
           }
-          
+
           // If still not found, the user exists (409 conflict confirms it) but indexes haven't synced
           // Wait one final time (longer) and do one more comprehensive search
           // DO NOT try to create again - 409 means user already exists
           console.warn(`⚠️  User not found after ${maxRetries} attempts`);
           console.warn(`   User exists (409 conflict confirmed) but indexes not synced. Waiting 5s for final sync...`);
           await new Promise(resolve => setTimeout(resolve, 5000));
-          
+
           // Final comprehensive search - list ALL documents without any filters (no index dependency)
           try {
             const finalSearch = await awDatabases.listDocuments(
@@ -671,11 +685,11 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
               [], // No queries = no index dependency
               1000 // Get as many as possible
             );
-            
-            const finalMatch = finalSearch.documents.find(doc => 
+
+            const finalMatch = finalSearch.documents.find(doc =>
               (doc.email && doc.email === email) || (doc.userId && doc.userId === targetUserId)
             );
-            
+
             if (finalMatch) {
               console.log(`✅ Found user after extended wait (5s) - indexes have synced`);
               return finalMatch;
@@ -683,19 +697,19 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
           } catch (finalErr) {
             console.warn(`   ⚠️  Final search also failed:`, finalErr.message);
           }
-          
+
           // If still not found after extended wait, try one more time with even longer wait
           // and paginate through ALL documents to find the user
           console.warn(`⚠️  User confirmed to exist (409 conflict) but not queryable after extended wait`);
           console.warn(`   Trying one final search with pagination through all documents...`);
           await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 more seconds
-          
+
           // Paginate through ALL documents to find the user
           let allDocs = [];
           let offset = 0;
           const pageSize = 100;
           let hasMore = true;
-          
+
           while (hasMore && allDocs.length < 10000) { // Safety limit
             try {
               const page = await awDatabases.listDocuments(
@@ -708,9 +722,9 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
               allDocs = allDocs.concat(page.documents);
               hasMore = page.documents.length === pageSize;
               offset += pageSize;
-              
+
               // Check if we found the user in this page
-              const found = page.documents.find(doc => 
+              const found = page.documents.find(doc =>
                 (doc.email && doc.email === email) || (doc.userId && doc.userId === targetUserId)
               );
               if (found) {
@@ -722,7 +736,7 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
               break;
             }
           }
-          
+
           // If we've scanned all documents and still can't find it, the 409 might be a document ID conflict
           // Try creating again with a fresh document ID (maybe the first attempt partially failed)
           console.warn(`⚠️  User not found after all searches. 409 might be document ID conflict. Retrying with new document ID...`);
@@ -739,7 +753,7 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
               buildUserDocumentPayload()
             );
             console.log(`✅ Successfully created user on retry with new document ID: ${newDocId}`);
-            
+
             // Wait a bit and verify
             await new Promise(resolve => setTimeout(resolve, 300));
             const verifyUser = await getUserById(targetUserId) || await getUserByEmail(email);
@@ -762,7 +776,7 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
             throw retryErr;
           }
         }
-        
+
         // Check if roles attribute is wrong type (String instead of Array)
         if (e.message?.includes('roles') && e.message?.includes('must be a valid string')) {
           console.error(`❌ Error: The "roles" attribute in users collection is configured as String instead of String Array.`);
@@ -770,7 +784,7 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
           console.error(`   See MANUAL_ATTRIBUTE_SETUP.md for correct attribute configuration.`);
           return null;
         }
-        
+
         // If datetime attributes don't exist, try without them
         if (e.message?.includes('createdAt') || e.message?.includes('updatedAt') || e.message?.includes('Unknown attribute')) {
           try {
@@ -784,10 +798,10 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
               buildUserDocumentPayload(false)
             );
             console.log(`✅ Successfully created user (without datetime) with document ID: ${docId}`);
-            
+
             // Add delay to allow index sync, then verify user exists
             await new Promise(resolve => setTimeout(resolve, 200));
-            
+
             // Verify the user exists
             try {
               const verifyUser = await getUserById(targetUserId) || await getUserByEmail(email);
@@ -808,7 +822,7 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
             } catch (verifyErr) {
               // Return doc anyway since creation succeeded
             }
-            
+
             return doc;
           } catch (e2) {
             // Check if roles attribute is wrong type
@@ -836,24 +850,24 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
       console.warn('⚠️  Users collection not found. Please run migration: node migrate_create_users_collection.js');
       return null;
     }
-    
+
     // Handle document ID conflict (409 error)
     if (err.code === 409 || err.message?.includes('already exists') || err.message?.includes('requested ID already exists')) {
       console.warn(`⚠️  Document conflict for userId "${targetUserId}". Checking if user already exists...`);
-      
+
       // Try multiple times with increasing delays (index might not be ready)
       for (let attempt = 0; attempt < 3; attempt++) {
         if (attempt > 0) {
           await new Promise(resolve => setTimeout(resolve, 500 * attempt)); // 500ms, 1000ms delays
         }
-        
+
         // Try to get existing user by userId
         const existing = await getUserById(targetUserId);
         if (existing) {
           console.log(`✅ Found existing user for userId "${targetUserId}" (attempt ${attempt + 1}), returning existing record`);
           return existing;
         }
-        
+
         // Try by email
         const existingByEmail = await getUserByEmail(email);
         if (existingByEmail) {
@@ -861,7 +875,7 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
           return existingByEmail;
         }
       }
-      
+
       // If still not found after multiple attempts, try listing all users to find matches
       try {
         const allUsers = await awDatabases.listDocuments(
@@ -870,7 +884,7 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
           [],
           100
         );
-        const matchingUsers = allUsers.documents.filter(doc => 
+        const matchingUsers = allUsers.documents.filter(doc =>
           (doc.userId && doc.userId === targetUserId) || (doc.email && doc.email === email)
         );
         if (matchingUsers.length > 0) {
@@ -895,11 +909,11 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
       } catch (listErr) {
         console.warn(`⚠️  Could not list users for debugging:`, listErr.message);
       }
-      
+
       // Final attempt: try creating with a completely different approach
       // Generate a completely new unique document ID and try once more
       console.warn(`⚠️  Attempting final creation with alternative approach...`);
-      
+
       // One more comprehensive check before final attempt
       try {
         const finalCheck = await awDatabases.listDocuments(
@@ -908,7 +922,7 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
           [],
           100
         );
-        const finalMatch = finalCheck.documents.find(doc => 
+        const finalMatch = finalCheck.documents.find(doc =>
           (doc.email && doc.email === email) || (doc.userId && doc.userId === targetUserId)
         );
         if (finalMatch) {
@@ -931,10 +945,10 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
       } catch (finalCheckErr) {
         // Ignore final check errors
       }
-      
+
       // Add delay before final attempt
       await new Promise(resolve => setTimeout(resolve, 200));
-      
+
       try {
         const { ID } = require('node-appwrite');
         // Generate a completely unique document ID
@@ -954,13 +968,13 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
           }
         );
         console.log(`✅ Successfully created user with final attempt (document ID: ${finalDocId})`);
-        
+
         // Add delay to allow index sync, then verify user exists
         await new Promise(resolve => setTimeout(resolve, 300));
-        
+
         // Verify the user exists
         try {
-        const verifyUser = await getUserById(targetUserId) || await getUserByEmail(email);
+          const verifyUser = await getUserById(targetUserId) || await getUserByEmail(email);
           if (verifyUser) {
             return verifyUser;
           }
@@ -980,14 +994,14 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
           console.warn(`⚠️  Could not verify user after final creation, but creation succeeded`);
           // Return doc anyway since creation succeeded
         }
-        
+
         return finalDoc;
       } catch (finalErr) {
         // If final attempt fails, it's definitely a unique constraint issue
         console.error(`❌ Persistent conflict: Cannot create user with userId "${targetUserId}" and email "${email}"`);
         console.error(`   Error: ${finalErr.message || finalErr}`);
         console.error(`   Error code: ${finalErr.code || 'unknown'}`);
-        
+
         // One last attempt to find the user
         try {
           const lastCheck = await awDatabases.listDocuments(
@@ -996,7 +1010,7 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
             [],
             100
           );
-          const lastMatch = lastCheck.documents.find(doc => 
+          const lastMatch = lastCheck.documents.find(doc =>
             (doc.email && doc.email === email) || (doc.userId && doc.userId === targetUserId)
           );
           if (lastMatch) {
@@ -1006,7 +1020,7 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
         } catch (lastCheckErr) {
           // Ignore
         }
-        
+
         console.error(`   Possible causes:`);
         console.error(`   1. Unique index constraint violation (userId "${targetUserId}" or email "${email}" already exists)`);
         console.error(`   2. Database index not fully synchronized`);
@@ -1015,7 +1029,7 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
         return null;
       }
     }
-    
+
     // Check for roles attribute type error
     if (err.message?.includes('roles') && err.message?.includes('must be a valid string')) {
       console.error('Error ensuring user record: Invalid document structure: Attribute "roles" has invalid format. Value must be a valid string and no longer than 255 chars');
@@ -1024,7 +1038,7 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
       console.error(`   See MANUAL_ATTRIBUTE_SETUP.md for correct attribute configuration.`);
       return null;
     }
-    
+
     console.error('Error ensuring user record:', err.message || err);
     return null;
   }
@@ -1038,7 +1052,7 @@ async function setUserRoles(userId, rolesArray) {
   try {
     console.log(`🔧 Setting roles for user ${userId}:`, rolesArray);
     let user = await getUserById(userId);
-    
+
     // If not found, try multiple times with increasing delays (index sync)
     if (!user) {
       const maxRetries = 5;
@@ -1055,7 +1069,7 @@ async function setUserRoles(userId, rolesArray) {
         }
       }
     }
-    
+
     // If still not found, try listing all users (no index dependency)
     if (!user) {
       try {
@@ -1064,7 +1078,7 @@ async function setUserRoles(userId, rolesArray) {
         let offset = 0;
         const pageSize = 100;
         let hasMore = true;
-        
+
         while (hasMore && allUsers.length < 1000 && !user) {
           const page = await awDatabases.listDocuments(
             APPWRITE_DATABASE_ID,
@@ -1076,7 +1090,7 @@ async function setUserRoles(userId, rolesArray) {
           allUsers = allUsers.concat(page.documents);
           hasMore = page.documents.length === pageSize;
           offset += pageSize;
-          
+
           user = page.documents.find(doc => doc.userId === userId);
           if (user) {
             console.log(`✅ Found user via list search after scanning ${allUsers.length} documents`);
@@ -1087,15 +1101,15 @@ async function setUserRoles(userId, rolesArray) {
         console.warn(`   ⚠️  List search failed:`, listErr.message);
       }
     }
-    
+
     if (!user) {
       console.warn(`❌ User ${userId} not found after multiple attempts and comprehensive search`);
       return false;
     }
-    
+
     const oldRoles = Array.isArray(user.roles) ? [...user.roles] : [];
     const newRoles = Array.isArray(rolesArray) ? rolesArray : [];
-    
+
     const { ID } = require('node-appwrite');
     try {
       await awDatabases.updateDocument(
@@ -1135,10 +1149,10 @@ async function setUserRoles(userId, rolesArray) {
         throw e2;
       }
     }
-    
+
     // Audit log
     await logRoleChange(userId, 'system', oldRoles, newRoles);
-    
+
     console.log(`✅ Successfully updated roles for user ${userId} from [${oldRoles.join(', ')}] to [${newRoles.join(', ')}]`);
     return true;
   } catch (err) {
@@ -1213,14 +1227,14 @@ async function authorizeSocketToken(token) {
   if (!token) {
     return null;
   }
-  
+
   // For dev: if token matches ADMIN_SHARED_SECRET, map to admin
   if (token === ADMIN_SHARED_SECRET) {
     // In dev mode we no longer auto-create the dev-admin record in Appwrite.
     // Instead return an in-memory admin user so the DB isn't mutated implicitly.
     return { userId: 'dev-admin', email: 'dev@admin.local', roles: ['admin'] };
   }
-  
+
   // Token is userId for email-based auth (same as requireAuth middleware)
   try {
     const user = await getUserById(token);
@@ -1235,7 +1249,7 @@ async function authorizeSocketToken(token) {
     console.error('Error validating socket token:', err);
     // Continue to return null
   }
-  
+
   return null;
 }
 
@@ -1249,18 +1263,18 @@ async function requireAuth(req, res, next) {
   } else if (req.cookies && req.cookies.sessionToken) {
     token = req.cookies.sessionToken;
   }
-  
+
   if (!token) {
     return res.status(401).json({ error: 'Missing or invalid authorization' });
   }
-  
+
   // For dev: map ADMIN_SHARED_SECRET to admin
   if (token === ADMIN_SHARED_SECRET) {
     // Dev mode: just set an in-memory admin user. Do not auto-create in Appwrite.
     req.user = { userId: 'dev-admin', email: 'dev@admin.local', roles: ['admin'] };
     return next();
   }
-  
+
   // Try to find user by token (token is userId for email-based auth)
   try {
     const user = await getUserById(token);
@@ -1275,7 +1289,7 @@ async function requireAuth(req, res, next) {
   } catch (err) {
     // Continue to fallback
   }
-  
+
   // Reject unknown tokens
   return res.status(401).json({ error: 'Invalid token' });
 }
@@ -1287,9 +1301,9 @@ function requireRole(allowedRoles) {
     if (!req.user || !req.user.userId) {
       return res.status(401).json({ error: 'Authentication required' });
     }
-    
+
     const userId = req.user.userId;
-    
+
     // Check if user has roles in req.user (for dev mode fallback)
     if (req.user.roles && Array.isArray(req.user.roles)) {
       const hasRole = roles.some(role => req.user.roles.includes(role));
@@ -1297,7 +1311,7 @@ function requireRole(allowedRoles) {
         return next();
       }
     }
-    
+
     // Otherwise check via database
     let hasRole = false;
     try {
@@ -1313,11 +1327,11 @@ function requireRole(allowedRoles) {
         hasRole = roles.some(role => req.user.roles.includes(role));
       }
     }
-    
+
     if (!hasRole) {
       return res.status(403).json({ error: 'Insufficient permissions' });
     }
-    
+
     next();
   };
 }
@@ -1352,18 +1366,18 @@ function decryptField(encryptedField) {
   if (!encryption || !encryptedField) {
     return null;
   }
-  
+
   // Check if field is encrypted
   if (!encryption.isEncrypted(encryptedField)) {
     // Legacy plaintext - return as-is (for backward compatibility)
     return typeof encryptedField === 'string' ? encryptedField : null;
   }
-  
+
   if (!MASTER_KEY_BASE64) {
     console.warn('⚠️  Cannot decrypt: MASTER_KEY_BASE64 not set');
     return '[ENCRYPTED]';
   }
-  
+
   try {
     const parsed = encryption.parseFromStorage(encryptedField);
     return encryption.decryptPayload(parsed, MASTER_KEY_BASE64);
@@ -1442,28 +1456,28 @@ app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
     } catch (validationErr) {
       return res.status(400).json({ error: validationErr.message });
     }
-    
+
     // Parse pagination params - increased maxLimit to allow fetching all sessions
     const { limit, offset } = parsePaginationParams(req, { defaultLimit: 20, maxLimit: 10000 });
-    
-    const { 
-      status, 
-      search, 
-      agentId, 
-      startDate, 
+
+    const {
+      status,
+      search,
+      agentId,
+      startDate,
       endDate,
-      fullTextSearch 
+      fullTextSearch
     } = req.query;
-    
+
     // Log search parameter for debugging
     if (search) {
       console.log(`🔍 Search parameter received: "${search}" - will filter client-side for partial matching`);
     }
-    
+
     if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_SESSIONS_COLLECTION_ID) {
       return res.json({ items: [], total: 0, limit, offset, hasMore: false, message: 'Appwrite not configured' });
     }
-    
+
     let queries = [];
     if (status && status.trim() !== '' && Query) {
       queries.push(Query.equal('status', status));
@@ -1494,7 +1508,7 @@ app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
         console.warn('Invalid endDate format:', endDate);
       }
     }
-    
+
     // CRITICAL: Verify search is NOT in queries (safety check)
     // Search must be filtered client-side, NOT via Appwrite query (which only supports exact match)
     const hasSearchInQuery = queries.some(q => {
@@ -1511,13 +1525,13 @@ app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
         return !(queryStr.includes('sessionId') && search);
       });
     }
-    
+
     // Log what queries we're using
     if (queries.length > 0) {
       console.log(`📋 Query filters: ${queries.map(q => q?.toString?.() || String(q)).join(', ')}`);
     }
     console.log(`📋 Fetching sessions with ${queries.length} query filter(s), limit=${limit}, offset=${offset}${search ? `, search="${search}" (will filter client-side for partial match)` : ''}`);
-    
+
     // Add ordering: newest first (createdAt desc)
     // NOTE: For production, add index on createdAt (desc) in Appwrite Console for better performance
     // Index configuration: Attribute: $createdAt, Type: key, Order: desc
@@ -1526,15 +1540,15 @@ app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
     } else if (Query) {
       queries = [Query.orderDesc('$createdAt')];
     }
-    
+
     // Ensure queries is always an array (not undefined) for Appwrite SDK
     let finalQueries = queries.length > 0 ? [...queries] : [];
-    
+
     // Add ordering if Query is available
     if (Query && !finalQueries.some(q => q.toString().includes('orderDesc'))) {
       finalQueries.push(Query.orderDesc('$createdAt'));
     }
-    
+
     let result;
     let totalCount = 0;
     try {
@@ -1545,16 +1559,16 @@ app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
       // Search requires fetching all to filter client-side for partial matching
       const shouldFetchAll = !limit || limit >= 1000 || search || agentId || fullTextSearch;
       const firstBatchLimit = shouldFetchAll ? appwriteMaxPerRequest : Math.min(limit || 5000, appwriteMaxPerRequest);
-      
+
       // When doing client-side filtering (search, agentId, fullTextSearch), fetch from offset 0
       // so we can filter all sessions, then apply pagination after filtering
       const fetchOffset = (search || agentId || fullTextSearch) ? 0 : offset;
-      
+
       // CRITICAL: Add Query.limit() to queries array - Appwrite requires this, not just the parameter
       const queriesWithLimit = Query ? [...finalQueries, Query.limit(firstBatchLimit), Query.offset(fetchOffset)] : finalQueries;
-      
+
       console.log(`🔍 Appwrite call: firstBatchLimit=${firstBatchLimit}, offset=${fetchOffset}${search ? ' (search: fetching all from start)' : ''}, queries=${queriesWithLimit.length}, originalLimit=${limit}, shouldFetchAll=${shouldFetchAll}`);
-      
+
       // Always fetch first batch with Query.limit() in queries array to avoid Appwrite's default of 25
       result = await awDatabases.listDocuments(
         APPWRITE_DATABASE_ID,
@@ -1563,16 +1577,16 @@ app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
       );
       totalCount = result.total;
       console.log(`✅ First batch: ${result.documents.length} documents, total in DB: ${result.total} (offset=${fetchOffset}, limit=${firstBatchLimit})`);
-      
+
       // If we need more documents (limit is high or we want all), fetch in batches
       if (shouldFetchAll && result.documents.length < totalCount) {
         console.log(`📦 Fetching remaining sessions in batches (got ${result.documents.length}, total=${totalCount})`);
         const allDocuments = [...result.documents];
         let currentOffset = fetchOffset + result.documents.length;
-        
+
         // When search is used, we need to fetch ALL sessions for filtering, so continue until we get 0 results
         const continueUntilEmpty = search || agentId || fullTextSearch;
-        
+
         while (allDocuments.length < totalCount || continueUntilEmpty) {
           const batchLimit = Math.min(5000, continueUntilEmpty ? 5000 : (totalCount - allDocuments.length));
           const batchQueries = Query ? [...finalQueries, Query.limit(batchLimit), Query.offset(currentOffset)] : finalQueries;
@@ -1581,30 +1595,30 @@ app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
             APPWRITE_SESSIONS_COLLECTION_ID,
             batchQueries // Use Query.limit() and Query.offset() in queries array
           );
-          
+
           if (batchResult.documents.length === 0) {
             // No more documents available
             console.log(`📦 No more sessions found at offset ${currentOffset}, stopping batch fetch`);
             break;
           }
-          
+
           allDocuments.push(...batchResult.documents);
           console.log(`📦 Batch fetch: got ${batchResult.documents.length} more sessions (total so far: ${allDocuments.length})`);
-          
+
           if (!continueUntilEmpty && batchResult.documents.length < batchLimit) {
             // No more documents available (when not doing exhaustive search)
             break;
           }
-          
+
           currentOffset += batchResult.documents.length;
-          
+
           // Safety check: prevent infinite loops
           if (allDocuments.length > 100000) {
             console.warn(`⚠️  Stopping batch fetch after 100,000 sessions (safety limit)`);
             break;
           }
         }
-        
+
         result.documents = allDocuments;
         console.log(`✅ Fetched ${result.documents.length} session(s) total in batches (total in DB: ${totalCount})`);
       }
@@ -1629,11 +1643,11 @@ app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
         return res.json({ items: [], total: 0, limit, offset, hasMore: false, error: 'Failed to fetch sessions' });
       }
     }
-    
+
     // Transform sessions to extract assignedAgent from userMeta if needed
     let transformedSessions = result.documents.map((doc) => {
       let assignedAgent = doc.assignedAgent || null;
-      
+
       // If assignedAgent field doesn't exist, try to get it from userMeta
       if (!assignedAgent && doc.userMeta) {
         try {
@@ -1645,24 +1659,24 @@ app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
           // Ignore parse errors
         }
       }
-      
+
       return {
         ...doc,
         assignedAgent: assignedAgent
       };
     });
-    
+
     // Client-side filtering for search (sessionId partial matching)
     if (search && search.trim() !== '') {
       const beforeFilter = transformedSessions.length;
       const searchLower = search.trim().toLowerCase();
       console.log(`🔍 Starting search filter: ${beforeFilter} sessions before filtering, searching for "${search}" (lowercase: "${searchLower}")`);
-      
+
       // Debug: log first few sessionIds to verify format
       if (transformedSessions.length > 0) {
         console.log(`🔍 Sample sessionIds (first 5): ${transformedSessions.slice(0, 5).map(s => s.sessionId).join(', ')}`);
       }
-      
+
       transformedSessions = transformedSessions.filter(s => {
         if (!s.sessionId) {
           return false;
@@ -1670,22 +1684,22 @@ app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
         const matches = s.sessionId.toLowerCase().includes(searchLower);
         return matches;
       });
-      
+
       console.log(`🔍 SessionId search filter (partial match): ${beforeFilter} → ${transformedSessions.length} sessions matching "${search}"`);
-      
+
       // Debug: log matching sessionIds
       if (transformedSessions.length > 0 && transformedSessions.length <= 10) {
         console.log(`🔍 Matching sessionIds: ${transformedSessions.map(s => s.sessionId).join(', ')}`);
       }
     }
-    
+
     // Client-side filtering for agentId (since it's in userMeta, not directly queryable)
     if (agentId && agentId.trim() !== '') {
       const beforeFilter = transformedSessions.length;
       transformedSessions = transformedSessions.filter(s => s.assignedAgent === agentId);
       console.log(`🔍 Agent filter: ${beforeFilter} → ${transformedSessions.length} sessions with agent="${agentId}"`);
     }
-    
+
     // Client-side date filtering (fallback if backend query failed)
     if (startDate && (!queries.length || queries.length === 0)) {
       try {
@@ -1700,7 +1714,7 @@ app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
         console.warn('Invalid startDate for client-side filter:', startDate);
       }
     }
-    
+
     if (endDate && (!queries.length || queries.length === 0)) {
       try {
         const end = new Date(endDate);
@@ -1715,19 +1729,19 @@ app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
         console.warn('Invalid endDate for client-side filter:', endDate);
       }
     }
-    
+
     // Full-text search across messages (requires fetching messages)
     if (fullTextSearch && fullTextSearch.trim() !== '') {
       console.log(`🔍 Full-text search: "${fullTextSearch}"`);
       const searchTerm = fullTextSearch.toLowerCase();
       const matchingSessionIds = new Set();
-      
+
       try {
         // Fetch messages in batches and search
         let messageOffset = 0;
         const messageLimit = 1000;
         let hasMoreMessages = true;
-        
+
         while (hasMoreMessages && matchingSessionIds.size < 100) {
           let messageResult;
           try {
@@ -1748,7 +1762,7 @@ app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
                 messageOffset
               );
             }
-            
+
             // Search in message text
             for (const msg of messageResult.documents) {
               const text = (msg.text || '').toLowerCase();
@@ -1756,7 +1770,7 @@ app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
                 matchingSessionIds.add(msg.sessionId);
               }
             }
-            
+
             messageOffset += messageResult.documents.length;
             hasMoreMessages = messageResult.documents.length === messageLimit;
           } catch (msgErr) {
@@ -1764,7 +1778,7 @@ app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
             break;
           }
         }
-        
+
         // Filter sessions to only those with matching messages
         const beforeFilter = transformedSessions.length;
         transformedSessions = transformedSessions.filter(s => matchingSessionIds.has(s.sessionId));
@@ -1774,14 +1788,14 @@ app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
         // Continue without full-text filtering if search fails
       }
     }
-    
+
     // If query failed and we fetched all, filter client-side on backend
     if (status && status.trim() !== '' && queries.length === 0) {
       const beforeFilter = transformedSessions.length;
       transformedSessions = transformedSessions.filter(s => s.status === status);
       console.log(`🔍 Backend client-side filter: ${beforeFilter} → ${transformedSessions.length} sessions with status="${status}"`);
     }
-    
+
     // Apply pagination to filtered results (if we did client-side filtering)
     // If we used server-side pagination, result.documents already has the right slice
     let paginatedSessions;
@@ -1794,9 +1808,9 @@ app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
       totalCount = transformedSessions.length;
       paginatedSessions = transformedSessions.slice(offset, offset + limit);
     }
-    
+
     const paginationMeta = calculatePaginationMeta(totalCount, limit, offset);
-    
+
     console.log(`📤 Sending ${paginatedSessions.length} session(s) to frontend (page ${paginationMeta.currentPage} of ${paginationMeta.totalPages})`);
     res.json({
       items: paginatedSessions,
@@ -1818,24 +1832,24 @@ app.get('/admin/sessions', requireAdminAuth, async (req, res) => {
 app.get('/admin/sessions/agent/:agentId', requireAuth, requireRole(['admin', 'agent']), async (req, res) => {
   try {
     const { agentId } = req.params;
-    
+
     if (!agentId) {
       return res.status(400).json({ error: 'agentId is required' });
     }
-    
+
     if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_SESSIONS_COLLECTION_ID) {
       return res.status(500).json({ error: 'Appwrite not configured' });
     }
-    
+
     console.log(`📋 Fetching sessions for agent: ${agentId}`);
-    
+
     // Fetch ALL sessions with pagination (since assignedAgent might be in userMeta, we can't query it directly)
     // Use the same pagination pattern as streamAllSessions
     const limit = 100;
     let offset = 0;
     let hasMore = true;
     const allSessions = [];
-    
+
     while (hasMore) {
       let queries = [];
       // CRITICAL: Add Query.limit() and Query.offset() to queries array
@@ -1844,16 +1858,16 @@ app.get('/admin/sessions/agent/:agentId', requireAuth, requireRole(['admin', 'ag
         queries.push(Query.limit(limit));
         queries.push(Query.offset(offset));
       }
-      
+
       const result = await awDatabases.listDocuments(
         APPWRITE_DATABASE_ID,
         APPWRITE_SESSIONS_COLLECTION_ID,
         queries.length > 0 ? queries : undefined
       );
-      
+
       allSessions.push(...result.documents);
       offset += result.documents.length;
-      
+
       // Check if there are more documents
       if (result.total !== undefined) {
         hasMore = offset < result.total;
@@ -1861,22 +1875,22 @@ app.get('/admin/sessions/agent/:agentId', requireAuth, requireRole(['admin', 'ag
         // Fallback: assume more if we got a full page
         hasMore = result.documents.length === limit;
       }
-      
+
       // Safety check: prevent infinite loops
       if (offset > 100000) {
         console.warn('⚠️  Reached safety limit of 100K sessions, stopping pagination');
         break;
       }
     }
-    
+
     console.log(`📊 Total sessions fetched from database: ${allSessions.length}`);
-    
+
     // Filter sessions where assignedAgent matches agentId
     // Also check userMeta for assignedAgent (for backward compatibility)
     const agentSessions = allSessions
       .map(doc => {
         let assignedAgent = doc.assignedAgent || null;
-        
+
         // If assignedAgent field doesn't exist, try to get it from userMeta
         if (!assignedAgent && doc.userMeta) {
           try {
@@ -1888,7 +1902,7 @@ app.get('/admin/sessions/agent/:agentId', requireAuth, requireRole(['admin', 'ag
             // Ignore parse errors
           }
         }
-        
+
         return {
           ...doc,
           assignedAgent: assignedAgent
@@ -1916,9 +1930,9 @@ app.get('/admin/sessions/agent/:agentId', requireAuth, requireRole(['admin', 'ag
         const dateB = new Date(b.startTime || 0).getTime();
         return dateB - dateA;
       });
-    
+
     console.log(`✅ Found ${agentSessions.length} session(s) for agent ${agentId}`);
-    
+
     res.json({
       sessions: agentSessions,
       total: agentSessions.length,
@@ -1935,36 +1949,36 @@ app.get('/admin/sessions/:sessionId/messages', requireAdminAuth, async (req, res
   try {
     const { sessionId } = req.params;
     const { order = 'asc' } = req.query; // 'asc' (oldest first) or 'desc' (newest first)
-    
+
     // Parse pagination params (default: load all for backward compatibility)
     // If no limit specified, load all messages (backward compatible)
     let limit = parseInt(req.query.limit, 10);
     let offset = parseInt(req.query.offset, 10) || 0;
-    
+
     if (isNaN(limit) || limit <= 0) {
       // No limit = load all (backward compatible)
       limit = 10000;
     } else if (limit > 1000) {
       limit = 1000; // Max limit for messages
     }
-    
+
     if (isNaN(offset) || offset < 0) {
       offset = 0;
     }
-    
+
     if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_MESSAGES_COLLECTION_ID) {
       return res.json({ items: [], total: 0, limit, offset, hasMore: false, message: 'Appwrite not configured' });
     }
-    
+
     console.log(`📨 Fetching messages for session: ${sessionId}, limit=${limit}, offset=${offset}, order=${order}`);
-    
+
     let result;
     const messageQueries = [];
-    
+
     // Add sessionId filter
     if (Query) {
       messageQueries.push(Query.equal('sessionId', sessionId));
-      
+
       // Add ordering
       // NOTE: For production, add index on sessionId + createdAt for better performance
       // Index configuration: Attributes: sessionId (string), createdAt (datetime), Order: asc
@@ -1974,7 +1988,7 @@ app.get('/admin/sessions/:sessionId/messages', requireAdminAuth, async (req, res
         messageQueries.push(Query.orderAsc('createdAt'));
       }
     }
-    
+
     // Try Query class first if available
     if (Query && messageQueries.length > 0) {
       try {
@@ -1992,7 +2006,7 @@ app.get('/admin/sessions/:sessionId/messages', requireAdminAuth, async (req, res
         // Fall through to fallback
       }
     }
-    
+
     // Fallback: fetch all messages and filter client-side
     if (!result) {
       try {
@@ -2003,21 +2017,21 @@ app.get('/admin/sessions/:sessionId/messages', requireAdminAuth, async (req, res
           undefined, // No query - fetch all
           10000 // Large limit to get all messages
         );
-        
+
         // Filter client-side by sessionId
         const filteredDocs = allResult.documents.filter(doc => doc.sessionId === sessionId);
-        
+
         // Sort
         filteredDocs.sort((a, b) => {
           const timeA = new Date(a.createdAt || a.$createdAt || 0).getTime();
           const timeB = new Date(b.createdAt || b.$createdAt || 0).getTime();
           return order === 'desc' ? timeB - timeA : timeA - timeB;
         });
-        
+
         // Apply pagination
         const total = filteredDocs.length;
         const paginated = filteredDocs.slice(offset, offset + limit);
-        
+
         result = {
           documents: paginated,
           total: total
@@ -2030,7 +2044,7 @@ app.get('/admin/sessions/:sessionId/messages', requireAdminAuth, async (req, res
         throw new Error(`Failed to fetch messages: ${fallbackErr?.message || fallbackErr}`);
       }
     }
-    
+
     // Sort by createdAt (if not already sorted by query)
     let sortedMessages = result.documents;
     if (!Query || messageQueries.length === 0) {
@@ -2040,11 +2054,11 @@ app.get('/admin/sessions/:sessionId/messages', requireAdminAuth, async (req, res
         return order === 'desc' ? timeB - timeA : timeA - timeB;
       });
     }
-    
+
     // Decrypt messages if encrypted
     const decryptedMessages = sortedMessages.map(msg => {
       const decrypted = { ...msg };
-      
+
       // Decrypt text field
       if (msg.encrypted && encryption) {
         const decryptedText = decryptField(msg.encrypted);
@@ -2054,7 +2068,7 @@ app.get('/admin/sessions/:sessionId/messages', requireAdminAuth, async (req, res
       } else if (!msg.text && msg.encrypted) {
         decrypted.text = '[ENCRYPTED]';
       }
-      
+
       // Decrypt metadata field
       if (msg.encrypted_metadata && encryption) {
         const decryptedMetadata = decryptField(msg.encrypted_metadata);
@@ -2072,21 +2086,21 @@ app.get('/admin/sessions/:sessionId/messages', requireAdminAuth, async (req, res
           decrypted.metadata = msg.metadata;
         }
       }
-      
+
       return decrypted;
     });
-    
+
     // Log message types for debugging
     const messageTypes = decryptedMessages.reduce((acc, msg) => {
       acc[msg.sender || 'unknown'] = (acc[msg.sender || 'unknown'] || 0) + 1;
       return acc;
     }, {});
     console.log(`📊 Message types:`, messageTypes);
-    
+
     // Calculate pagination metadata
     const total = result.total || decryptedMessages.length;
     const paginationMeta = calculatePaginationMeta(total, limit, offset);
-    
+
     // Return paginated response (backward compatible: also include 'messages' key)
     res.json({
       items: decryptedMessages,
@@ -2110,14 +2124,14 @@ app.post('/admin/sessions/:sessionId/assign', requireAuth, requireRole(['admin',
   try {
     const { sessionId } = req.params;
     const { agentId, agentName } = req.body;
-    
+
     if (!agentId) {
       return res.status(400).json({ error: 'agentId required' });
     }
-    
+
     // Assign agent to session (updates userMeta and direct field)
     await chatService.assignAgentToSession(sessionId, agentId, agentName);
-    
+
     // Create system message: "Agent {agentName} has joined the conversation."
     const systemMessageText = `Agent ${agentName || agentId} has joined the conversation.`;
     await chatService.saveMessageToAppwrite(
@@ -2127,18 +2141,18 @@ app.post('/admin/sessions/:sessionId/assign', requireAuth, requireRole(['admin',
       { type: 'agent_joined', agentId, agentName },
       'public'
     );
-    
+
     // Notify agent if online
     notifyAgentIfOnline(agentId, { type: 'assignment', sessionId });
-    
+
     // Emit socket events
     // Only emit agent_joined - the system message is already saved to DB and will be loaded naturally
     // Don't emit new_message for system messages to avoid duplicates
     io.to(sessionId).emit('agent_joined', { agentId, agentName });
-    
+
     // Notify admin dashboard to refresh session list
     io.to('admin_feed').emit('session_updated', { sessionId, assignedAgent: agentId });
-    
+
     res.json({ success: true, sessionId, agentId, agentName });
   } catch (err) {
     console.error('Error assigning session:', err);
@@ -2150,11 +2164,11 @@ app.post('/admin/sessions/:sessionId/assign', requireAuth, requireRole(['admin',
 app.post('/admin/sessions/:sessionId/close', requireAdminAuth, async (req, res) => {
   try {
     const { sessionId } = req.params;
-    
+
     if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_SESSIONS_COLLECTION_ID) {
       return res.status(500).json({ error: 'Appwrite not configured' });
     }
-    
+
     // Update session status to closed
     await awDatabases.updateDocument(
       APPWRITE_DATABASE_ID,
@@ -2165,14 +2179,14 @@ app.post('/admin/sessions/:sessionId/close', requireAdminAuth, async (req, res) 
         lastSeen: new Date().toISOString()
       }
     );
-    
+
     // Clear from in-memory assignment cache
     sessionAssignments.delete(sessionId);
-    
+
     // Notify all connected clients
     io.to(sessionId).emit('conversation_closed', { sessionId });
     console.log(`✅ Closed conversation: ${sessionId}`);
-    
+
     res.json({ success: true, sessionId, status: 'closed' });
   } catch (err) {
     console.error('Error closing session:', err);
@@ -2186,14 +2200,14 @@ app.get('/admin/assignments', requireAdminAuth, async (req, res) => {
     if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_SESSIONS_COLLECTION_ID) {
       return res.json({ sessions: [], message: 'Appwrite not configured' });
     }
-    
+
     const result = await awDatabases.listDocuments(
       APPWRITE_DATABASE_ID,
       APPWRITE_SESSIONS_COLLECTION_ID,
       [`equal("status", "needs_help")`],
       100
     );
-    
+
     res.json({ sessions: result.documents });
   } catch (err) {
     console.error('Error listing assignments:', err);
@@ -2213,16 +2227,16 @@ const RATE_LIMIT_MAX = 5; // max 5 exports per minute
 function checkRateLimit(token) {
   const now = Date.now();
   const limit = exportRateLimiter.get(token);
-  
+
   if (!limit || now > limit.resetTime) {
     exportRateLimiter.set(token, { count: 1, resetTime: now + RATE_LIMIT_WINDOW });
     return true;
   }
-  
+
   if (limit.count >= RATE_LIMIT_MAX) {
     return false;
   }
-  
+
   limit.count++;
   return true;
 }
@@ -2242,7 +2256,7 @@ async function* streamMessages(sessionId) {
   const limit = 100; // Appwrite pagination limit
   let offset = 0;
   let hasMore = true;
-  
+
   while (hasMore) {
     let result;
     try {
@@ -2276,11 +2290,11 @@ async function* streamMessages(sessionId) {
       console.error(`Error fetching messages (offset ${offset}):`, err);
       break;
     }
-    
+
     for (const msg of result.documents) {
       yield msg;
     }
-    
+
     offset += result.documents.length;
     hasMore = result.documents.length === limit && offset < result.total;
   }
@@ -2302,20 +2316,20 @@ app.get('/admin/sessions/:sessionId/export', requireAdminAuth, async (req, res) 
   const format = (req.query.format || 'json').toLowerCase();
   const authHeader = req.headers.authorization;
   const adminToken = authHeader ? authHeader.substring(7) : 'unknown';
-  
+
   // Rate limiting
   if (!checkRateLimit(adminToken)) {
     return res.status(429).json({ error: 'Rate limit exceeded. Maximum 5 exports per minute.' });
   }
-  
+
   if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_MESSAGES_COLLECTION_ID) {
     return res.status(500).json({ error: 'Appwrite not configured' });
   }
-  
+
   if (format !== 'json' && format !== 'csv') {
     return res.status(400).json({ error: 'Invalid format. Use "json" or "csv"' });
   }
-  
+
   try {
     // Verify session exists
     try {
@@ -2330,7 +2344,7 @@ app.get('/admin/sessions/:sessionId/export', requireAdminAuth, async (req, res) 
       }
       throw err;
     }
-    
+
     // Count total messages for size check
     let totalMessages = 0;
     try {
@@ -2355,31 +2369,31 @@ app.get('/admin/sessions/:sessionId/export', requireAdminAuth, async (req, res) 
     } catch (err) {
       console.warn('Could not count messages:', err);
     }
-    
+
     // Check size limit (100k messages per session)
     if (totalMessages > 100000) {
-      return res.status(413).json({ 
-        error: `Export too large (${totalMessages} messages). Please use bulk export with background job for large datasets.` 
+      return res.status(413).json({
+        error: `Export too large (${totalMessages} messages). Please use bulk export with background job for large datasets.`
       });
     }
-    
+
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
     const filename = `aichat_session-${sessionId}_${timestamp}.${format}`;
-    
+
     // Set headers
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    
+
     if (format === 'json') {
       res.setHeader('Content-Type', 'application/json');
-      
+
       // Stream JSON array
       res.write('[');
       let first = true;
-      
+
       for await (const msg of streamMessages(sessionId)) {
         if (!first) res.write(',');
         first = false;
-        
+
         const jsonMsg = {
           createdAt: msg.createdAt || msg.$createdAt || new Date().toISOString(),
           sender: msg.sender || 'unknown',
@@ -2389,36 +2403,36 @@ app.get('/admin/sessions/:sessionId/export', requireAdminAuth, async (req, res) 
         };
         res.write(JSON.stringify(jsonMsg));
       }
-      
+
       res.write(']');
       res.end();
-      
+
     } else if (format === 'csv') {
       res.setHeader('Content-Type', 'text/csv');
-      
+
       // CSV header
       res.write('createdAt,sender,text,confidence,metadata\n');
-      
+
       // Stream CSV rows directly
       for await (const msg of streamMessages(sessionId)) {
         const createdAt = escapeCsvField(msg.createdAt || msg.$createdAt || new Date().toISOString());
         const sender = escapeCsvField(msg.sender || 'unknown');
         const text = escapeCsvField(msg.text || '');
         const confidence = escapeCsvField(msg.confidence || '');
-        const metadataStr = msg.metadata ? 
-          escapeCsvField(typeof msg.metadata === 'string' ? msg.metadata : JSON.stringify(msg.metadata)) : 
+        const metadataStr = msg.metadata ?
+          escapeCsvField(typeof msg.metadata === 'string' ? msg.metadata : JSON.stringify(msg.metadata)) :
           '';
-        
+
         res.write(`${createdAt},${sender},${text},${confidence},${metadataStr}\n`);
       }
-      
+
       res.end();
     }
-    
+
     // Audit log
     logExportAction(adminToken, [sessionId], format);
     console.log(`✅ Exported session ${sessionId} as ${format} (${totalMessages} messages)`);
-    
+
   } catch (err) {
     console.error(`Error exporting session ${sessionId}:`, err);
     if (!res.headersSent) {
@@ -2432,34 +2446,34 @@ app.post('/admin/sessions/export', requireAdminAuth, async (req, res) => {
   const { sessionIds, format } = req.body;
   const authHeader = req.headers.authorization;
   const adminToken = authHeader ? authHeader.substring(7) : 'unknown';
-  
+
   // Rate limiting
   if (!checkRateLimit(adminToken)) {
     return res.status(429).json({ error: 'Rate limit exceeded. Maximum 5 exports per minute.' });
   }
-  
+
   if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_MESSAGES_COLLECTION_ID) {
     return res.status(500).json({ error: 'Appwrite not configured' });
   }
-  
+
   if (!Array.isArray(sessionIds) || sessionIds.length === 0) {
     return res.status(400).json({ error: 'sessionIds array required' });
   }
-  
+
   if (sessionIds.length > 50) {
     return res.status(400).json({ error: 'Maximum 50 sessions per bulk export' });
   }
-  
+
   const exportFormat = (format || 'json').toLowerCase();
   if (exportFormat !== 'json' && exportFormat !== 'csv') {
     return res.status(400).json({ error: 'Invalid format. Use "json" or "csv"' });
   }
-  
+
   try {
     // Count total messages across all sessions
     let totalMessages = 0;
     const sessionMessageCounts = {};
-    
+
     for (const sessionId of sessionIds) {
       try {
         if (Query) {
@@ -2488,23 +2502,23 @@ app.post('/admin/sessions/export', requireAdminAuth, async (req, res) => {
         sessionMessageCounts[sessionId] = 0;
       }
     }
-    
+
     // Check size limit (100k messages total)
     if (totalMessages > 100000) {
-      return res.status(413).json({ 
-        error: `Export too large (${totalMessages} total messages across ${sessionIds.length} sessions). Please use background job for large bulk exports.` 
+      return res.status(413).json({
+        error: `Export too large (${totalMessages} total messages across ${sessionIds.length} sessions). Please use background job for large bulk exports.`
       });
     }
-    
+
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-    
+
     if (exportFormat === 'json') {
       res.setHeader('Content-Type', 'application/json');
       res.setHeader('Content-Disposition', `attachment; filename="bulk_export_${timestamp}.json"`);
-      
+
       // Stream NDJSON (newline-delimited JSON) for large exports
       const sessions = {};
-      
+
       for (const sessionId of sessionIds) {
         const messages = [];
         for await (const msg of streamMessages(sessionId)) {
@@ -2518,52 +2532,52 @@ app.post('/admin/sessions/export', requireAdminAuth, async (req, res) => {
         }
         sessions[sessionId] = messages;
       }
-      
+
       res.json({ sessions });
-      
+
     } else if (exportFormat === 'csv') {
       res.setHeader('Content-Type', 'application/zip');
       res.setHeader('Content-Disposition', `attachment; filename="bulk_export_${timestamp}.zip"`);
-      
+
       const archive = archiver('zip', { zlib: { level: 9 } });
-      
+
       archive.on('error', (err) => {
         console.error('Archive error:', err);
         if (!res.headersSent) {
           res.status(500).json({ error: 'Failed to create archive' });
         }
       });
-      
+
       archive.pipe(res);
-      
+
       // Add CSV file for each session
       for (const sessionId of sessionIds) {
         const csvFilename = `session-${sessionId}.csv`;
         let csvData = 'createdAt,sender,text,confidence,metadata\n';
-        
+
         // Stream messages to CSV string
         for await (const msg of streamMessages(sessionId)) {
           const createdAt = escapeCsvField(msg.createdAt || msg.$createdAt || new Date().toISOString());
           const sender = escapeCsvField(msg.sender || 'unknown');
           const text = escapeCsvField(msg.text || '');
           const confidence = escapeCsvField(msg.confidence || '');
-          const metadataStr = msg.metadata ? 
-            escapeCsvField(typeof msg.metadata === 'string' ? msg.metadata : JSON.stringify(msg.metadata)) : 
+          const metadataStr = msg.metadata ?
+            escapeCsvField(typeof msg.metadata === 'string' ? msg.metadata : JSON.stringify(msg.metadata)) :
             '';
-          
+
           csvData += `${createdAt},${sender},${text},${confidence},${metadataStr}\n`;
         }
-        
+
         archive.append(csvData, { name: csvFilename });
       }
-      
+
       archive.finalize();
     }
-    
+
     // Audit log
     logExportAction(adminToken, sessionIds, exportFormat);
     console.log(`✅ Bulk exported ${sessionIds.length} sessions as ${exportFormat} (${totalMessages} total messages)`);
-    
+
   } catch (err) {
     console.error('Error in bulk export:', err);
     if (!res.headersSent) {
@@ -2579,11 +2593,11 @@ app.post('/session/:sessionId/theme', async (req, res) => {
   try {
     const { sessionId } = req.params;
     const { themeVars } = req.body;
-    
+
     if (!themeVars) {
       return res.status(400).json({ error: 'themeVars required' });
     }
-    
+
     if (awDatabases && APPWRITE_DATABASE_ID && APPWRITE_SESSIONS_COLLECTION_ID) {
       await awDatabases.updateDocument(
         APPWRITE_DATABASE_ID,
@@ -2592,7 +2606,7 @@ app.post('/session/:sessionId/theme', async (req, res) => {
         { theme: typeof themeVars === 'object' ? JSON.stringify(themeVars) : themeVars }
       );
     }
-    
+
     res.json({ success: true, sessionId, theme: themeVars });
   } catch (err) {
     console.error('Error updating theme:', err);
@@ -2604,17 +2618,17 @@ app.post('/session/:sessionId/theme', async (req, res) => {
 app.get('/session/:sessionId/theme', async (req, res) => {
   try {
     const { sessionId } = req.params;
-    
+
     if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_SESSIONS_COLLECTION_ID) {
       return res.json({ theme: {} });
     }
-    
+
     const doc = await awDatabases.getDocument(
       APPWRITE_DATABASE_ID,
       APPWRITE_SESSIONS_COLLECTION_ID,
       sessionId
     );
-    
+
     res.json({ theme: doc.theme || {} });
   } catch (err) {
     if (err.code === 404) {
@@ -2622,6 +2636,380 @@ app.get('/session/:sessionId/theme', async (req, res) => {
     }
     console.error('Error getting theme:', err);
     res.status(500).json({ error: err?.message || 'Failed to get theme' });
+  }
+});
+
+// ============================================================================
+// TICKET MANAGEMENT ENDPOINTS
+// ============================================================================
+
+const APPWRITE_TICKETS_COLLECTION_ID = 'tickets'; // Collection name
+
+// POST /api/tickets - Create new ticket
+app.post('/api/tickets', async (req, res) => {
+  try {
+    const { name, email, mobile, query, sessionId } = req.body;
+
+    // Validation
+    if (!name || !email || !query) {
+      return res.status(400).json({ error: 'Name, email, and query are required' });
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: 'Invalid email format' });
+    }
+
+    if (!awDatabases || !APPWRITE_DATABASE_ID) {
+      return res.status(503).json({ error: 'Appwrite not configured' });
+    }
+
+    // Create ticket document
+    const { ID } = require('node-appwrite');
+    const ticketId = ID.unique();
+
+    const ticketData = {
+      ticketId,
+      name,
+      email,
+      mobile: mobile || '',
+      query,
+      sessionId: sessionId || null,
+      status: 'pending'
+      // Note: createdAt and updatedAt are auto-generated by Appwrite as $createdAt and $updatedAt
+    };
+
+    await awDatabases.createDocument(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_TICKETS_COLLECTION_ID,
+      ticketId,
+      ticketData
+    );
+
+    console.log(`✅ Ticket created: ${ticketId} for ${email}`);
+
+    // Send acknowledgment email via Resend
+    if (resend) {
+      try {
+        await resend.emails.send({
+          from: process.env.RESEND_FROM_EMAIL || 'internships@vtu.ac.in',
+          to: email,
+          subject: `We received your query [${ticketId}]`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h2 style="color: #333;">Thank you for contacting us!</h2>
+              <p>Hi ${name},</p>
+              <p>We have received your query and noted it down. Our team will get back to you soon.</p>
+              <p><strong>Ticket ID:</strong> ${ticketId}</p>
+              <p><strong>Your Query:</strong></p>
+              <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 10px 0;">
+                ${query.replace(/\n/g, '<br>')}
+              </div>
+              <p>Best regards,<br>VTU Internyet Portal Support Team</p>
+            </div>
+          `
+        });
+        console.log(`✅ Acknowledgment email sent to ${email}`);
+      } catch (emailErr) {
+        console.error('❌ Failed to send acknowledgment email:', emailErr?.message || emailErr);
+        // Don't fail the request if email fails
+      }
+    }
+
+    res.json({
+      success: true,
+      ticketId,
+      message: 'Ticket created successfully'
+    });
+  } catch (err) {
+    console.error('Error creating ticket:', err);
+    res.status(500).json({ error: err?.message || 'Failed to create ticket' });
+  }
+});
+
+// GET /api/tickets - List all tickets (Admin/Agent only)
+app.get('/api/tickets', requireAuth, requireRole(['admin', 'agent']), async (req, res) => {
+  try {
+    if (!awDatabases || !APPWRITE_DATABASE_ID) {
+      return res.status(503).json({ error: 'Appwrite not configured' });
+    }
+
+    let result;
+    // Try using $createdAt (Appwrite's auto-generated timestamp) or createdAt if it exists
+    try {
+      if (Query) {
+        // Try $createdAt first (Appwrite's built-in timestamp)
+        try {
+          result = await awDatabases.listDocuments(
+            APPWRITE_DATABASE_ID,
+            APPWRITE_TICKETS_COLLECTION_ID,
+            [Query.orderDesc('$createdAt')],
+            1000 // Max 1000 tickets
+          );
+        } catch (err) {
+          // Fallback: try createdAt (if attribute exists in schema)
+          try {
+            result = await awDatabases.listDocuments(
+              APPWRITE_DATABASE_ID,
+              APPWRITE_TICKETS_COLLECTION_ID,
+              [Query.orderDesc('createdAt')],
+              1000
+            );
+          } catch (err2) {
+            // If both fail, fetch without ordering and sort client-side
+            result = await awDatabases.listDocuments(
+              APPWRITE_DATABASE_ID,
+              APPWRITE_TICKETS_COLLECTION_ID,
+              [],
+              1000
+            );
+          }
+        }
+      } else {
+        result = await awDatabases.listDocuments(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_TICKETS_COLLECTION_ID,
+          undefined,
+          1000
+        );
+      }
+
+      // Sort by date descending (client-side if Query ordering failed)
+      result.documents.sort((a, b) => {
+        // Try $createdAt first, then createdAt, then $id as fallback
+        const dateA = new Date(
+          a.$createdAt ||
+          a.createdAt ||
+          a.updatedAt ||
+          a.$updatedAt ||
+          0
+        ).getTime();
+        const dateB = new Date(
+          b.$createdAt ||
+          b.createdAt ||
+          b.updatedAt ||
+          b.$updatedAt ||
+          0
+        ).getTime();
+        return dateB - dateA;
+      });
+    } catch (err) {
+      console.error('Error fetching tickets:', err);
+      // Fallback: fetch without ordering
+      result = await awDatabases.listDocuments(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_TICKETS_COLLECTION_ID,
+        [],
+        1000
+      );
+      // Sort client-side
+      result.documents.sort((a, b) => {
+        const dateA = new Date(a.$createdAt || a.createdAt || 0).getTime();
+        const dateB = new Date(b.$createdAt || b.createdAt || 0).getTime();
+        return dateB - dateA;
+      });
+    }
+
+    // Enrich tickets with resolvedBy user info and assigned agent from session
+    const enrichedTickets = await Promise.all(
+      result.documents.map(async (ticket) => {
+        let enrichedTicket = { ...ticket };
+
+        // Fetch resolvedBy user info
+        if (ticket.resolvedBy) {
+          try {
+            const resolvedByUser = await getUserById(ticket.resolvedBy);
+            if (resolvedByUser) {
+              enrichedTicket.resolvedByName = resolvedByUser.name || resolvedByUser.email || 'Unknown';
+              enrichedTicket.resolvedByEmail = resolvedByUser.email || '';
+            }
+          } catch (err) {
+            console.warn(`Failed to fetch user info for resolvedBy ${ticket.resolvedBy}:`, err?.message);
+          }
+        }
+
+        // Fetch assigned agent from session if sessionId exists
+        if (ticket.sessionId && APPWRITE_SESSIONS_COLLECTION_ID) {
+          try {
+            const session = await awDatabases.getDocument(
+              APPWRITE_DATABASE_ID,
+              APPWRITE_SESSIONS_COLLECTION_ID,
+              ticket.sessionId
+            );
+            if (session) {
+              // Try to get assignedAgent from direct field or userMeta
+              let assignedAgentId = session.assignedAgent || null;
+              let assignedAgentName = null;
+
+              if (!assignedAgentId && session.userMeta) {
+                try {
+                  const userMeta = typeof session.userMeta === 'string'
+                    ? JSON.parse(session.userMeta)
+                    : session.userMeta;
+                  assignedAgentId = userMeta.assignedAgent || null;
+                  assignedAgentName = userMeta.assignedAgentName || null;
+                } catch (e) {
+                  // Ignore parse errors
+                }
+              }
+
+              // If we have an agent ID, try to get their name
+              if (assignedAgentId && !assignedAgentName) {
+                try {
+                  const agentUser = await getUserById(assignedAgentId);
+                  if (agentUser) {
+                    assignedAgentName = agentUser.name || agentUser.email || assignedAgentId;
+                  }
+                } catch (err) {
+                  assignedAgentName = assignedAgentId; // Fallback to ID
+                }
+              }
+
+              enrichedTicket.assignedAgentId = assignedAgentId;
+              enrichedTicket.assignedAgentName = assignedAgentName;
+            }
+          } catch (err) {
+            // Session may not exist or be deleted - that's okay
+            if (err?.code !== 404) {
+              console.warn(`Failed to fetch session ${ticket.sessionId} for ticket:`, err?.message);
+            }
+          }
+        }
+
+        return enrichedTicket;
+      })
+    );
+
+    res.json({
+      tickets: enrichedTickets,
+      total: result.total || enrichedTickets.length
+    });
+  } catch (err) {
+    console.error('Error fetching tickets:', err);
+    res.status(500).json({ error: err?.message || 'Failed to fetch tickets' });
+  }
+});
+
+// POST /api/tickets/reply - Reply to ticket
+app.post('/api/tickets/reply', requireAuth, requireRole(['admin', 'agent']), async (req, res) => {
+  try {
+    const { ticketId, userEmail, responseMessage, originalQuery } = req.body;
+
+    // Validation
+    if (!ticketId || !userEmail || !responseMessage) {
+      return res.status(400).json({ error: 'ticketId, userEmail, and responseMessage are required' });
+    }
+
+    if (!awDatabases || !APPWRITE_DATABASE_ID) {
+      return res.status(503).json({ error: 'Appwrite not configured' });
+    }
+
+    // Update ticket in Appwrite
+    const now = new Date().toISOString();
+    try {
+      await awDatabases.updateDocument(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_TICKETS_COLLECTION_ID,
+        ticketId,
+        {
+          status: 'resolved',
+          resolvedAt: now,
+          resolutionResponse: responseMessage,
+          resolvedBy: req.user.userId
+          // Note: updatedAt is auto-generated by Appwrite as $updatedAt
+        }
+      );
+      console.log(`✅ Ticket ${ticketId} updated to resolved`);
+    } catch (updateErr) {
+      if (updateErr.code === 404) {
+        return res.status(404).json({ error: 'Ticket not found' });
+      }
+      throw updateErr;
+    }
+
+    // Send reply email via Resend
+    let emailSent = false;
+    let emailError = null;
+
+    if (!resend) {
+      console.error('❌ Resend client not initialized - cannot send email');
+      console.error('   Check RESEND_API_KEY in environment variables');
+      emailError = 'Resend client not initialized. Check RESEND_API_KEY in environment variables.';
+    } else {
+      try {
+        const fromEmail = process.env.RESEND_FROM_EMAIL || 'internships@vtu.ac.in';
+        console.log(`📧 Attempting to send reply email to ${userEmail} from ${fromEmail}`);
+
+        const emailResult = await resend.emails.send({
+          from: fromEmail,
+          to: userEmail,
+          subject: 'Response to your query',
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h2 style="color: #333;">Response to your query</h2>
+              <p>Hello,</p>
+              <p>Thank you for contacting us. Here is our response to your query:</p>
+              
+              <div style="background: #e8f4f8; padding: 15px; border-left: 4px solid #2196F3; margin: 20px 0;">
+                <h3 style="margin-top: 0; color: #1976D2;">Our Response:</h3>
+                <div style="color: #333; line-height: 1.6;">
+                  ${responseMessage.replace(/\n/g, '<br>')}
+                </div>
+              </div>
+              
+              ${originalQuery ? `
+                <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                  <h3 style="margin-top: 0; color: #666;">Your Original Query:</h3>
+                  <div style="color: #333; line-height: 1.6;">
+                    ${originalQuery.replace(/\n/g, '<br>')}
+                  </div>
+                </div>
+              ` : ''}
+              
+              <p>If you have any further questions, please don't hesitate to reach out.</p>
+              <p>Best regards,<br>VTU Internyet Portal Support Team</p>
+            </div>
+          `
+        });
+
+        // Check if email was actually sent (Resend returns error in response if failed)
+        if (emailResult?.error) {
+          throw new Error(emailResult.error.message || 'Email sending failed');
+        }
+
+        if (emailResult?.data?.id) {
+          emailSent = true;
+          console.log(`✅ Reply email sent successfully to ${userEmail}`);
+          console.log(`   Email ID: ${emailResult.data.id}`);
+        } else {
+          // Log the full response for debugging
+          console.log(`   Full response:`, JSON.stringify(emailResult, null, 2));
+          throw new Error('Email sending failed - no email ID returned');
+        }
+      } catch (emailErr) {
+        emailError = emailErr?.message || 'Unknown email error';
+        console.error('❌ Failed to send reply email:', emailErr?.message || emailErr);
+        console.error('   Error details:', {
+          message: emailErr?.message,
+          code: emailErr?.code,
+          status: emailErr?.status,
+          response: emailErr?.response,
+          stack: emailErr?.stack?.split('\n').slice(0, 5).join('\n')
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'Reply sent successfully',
+      ticketId,
+      emailSent,
+      emailError: emailError || undefined
+    });
+  } catch (err) {
+    console.error('Error replying to ticket:', err);
+    res.status(500).json({ error: err?.message || 'Failed to send reply' });
   }
 });
 
@@ -2655,7 +3043,7 @@ async function* streamAllMessages(startDate, endDate) {
   let offset = 0;
   let hasMore = true;
   let totalYielded = 0;
-  
+
   while (hasMore) {
     try {
       let queries = [];
@@ -2664,14 +3052,14 @@ async function* streamAllMessages(startDate, endDate) {
         queries.push(Query.greaterThanEqual('createdAt', startDate.toISOString()));
         queries.push(Query.lessThanEqual('createdAt', endDate.toISOString()));
       }
-      
+
       // CRITICAL: Add Query.limit() and Query.offset() to queries array
       // Appwrite defaults to 25 documents per request, so we must use Query.limit() in queries array
       if (Query) {
         queries.push(Query.limit(limit));
         queries.push(Query.offset(offset));
       }
-      
+
       // Debug logging for first batch
       if (offset === 0) {
         if (startDate && endDate) {
@@ -2680,23 +3068,23 @@ async function* streamAllMessages(startDate, endDate) {
           console.log(`📊 Streaming ALL messages (no date filter)`);
         }
       }
-      
+
       const result = await awDatabases.listDocuments(
         APPWRITE_DATABASE_ID,
         APPWRITE_MESSAGES_COLLECTION_ID,
         queries.length > 0 ? queries : undefined
       );
-      
+
       // Log progress for debugging
       if (offset % 500 === 0 || offset === 0) {
         console.log(`📊 Appwrite batch: fetched ${result.documents.length} messages, total=${result.total !== undefined ? result.total : 'unknown'}, offset=${offset}, hasMore=${result.documents.length === limit}`);
       }
-      
+
       // If this is the first batch and we got fewer than expected, log a warning
       if (offset === 0 && result.documents.length < limit && result.total !== undefined && result.total > result.documents.length) {
         console.warn(`⚠️  First batch returned ${result.documents.length} messages but total is ${result.total}. Will continue fetching...`);
       }
-      
+
       for (const msg of result.documents) {
         // If date filtering is applied, double-check the date range client-side as fallback
         if (startDate && endDate) {
@@ -2710,10 +3098,10 @@ async function* streamAllMessages(startDate, endDate) {
           totalYielded++;
         }
       }
-      
+
       // Update offset and determine if there are more documents
       offset += result.documents.length;
-      
+
       // Use total count if available, otherwise check if we got a full page
       if (result.total !== undefined) {
         hasMore = offset < result.total;
@@ -2724,7 +3112,7 @@ async function* streamAllMessages(startDate, endDate) {
         // Fallback: assume more if we got a full page
         hasMore = result.documents.length === limit;
       }
-      
+
       // Safety check: prevent infinite loops
       if (offset > 1000000) {
         console.warn('⚠️  Reached safety limit of 1M messages, stopping stream');
@@ -2736,7 +3124,7 @@ async function* streamAllMessages(startDate, endDate) {
       break;
     }
   }
-  
+
   if (offset === 0) {
     console.log(`📊 No messages found in database`);
   } else {
@@ -2750,7 +3138,7 @@ async function* streamAllSessions(startDate, endDate) {
   let offset = 0;
   let hasMore = true;
   let totalYielded = 0;
-  
+
   while (hasMore) {
     try {
       let queries = [];
@@ -2759,14 +3147,14 @@ async function* streamAllSessions(startDate, endDate) {
         queries.push(Query.greaterThanEqual('startTime', startDate.toISOString()));
         queries.push(Query.lessThanEqual('startTime', endDate.toISOString()));
       }
-      
+
       // CRITICAL: Add Query.limit() and Query.offset() to queries array
       // Appwrite defaults to 25 documents per request, so we must use Query.limit() in queries array
       if (Query) {
         queries.push(Query.limit(limit));
         queries.push(Query.offset(offset));
       }
-      
+
       // Debug logging for first batch
       if (offset === 0) {
         if (startDate && endDate) {
@@ -2775,21 +3163,21 @@ async function* streamAllSessions(startDate, endDate) {
           console.log(`📊 Streaming ALL sessions (no date filter)`);
         }
       }
-      
+
       const result = await awDatabases.listDocuments(
         APPWRITE_DATABASE_ID,
         APPWRITE_SESSIONS_COLLECTION_ID,
         queries.length > 0 ? queries : undefined
       );
-      
+
       // Log progress for debugging
       console.log(`📊 Appwrite batch: fetched ${result.documents.length} sessions, total=${result.total !== undefined ? result.total : 'unknown'}, offset=${offset}, hasMore=${result.documents.length === limit}`);
-      
+
       // If this is the first batch and we got fewer than expected, log a warning
       if (offset === 0 && result.documents.length < limit && result.total !== undefined && result.total > result.documents.length) {
         console.warn(`⚠️  First batch returned ${result.documents.length} sessions but total is ${result.total}. Will continue fetching...`);
       }
-      
+
       for (const session of result.documents) {
         // If date filtering is applied, double-check the date range client-side as fallback
         if (startDate && endDate) {
@@ -2803,10 +3191,10 @@ async function* streamAllSessions(startDate, endDate) {
           totalYielded++;
         }
       }
-      
+
       // Update offset and determine if there are more documents
       offset += result.documents.length;
-      
+
       // Use total count if available, otherwise check if we got a full page
       if (result.total !== undefined) {
         hasMore = offset < result.total;
@@ -2817,7 +3205,7 @@ async function* streamAllSessions(startDate, endDate) {
         // Fallback: assume more if we got a full page
         hasMore = result.documents.length === limit;
       }
-      
+
       // Safety check: prevent infinite loops
       if (offset > 100000) {
         console.warn('⚠️  Reached safety limit of 100k sessions, stopping stream');
@@ -2829,7 +3217,7 @@ async function* streamAllSessions(startDate, endDate) {
       break;
     }
   }
-  
+
   if (offset === 0) {
     console.log(`📊 No sessions found in database`);
   } else {
@@ -2842,29 +3230,29 @@ app.get('/admin/metrics/overview', requireAdminAuth, async (req, res) => {
   const { from, to } = req.query;
   const authHeader = req.headers.authorization;
   const adminToken = authHeader ? authHeader.substring(7) : 'unknown';
-  
+
   console.log(`📥 Overview metrics request: from="${from}", to="${to}"`);
-  
+
   const cacheKey = getCacheKey('overview', { from, to });
   const cached = metricsCache.get(cacheKey);
   if (cached) {
     console.log(`📊 [CACHE HIT] Overview metrics`);
     return res.json(cached);
   }
-  
+
   if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_SESSIONS_COLLECTION_ID || !APPWRITE_MESSAGES_COLLECTION_ID) {
     console.error('❌ Appwrite not configured');
     return res.status(503).json({ error: 'Appwrite not configured' });
   }
-  
+
   // Only apply date filtering if both from and to are provided and not empty
   // If not provided or empty, get all data
   let start = null;
   let end = null;
-  
+
   // Check if dates are provided and valid (not empty strings)
   const hasValidDates = from && to && typeof from === 'string' && typeof to === 'string' && from.trim() !== '' && to.trim() !== '';
-  
+
   if (hasValidDates) {
     try {
       const dateRange = getDateRange(from, to);
@@ -2880,7 +3268,7 @@ app.get('/admin/metrics/overview', requireAdminAuth, async (req, res) => {
     console.log(`📊 Computing overview metrics for ALL data (no date filter)`);
     console.log(`📊 Date range: from=${from || 'not provided'}, to=${to || 'not provided'}`);
   }
-  
+
   try {
     let totalSessions = 0;
     let totalMessages = 0;
@@ -2888,7 +3276,7 @@ app.get('/admin/metrics/overview', requireAdminAuth, async (req, res) => {
     let humanTakeoverCount = 0;
     let aiFallbackCount = 0;
     let botResponseTimes = [];
-    
+
     // Track session status breakdown
     const statusCounts = {
       active: 0,
@@ -2896,7 +3284,7 @@ app.get('/admin/metrics/overview', requireAdminAuth, async (req, res) => {
       closed: 0,
       needs_human: 0
     };
-    
+
     // Count sessions
     let sessionCount = 0;
     let sessionStreamError = null;
@@ -2904,13 +3292,13 @@ app.get('/admin/metrics/overview', requireAdminAuth, async (req, res) => {
       for await (const session of streamAllSessions(start, end)) {
         totalSessions++;
         sessionCount++;
-        
+
         // Debug: Log first few sessions to verify date filtering
         if (sessionCount <= 3) {
           const sessionStart = new Date(session.startTime || session.$createdAt || 0);
           console.log(`📊 Sample session ${sessionCount}: sessionId=${session.sessionId}, startTime=${sessionStart.toISOString()}, status=${session.status}`);
         }
-        
+
         // Track status
         const status = (session.status || 'active').toLowerCase();
         if (statusCounts.hasOwnProperty(status)) {
@@ -2918,14 +3306,14 @@ app.get('/admin/metrics/overview', requireAdminAuth, async (req, res) => {
         } else {
           statusCounts.active++; // Default to active for unknown statuses
         }
-        
+
         // Check for human takeover (agent assigned)
         let assignedAgent = session.assignedAgent;
         if (!assignedAgent && session.userMeta) {
           try {
             const userMeta = typeof session.userMeta === 'string' ? JSON.parse(session.userMeta) : session.userMeta;
             assignedAgent = userMeta?.assignedAgent;
-          } catch (e) {}
+          } catch (e) { }
         }
         if (assignedAgent) {
           humanTakeoverCount++;
@@ -2940,16 +3328,16 @@ app.get('/admin/metrics/overview', requireAdminAuth, async (req, res) => {
       sessionStreamError = streamErr;
       console.error('❌ Error streaming sessions:', streamErr);
     }
-    
+
     // If we got very few sessions with date filter, warn user
     if (start && end && totalSessions < 5) {
       console.warn(`⚠️  Only found ${totalSessions} sessions in date range. This might be too restrictive.`);
       console.warn(`   Consider checking if your sessions fall within ${start.toISOString()} to ${end.toISOString()}`);
     }
-    
+
     // Count messages and compute response times
     const sessionMessages = new Map(); // sessionId -> [{sender, createdAt, ...}]
-    
+
     let messageCount = 0;
     let messageStreamError = null;
     try {
@@ -2957,13 +3345,13 @@ app.get('/admin/metrics/overview', requireAdminAuth, async (req, res) => {
         totalMessages++;
         messageCount++;
         sessionsWithMessages.add(msg.sessionId);
-        
+
         // Debug: Log first few messages to verify date filtering
         if (messageCount <= 3) {
           const msgDate = new Date(msg.createdAt || msg.$createdAt || 0);
           console.log(`📊 Sample message ${messageCount}: sessionId=${msg.sessionId}, createdAt=${msgDate.toISOString()}, sender=${msg.sender}`);
         }
-        
+
         if (!sessionMessages.has(msg.sessionId)) {
           sessionMessages.set(msg.sessionId, []);
         }
@@ -2977,7 +3365,7 @@ app.get('/admin/metrics/overview', requireAdminAuth, async (req, res) => {
       messageStreamError = streamErr;
       console.error('❌ Error streaming messages:', streamErr);
     }
-    
+
     // Compute bot response times (user message -> next bot message)
     for (const [sessionId, messages] of sessionMessages.entries()) {
       const sorted = messages.sort((a, b) => a.createdAt - b.createdAt);
@@ -2990,13 +3378,13 @@ app.get('/admin/metrics/overview', requireAdminAuth, async (req, res) => {
         }
       }
     }
-    
+
     const avgMessagesPerSession = totalSessions > 0 ? totalMessages / totalSessions : 0;
-    const avgBotResponseTimeMs = botResponseTimes.length > 0 
-      ? botResponseTimes.reduce((a, b) => a + b, 0) / botResponseTimes.length 
+    const avgBotResponseTimeMs = botResponseTimes.length > 0
+      ? botResponseTimes.reduce((a, b) => a + b, 0) / botResponseTimes.length
       : 0;
     const humanTakeoverRate = totalSessions > 0 ? humanTakeoverCount / totalSessions : 0;
-    
+
     // Count AI fallbacks (messages with low confidence or needsHuman flag)
     for (const [sessionId, messages] of sessionMessages.entries()) {
       for (const msg of messages) {
@@ -3005,7 +3393,7 @@ app.get('/admin/metrics/overview', requireAdminAuth, async (req, res) => {
         }
       }
     }
-    
+
     // Log summary for debugging
     console.log(`📊 Metrics Summary:`);
     console.log(`   Total Sessions: ${totalSessions}`);
@@ -3018,7 +3406,7 @@ app.get('/admin/metrics/overview', requireAdminAuth, async (req, res) => {
     console.log(`   Human Takeover Rate: ${(humanTakeoverRate * 100).toFixed(2)}%`);
     console.log(`   AI Fallback Count: ${aiFallbackCount}`);
     console.log(`   Session Statuses:`, statusCounts);
-    
+
     const result = {
       totalSessions,
       totalMessages,
@@ -3030,10 +3418,10 @@ app.get('/admin/metrics/overview', requireAdminAuth, async (req, res) => {
       startDate: start ? start.toISOString().split('T')[0] : null,
       endDate: end ? end.toISOString().split('T')[0] : null
     };
-    
+
     metricsCache.set(cacheKey, result);
     logExportAction(adminToken, ['metrics'], 'overview');
-    
+
     res.json(result);
   } catch (err) {
     console.error('Error computing overview metrics:', err);
@@ -3046,18 +3434,18 @@ app.get('/admin/metrics/messages-over-time', requireAdminAuth, async (req, res) 
   const { from, to, interval = 'day' } = req.query;
   const authHeader = req.headers.authorization;
   const adminToken = authHeader ? authHeader.substring(7) : 'unknown';
-  
+
   const cacheKey = getCacheKey('messages-over-time', { from, to, interval });
   const cached = metricsCache.get(cacheKey);
   if (cached) {
     console.log(`📊 [CACHE HIT] Messages over time`);
     return res.json(cached);
   }
-  
+
   if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_SESSIONS_COLLECTION_ID || !APPWRITE_MESSAGES_COLLECTION_ID) {
     return res.status(503).json({ error: 'Appwrite not configured' });
   }
-  
+
   // Only apply date filtering if both from and to are provided and not empty
   let start = null;
   let end = null;
@@ -3074,17 +3462,17 @@ app.get('/admin/metrics/messages-over-time', requireAdminAuth, async (req, res) 
   } else {
     console.log(`📊 Computing messages-over-time for ALL data (no date filter), interval=${interval}`);
   }
-  
+
   try {
     const buckets = new Map(); // date -> { messages: 0, sessionsStarted: 0 }
     const sessionStartDates = new Set(); // sessionId -> date (to avoid double counting)
-    
+
     // Initialize buckets based on interval
     const current = new Date(start);
     while (current <= end) {
       const dateKey = current.toISOString().split('T')[0];
       buckets.set(dateKey, { messages: 0, sessionsStarted: 0 });
-      
+
       if (interval === 'day') {
         current.setDate(current.getDate() + 1);
       } else if (interval === 'week') {
@@ -3093,24 +3481,24 @@ app.get('/admin/metrics/messages-over-time', requireAdminAuth, async (req, res) 
         current.setMonth(current.getMonth() + 1);
       }
     }
-    
+
     // Count messages by date
     let messageCount = 0;
     for await (const msg of streamAllMessages(start, end)) {
       messageCount++;
       if (messageCount > 200000) {
-        return res.status(413).json({ 
-          error: 'Too many messages to process. Please use background aggregation or reduce date range.' 
+        return res.status(413).json({
+          error: 'Too many messages to process. Please use background aggregation or reduce date range.'
         });
       }
-      
+
       const msgDate = new Date(msg.createdAt || msg.$createdAt || Date.now());
       const dateKey = msgDate.toISOString().split('T')[0];
       if (buckets.has(dateKey)) {
         buckets.get(dateKey).messages++;
       }
     }
-    
+
     // Count sessions started by date
     for await (const session of streamAllSessions(start, end)) {
       const sessionDate = new Date(session.startTime || session.$createdAt || Date.now());
@@ -3119,14 +3507,14 @@ app.get('/admin/metrics/messages-over-time', requireAdminAuth, async (req, res) 
         buckets.get(dateKey).sessionsStarted++;
       }
     }
-    
+
     const result = Array.from(buckets.entries())
       .map(([date, data]) => ({ date, messages: data.messages, sessionsStarted: data.sessionsStarted }))
       .sort((a, b) => a.date.localeCompare(b.date));
-    
+
     metricsCache.set(cacheKey, result);
     logExportAction(adminToken, ['metrics'], 'messages-over-time');
-    
+
     res.json(result);
   } catch (err) {
     console.error('Error computing messages-over-time:', err);
@@ -3139,18 +3527,18 @@ app.get('/admin/metrics/agent-performance', requireAdminAuth, async (req, res) =
   const { from, to } = req.query;
   const authHeader = req.headers.authorization;
   const adminToken = authHeader ? authHeader.substring(7) : 'unknown';
-  
+
   const cacheKey = getCacheKey('agent-performance', { from, to });
   const cached = metricsCache.get(cacheKey);
   if (cached) {
     console.log(`📊 [CACHE HIT] Agent performance`);
     return res.json(cached);
   }
-  
+
   if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_SESSIONS_COLLECTION_ID || !APPWRITE_MESSAGES_COLLECTION_ID) {
     return res.status(503).json({ error: 'Appwrite not configured' });
   }
-  
+
   // Only apply date filtering if both from and to are provided and not empty
   let start = null;
   let end = null;
@@ -3167,22 +3555,22 @@ app.get('/admin/metrics/agent-performance', requireAdminAuth, async (req, res) =
   } else {
     console.log(`📊 Computing agent performance for ALL data (no date filter)`);
   }
-  
+
   try {
     const agentStats = new Map(); // agentId -> { sessionsHandled, messagesHandled, responseTimes, sessionStartTimes }
     const sessionAgentMap = new Map(); // sessionId -> agentId (for fallback mapping)
-    
+
     const resolveAgentIdFromMessage = (msg) => {
       let agentId = null;
       let metadataRaw = msg?.metadata || null;
-      
+
       if ((!metadataRaw || metadataRaw === '[REDACTED]') && msg?.encrypted_metadata) {
         const decrypted = decryptField(msg.encrypted_metadata);
         if (decrypted && decrypted !== '[ENCRYPTED]' && decrypted !== '[DECRYPTION_FAILED]') {
           metadataRaw = decrypted;
         }
       }
-      
+
       if (metadataRaw) {
         try {
           const metadataObj = typeof metadataRaw === 'string' ? JSON.parse(metadataRaw) : metadataRaw;
@@ -3191,14 +3579,14 @@ app.get('/admin/metrics/agent-performance', requireAdminAuth, async (req, res) =
           // Ignore parse errors
         }
       }
-      
+
       if (!agentId && msg?.sessionId) {
         agentId = sessionAgentMap.get(msg.sessionId) || null;
       }
-      
+
       return agentId;
     };
-    
+
     // Process sessions
     for await (const session of streamAllSessions(start, end)) {
       let assignedAgent = session.assignedAgent;
@@ -3206,9 +3594,9 @@ app.get('/admin/metrics/agent-performance', requireAdminAuth, async (req, res) =
         try {
           const userMeta = typeof session.userMeta === 'string' ? JSON.parse(session.userMeta) : session.userMeta;
           assignedAgent = userMeta?.assignedAgent;
-        } catch (e) {}
+        } catch (e) { }
       }
-      
+
       if (assignedAgent) {
         if (!agentStats.has(assignedAgent)) {
           agentStats.set(assignedAgent, {
@@ -3225,12 +3613,12 @@ app.get('/admin/metrics/agent-performance', requireAdminAuth, async (req, res) =
         sessionAgentMap.set(session.sessionId, assignedAgent);
       }
     }
-    
+
     // Process messages for agents
     for await (const msg of streamAllMessages(start, end)) {
       if (msg.sender === 'agent') {
         let agentId = resolveAgentIdFromMessage(msg);
-        
+
         if (agentId) {
           if (!agentStats.has(agentId)) {
             agentStats.set(agentId, {
@@ -3244,7 +3632,7 @@ app.get('/admin/metrics/agent-performance', requireAdminAuth, async (req, res) =
         }
       }
     }
-    
+
     // Compute response times (user message -> agent message in same session)
     const sessionMessages = new Map();
     for await (const msg of streamAllMessages(start, end)) {
@@ -3259,7 +3647,7 @@ app.get('/admin/metrics/agent-performance', requireAdminAuth, async (req, res) =
         agentId: msg.sender === 'agent' ? resolveAgentIdFromMessage(msg) : null
       });
     }
-    
+
     for (const [sessionId, messages] of sessionMessages.entries()) {
       const sorted = messages.sort((a, b) => a.createdAt - b.createdAt);
       for (let i = 0; i < sorted.length - 1; i++) {
@@ -3280,7 +3668,7 @@ app.get('/admin/metrics/agent-performance', requireAdminAuth, async (req, res) =
         }
       }
     }
-    
+
     // Compute resolution times (session start -> last agent message)
     for (const [agentId, stats] of agentStats.entries()) {
       // Get sessions for this agent
@@ -3290,14 +3678,14 @@ app.get('/admin/metrics/agent-performance', requireAdminAuth, async (req, res) =
           try {
             const userMeta = typeof session.userMeta === 'string' ? JSON.parse(session.userMeta) : session.userMeta;
             assignedAgent = userMeta?.assignedAgent;
-          } catch (e) {}
+          } catch (e) { }
         }
-        
+
         if (assignedAgent === agentId) {
           const sessionStart = new Date(session.startTime || session.$createdAt || Date.now());
           const sessionMsgs = sessionMessages.get(session.sessionId) || [];
           const agentMsgs = sessionMsgs.filter(m => m.sender === 'agent' && (m.agentId || resolveAgentIdFromMessage(m)) === agentId);
-          
+
           if (agentMsgs.length > 0) {
             const lastAgentMsg = agentMsgs[agentMsgs.length - 1];
             const resolutionTime = lastAgentMsg.createdAt - sessionStart;
@@ -3308,7 +3696,7 @@ app.get('/admin/metrics/agent-performance', requireAdminAuth, async (req, res) =
         }
       }
     }
-    
+
     const result = Array.from(agentStats.entries()).map(([agentId, stats]) => {
       const avgResponseTimeMs = stats.responseTimes.length > 0
         ? Math.round(stats.responseTimes.reduce((a, b) => a + b, 0) / stats.responseTimes.length)
@@ -3316,7 +3704,7 @@ app.get('/admin/metrics/agent-performance', requireAdminAuth, async (req, res) =
       const avgResolutionTimeMs = stats.sessionStartTimes.length > 0
         ? Math.round(stats.sessionStartTimes.reduce((a, b) => a + b, 0) / stats.sessionStartTimes.length)
         : 0;
-      
+
       return {
         agentId,
         sessionsHandled: stats.sessionsHandled,
@@ -3325,10 +3713,10 @@ app.get('/admin/metrics/agent-performance', requireAdminAuth, async (req, res) =
         messagesHandled: stats.messagesHandled
       };
     }).sort((a, b) => b.sessionsHandled - a.sessionsHandled);
-    
+
     metricsCache.set(cacheKey, result);
     logExportAction(adminToken, ['metrics'], 'agent-performance');
-    
+
     res.json(result);
   } catch (err) {
     console.error('Error computing agent performance:', err);
@@ -3341,18 +3729,18 @@ app.get('/admin/metrics/confidence-histogram', requireAdminAuth, async (req, res
   const { from, to, bins = 10 } = req.query;
   const authHeader = req.headers.authorization;
   const adminToken = authHeader ? authHeader.substring(7) : 'unknown';
-  
+
   const cacheKey = getCacheKey('confidence-histogram', { from, to, bins });
   const cached = metricsCache.get(cacheKey);
   if (cached) {
     console.log(`📊 [CACHE HIT] Confidence histogram`);
     return res.json(cached);
   }
-  
+
   if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_MESSAGES_COLLECTION_ID) {
     return res.status(503).json({ error: 'Appwrite not configured' });
   }
-  
+
   // Only apply date filtering if both from and to are provided and not empty
   let start = null;
   let end = null;
@@ -3370,32 +3758,32 @@ app.get('/admin/metrics/confidence-histogram', requireAdminAuth, async (req, res
     console.log(`📊 Computing confidence histogram for ALL data (no date filter), bins=${bins}`);
   }
   const numBins = parseInt(bins) || 10;
-  
+
   try {
     const confidences = [];
     let messageCount = 0;
-    
+
     for await (const msg of streamAllMessages(start, end)) {
       messageCount++;
       if (messageCount > 200000) {
-        return res.status(413).json({ 
-          error: 'Too many messages to process. Please use background aggregation or reduce date range.' 
+        return res.status(413).json({
+          error: 'Too many messages to process. Please use background aggregation or reduce date range.'
         });
       }
-      
+
       if (msg.sender === 'bot' && msg.confidence !== null && msg.confidence !== undefined) {
         confidences.push(parseFloat(msg.confidence));
       }
     }
-    
+
     if (confidences.length === 0) {
       return res.json([]);
     }
-    
+
     const min = Math.min(...confidences);
     const max = Math.max(...confidences);
     const binWidth = (max - min) / numBins;
-    
+
     const histogram = Array(numBins).fill(0).map((_, i) => {
       const binStart = min + i * binWidth;
       const binEnd = binStart + binWidth;
@@ -3407,10 +3795,10 @@ app.get('/admin/metrics/confidence-histogram', requireAdminAuth, async (req, res
         end: binEnd
       };
     });
-    
+
     metricsCache.set(cacheKey, histogram);
     logExportAction(adminToken, ['metrics'], 'confidence-histogram');
-    
+
     res.json(histogram);
   } catch (err) {
     console.error('Error computing confidence histogram:', err);
@@ -3423,18 +3811,18 @@ app.get('/admin/metrics/response-times', requireAdminAuth, async (req, res) => {
   const { from, to, percentiles = '50,90,99' } = req.query;
   const authHeader = req.headers.authorization;
   const adminToken = authHeader ? authHeader.substring(7) : 'unknown';
-  
+
   const cacheKey = getCacheKey('response-times', { from, to, percentiles });
   const cached = metricsCache.get(cacheKey);
   if (cached) {
     console.log(`📊 [CACHE HIT] Response times`);
     return res.json(cached);
   }
-  
+
   if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_MESSAGES_COLLECTION_ID) {
     return res.status(503).json({ error: 'Appwrite not configured' });
   }
-  
+
   // Only apply date filtering if both from and to are provided and not empty
   let start = null;
   let end = null;
@@ -3452,11 +3840,11 @@ app.get('/admin/metrics/response-times', requireAdminAuth, async (req, res) => {
     console.log(`📊 Computing response times for ALL data (no date filter), percentiles=${percentiles}`);
   }
   const percentileList = percentiles.split(',').map(p => parseInt(p.trim())).filter(p => !isNaN(p));
-  
+
   try {
     const responseTimes = [];
     const sessionMessages = new Map();
-    
+
     // Group messages by session
     for await (const msg of streamAllMessages(start, end)) {
       if (!sessionMessages.has(msg.sessionId)) {
@@ -3467,7 +3855,7 @@ app.get('/admin/metrics/response-times', requireAdminAuth, async (req, res) => {
         createdAt: new Date(msg.createdAt || msg.$createdAt || Date.now())
       });
     }
-    
+
     // Compute response times (user -> bot)
     for (const [sessionId, messages] of sessionMessages.entries()) {
       const sorted = messages.sort((a, b) => a.createdAt - b.createdAt);
@@ -3480,13 +3868,13 @@ app.get('/admin/metrics/response-times', requireAdminAuth, async (req, res) => {
         }
       }
     }
-    
+
     if (responseTimes.length === 0) {
       return res.json({ percentiles: {}, count: 0 });
     }
-    
+
     responseTimes.sort((a, b) => a - b);
-    
+
     const result = {
       percentiles: {},
       count: responseTimes.length,
@@ -3494,15 +3882,15 @@ app.get('/admin/metrics/response-times', requireAdminAuth, async (req, res) => {
       max: responseTimes[responseTimes.length - 1],
       avg: Math.round(responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length)
     };
-    
+
     for (const p of percentileList) {
       const index = Math.ceil((p / 100) * responseTimes.length) - 1;
       result.percentiles[`p${p}`] = responseTimes[Math.max(0, index)];
     }
-    
+
     metricsCache.set(cacheKey, result);
     logExportAction(adminToken, ['metrics'], 'response-times');
-    
+
     res.json(result);
   } catch (err) {
     console.error('Error computing response times:', err);
@@ -3515,13 +3903,13 @@ app.post('/admin/metrics/aggregate-request', requireAdminAuth, async (req, res) 
   const { from, to, metrics } = req.body;
   const authHeader = req.headers.authorization;
   const adminToken = authHeader ? authHeader.substring(7) : 'unknown';
-  
+
   console.log(`📊 [AGGREGATE REQUEST] Admin: ${adminToken}, From: ${from}, To: ${to}, Metrics: ${metrics?.join(', ') || 'all'}`);
   // TODO: Implement background job queue (Bull/BullMQ, Celery, etc.)
   // TODO: Store aggregation request in Appwrite or job queue
   // TODO: Process in background worker and store results in precomputed analytics collection
-  
-  res.status(202).json({ 
+
+  res.status(202).json({
     message: 'Aggregation request received. Results will be available via background job.',
     jobId: `job_${Date.now()}` // Placeholder
   });
@@ -3540,33 +3928,33 @@ app.post('/admin/metrics/aggregate-request', requireAdminAuth, async (req, res) 
 app.post('/auth/signup', async (req, res) => {
   try {
     const { name, email, role } = req.body;
-    
+
     // Debug: Log received data
     console.log(`📥 Signup request received:`, { name, email, role, body: req.body });
-    
+
     // Validation
     if (!email) {
       return res.status(400).json({ error: 'Email is required' });
     }
-    
+
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       return res.status(400).json({ error: 'Invalid email format' });
     }
-    
+
     // Check if email already exists
     const existing = await getUserByEmail(email);
     if (existing) {
       return res.status(409).json({ error: 'Email already registered' });
     }
-    
+
     // Determine role assignment
     let assignedRole = 'agent'; // Default
     const authHeader = req.headers.authorization;
-    const isAdmin = authHeader && authHeader.startsWith('Bearer ') && 
-                         authHeader.substring(7) === ADMIN_SHARED_SECRET;
-    
+    const isAdmin = authHeader && authHeader.startsWith('Bearer ') &&
+      authHeader.substring(7) === ADMIN_SHARED_SECRET;
+
     // Allow any user to select their role during signup
     // Validate role if provided
     if (role) {
@@ -3582,15 +3970,15 @@ app.post('/auth/signup', async (req, res) => {
     } else {
       console.log(`ℹ️  No role provided in request, using default: 'agent'`);
     }
-    
+
     // Generate userId
     const userId = `${(email.split('@')[0] || 'user').replace(/[^a-zA-Z0-9_-]/g, '')}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     const timestamp = new Date().toISOString();
-    
+
     // Create user in Appwrite (no passwordHash)
     try {
       console.log(`📝 Attempting to create user: ${email} with role: ${assignedRole}`);
-      
+
       // Build payload with only attributes that exist in the collection schema
       // Required: userId, email
       // Optional: name, roles
@@ -3602,13 +3990,13 @@ app.post('/auth/signup', async (req, res) => {
         name: name || email,
         roles: [assignedRole]
       };
-      
+
       console.log(`📤 Creating user with payload:`, JSON.stringify(payload, null, 2));
-      
+
       // Try to include createdAt/updatedAt only if collection supports datetime attributes
       // If they fail, we'll catch and retry without them
       const userDoc = await createUserRow(payload);
-      
+
       console.log(`✅ User document created:`, {
         userId: userDoc.userId,
         email: userDoc.email,
@@ -3616,7 +4004,7 @@ app.post('/auth/signup', async (req, res) => {
         fullDoc: userDoc
       });
       console.log(`✅ User document created, now setting roles...`);
-      
+
       // Set roles via helper (in case createUserRow doesn't set them)
       // Don't fail if setUserRoles fails - user is already created
       try {
@@ -3626,10 +4014,10 @@ app.post('/auth/signup', async (req, res) => {
         console.warn(`⚠️  Failed to set roles (non-critical):`, roleErr.message);
         // Continue anyway - user is created
       }
-      
+
       // Log audit entry
       console.log(`📝 [AUDIT] User created: ${email} (${userId}) with role: ${assignedRole} by ${isAdmin ? 'admin' : 'self-signup'}`);
-      
+
       // Return user info
       res.status(201).json({
         userId: userDoc.userId || userId,
@@ -3648,7 +4036,7 @@ app.post('/auth/signup', async (req, res) => {
         type: createErr.type,
         stack: createErr.stack?.split('\n').slice(0, 5).join('\n')
       });
-      return res.status(500).json({ 
+      return res.status(500).json({
         error: 'Failed to create user account',
         details: createErr.message || 'Unknown error'
       });
@@ -3674,23 +4062,23 @@ app.post('/auth/logout', (req, res) => {
 app.post('/auth/login', async (req, res) => {
   try {
     const { email, remember } = req.body;
-    
+
     if (!email) {
       return res.status(400).json({ error: 'Email is required' });
     }
-    
+
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       return res.status(400).json({ error: 'Invalid email format' });
     }
-    
+
     // Find user by email
     const user = await getUserByEmail(email);
     if (!user) {
       return res.status(401).json({ error: 'User not found with this email' });
     }
-    
+
     // Update lastSeen
     const timestamp = new Date().toISOString();
     try {
@@ -3704,11 +4092,11 @@ app.post('/auth/login', async (req, res) => {
       // Non-critical, continue
       console.warn('Failed to update lastSeen:', updateErr.message);
     }
-    
+
     // Generate session token (use userId as token for simplicity)
     // In production, use JWT or Appwrite session
     const sessionToken = user.userId; // Use userId as session token
-    
+
     // Set HttpOnly Secure cookie (preferred method)
     // IMPORTANT for cross-domain admin frontend:
     // - secure: true      → only send over HTTPS (Railway runs behind HTTPS)
@@ -3721,7 +4109,7 @@ app.post('/auth/login', async (req, res) => {
       maxAge: remember ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000 // 30 days or 1 day
     };
     res.cookie('sessionToken', sessionToken, cookieOptions);
-    
+
     // Also return token in response for frontend to store in memory if cookies don't work
     res.json({
       ok: true,
@@ -3747,7 +4135,7 @@ app.post('/auth/login', async (req, res) => {
 app.get('/me', requireAuth, async (req, res) => {
   try {
     const userId = req.user.userId;
-    
+
     // If collection doesn't exist, return dev user info
     const collectionExists = await checkUsersCollectionExists();
     if (!collectionExists) {
@@ -3758,7 +4146,7 @@ app.get('/me', requireAuth, async (req, res) => {
         roles: req.user.roles || ['admin']
       });
     }
-    
+
     const user = await getUserById(userId);
     if (!user) {
       // Return dev user info if not found in DB
@@ -3798,12 +4186,12 @@ app.get('/users/:userId/profile', requireAuth, async (req, res) => {
   try {
     const { userId } = req.params;
     const currentUserId = req.user.userId;
-    
+
     const user = await getUserById(userId);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
-    
+
     // Public profile info
     const profile = {
       userId: user.userId,
@@ -3812,13 +4200,13 @@ app.get('/users/:userId/profile', requireAuth, async (req, res) => {
       roles: Array.isArray(user.roles) ? user.roles : [],
       createdAt: user.createdAt || user.$createdAt
     };
-    
+
     // If requesting own profile, include additional metadata
     if (userId === currentUserId) {
       profile.lastSeen = user.lastSeen;
       profile.userMeta = user.userMeta ? (typeof user.userMeta === 'string' ? JSON.parse(user.userMeta) : user.userMeta) : {};
     }
-    
+
     res.json(profile);
   } catch (err) {
     console.error('Error fetching user profile:', err);
@@ -3833,11 +4221,11 @@ app.get('/admin/users/agents', requireAuth, requireRole(['admin', 'agent']), asy
     if (!awDatabases || !APPWRITE_DATABASE_ID) {
       return res.json({ agents: [], total: 0, error: 'Appwrite not configured' });
     }
-    
+
     console.log('📋 Fetching all agents...');
     console.log(`📊 Current agentSockets Map size: ${agentSockets.size}`);
     console.log(`📊 Current agentSockets keys:`, Array.from(agentSockets.keys()));
-    
+
     // Fetch all users and filter for agents
     // Note: Appwrite doesn't support array contains queries directly, so we fetch all and filter
     const allUsers = await awDatabases.listDocuments(
@@ -3846,7 +4234,7 @@ app.get('/admin/users/agents', requireAuth, requireRole(['admin', 'agent']), asy
       [],
       1000 // Fetch up to 1000 users (adjust if needed)
     );
-    
+
     // Filter users who have 'agent' role
     const agents = allUsers.documents
       .filter(doc => {
@@ -3859,25 +4247,25 @@ app.get('/admin/users/agents', requireAuth, requireRole(['admin', 'agent']), asy
         // agentSockets maps agentId -> socketId, where agentId can be userId or custom agentId
         // First check if userId exists as a key in agentSockets
         let isOnline = agentSockets.has(userId);
-        
+
         // If not found by userId, check all connected sockets for matching userId
         if (!isOnline && io && io.sockets) {
           try {
             // Get all connected sockets from the Socket.IO server
             const sockets = io.sockets.sockets; // This is a Map of socketId -> socket
             console.log(`📊 Checking ${sockets.size} connected sockets for userId: ${userId}`);
-            
+
             // Iterate through all sockets and check for matching userId
             for (const [socketId, socket] of sockets.entries()) {
               const socketUserId = socket.data?.userId;
               const socketAgentId = socket.data?.agentId;
               const isAuthenticated = socket.data?.authenticated;
-              
+
               // Debug: log all socket data for troubleshooting
               if (socketUserId || socketAgentId) {
                 console.log(`🔍 Socket ${socketId}: userId=${socketUserId}, agentId=${socketAgentId}, authenticated=${isAuthenticated}, connected=${socket.connected}`);
               }
-              
+
               // Match if socket has this userId and is authenticated, OR if agentId matches userId
               if (isAuthenticated && (socketUserId === userId || socketAgentId === userId)) {
                 console.log(`✅ Found matching socket for userId ${userId}: socketId=${socketId}, agentId=${socketAgentId}, authenticated=${isAuthenticated}`);
@@ -3890,13 +4278,13 @@ app.get('/admin/users/agents', requireAuth, requireRole(['admin', 'agent']), asy
             // Fallback to Map check only
           }
         }
-        
+
         if (isOnline) {
           console.log(`✅ Agent ${userId} (${doc.email}) is ONLINE`);
         } else {
           console.log(`❌ Agent ${userId} (${doc.email}) is OFFLINE`);
         }
-        
+
         return {
           userId: userId,
           email: doc.email,
@@ -3914,9 +4302,9 @@ app.get('/admin/users/agents', requireAuth, requireRole(['admin', 'agent']), asy
         const dateB = new Date(b.createdAt || 0).getTime();
         return dateB - dateA;
       });
-    
+
     console.log(`✅ Found ${agents.length} agent(s)`);
-    
+
     res.json({
       agents,
       total: agents.length
@@ -3936,23 +4324,23 @@ app.get('/admin/users', requireAuth, requireRole(['admin']), async (req, res) =>
     } catch (validationErr) {
       return res.status(400).json({ error: validationErr.message });
     }
-    
+
     // Parse pagination params
     const { limit, offset } = parsePaginationParams(req, { defaultLimit: 20, maxLimit: 100 });
-    
+
     if (!awDatabases || !APPWRITE_DATABASE_ID) {
       return res.json({ items: [], total: 0, limit, offset, hasMore: false, error: 'Appwrite not configured' });
     }
-    
+
     // NOTE: For production, add index on email for better performance
     // Index configuration: Attribute: email, Type: key
     const queries = [];
     if (Query) {
       queries.push(Query.orderDesc('$createdAt')); // Newest first
     }
-    
+
     console.log(`📋 Fetching users: limit=${limit}, offset=${offset}`);
-    
+
     const result = await awDatabases.listDocuments(
       APPWRITE_DATABASE_ID,
       APPWRITE_USERS_COLLECTION_ID,
@@ -3960,7 +4348,7 @@ app.get('/admin/users', requireAuth, requireRole(['admin']), async (req, res) =>
       limit,
       offset
     );
-    
+
     const users = result.documents.map(doc => ({
       userId: doc.userId,
       email: doc.email,
@@ -3969,11 +4357,11 @@ app.get('/admin/users', requireAuth, requireRole(['admin']), async (req, res) =>
       createdAt: doc.createdAt || doc.$createdAt,
       updatedAt: doc.updatedAt || doc.$updatedAt
     }));
-    
+
     const paginationMeta = calculatePaginationMeta(result.total, limit, offset);
-    
+
     console.log(`✅ Found ${result.total} total user(s), ${users.length} in this page`);
-    
+
     res.json({
       items: users,
       users, // Backward compatibility
@@ -3996,12 +4384,12 @@ app.post('/admin/users', requireAuth, requireRole(['admin']), async (req, res) =
     if (!awDatabases || !APPWRITE_DATABASE_ID) {
       return res.status(503).json({ error: 'Appwrite not configured' });
     }
-    
+
     const { email, name, roles } = req.body;
     if (!email) {
       return res.status(400).json({ error: 'email is required' });
     }
-    
+
     // Check if user already exists (with retry for index sync)
     let existing = null;
     try {
@@ -4020,9 +4408,9 @@ app.post('/admin/users', requireAuth, requireRole(['admin']), async (req, res) =
         // Ignore
       }
     }
-    
+
     if (existing) {
-      return res.status(409).json({ 
+      return res.status(409).json({
         error: 'User with this email already exists',
         user: {
           userId: existing.userId,
@@ -4032,11 +4420,11 @@ app.post('/admin/users', requireAuth, requireRole(['admin']), async (req, res) =
         }
       });
     }
-    
+
     // Generate userId from email or use provided
     // Make userId more unique to avoid conflicts
     const userId = req.body.userId || email.split('@')[0] + '_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
-    
+
     const user = await ensureUserRecord(userId, { email, name: name || email });
     const effectiveUserId = user?.userId || userId;
     if (!user) {
@@ -4045,19 +4433,19 @@ app.post('/admin/users', requireAuth, requireRole(['admin']), async (req, res) =
       if (!collectionExists) {
         return res.status(503).json({ error: 'Users collection not found. Please run migration: node migrate_create_users_collection.js' });
       }
-      
+
       // ensureUserRecord returned null - this means user creation failed or user exists but can't be found
       // Try one more comprehensive search with longer wait
       console.log(`⚠️  ensureUserRecord returned null, doing final comprehensive search...`);
       await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds for index sync
-      
+
       // Try listing ALL users and finding by email
       try {
         let allUsers = [];
         let offset = 0;
         const pageSize = 100;
         let hasMore = true;
-        
+
         while (hasMore && allUsers.length < 1000) {
           const page = await awDatabases.listDocuments(
             APPWRITE_DATABASE_ID,
@@ -4070,7 +4458,7 @@ app.post('/admin/users', requireAuth, requireRole(['admin']), async (req, res) =
           hasMore = page.documents.length === pageSize;
           offset += pageSize;
         }
-        
+
         const foundUser = allUsers.find(doc => doc.email === email || doc.userId === userId);
         if (foundUser) {
           console.log(`✅ Found user via comprehensive search after ensureUserRecord returned null`);
@@ -4098,7 +4486,7 @@ app.post('/admin/users', requireAuth, requireRole(['admin']), async (req, res) =
       } catch (searchErr) {
         console.error(`❌ Comprehensive search failed:`, searchErr.message);
       }
-      
+
       // If still not found after all retries, try one final creation attempt
       // This handles the case where 409 was a document ID conflict and the user doesn't actually exist
       console.log(`⚠️  User not found after comprehensive search. Attempting final creation...`);
@@ -4120,13 +4508,13 @@ app.post('/admin/users', requireAuth, requireRole(['admin']), async (req, res) =
           }
         );
         console.log(`✅ Successfully created user on final attempt with document ID: ${finalDocId}`);
-        
+
         // Set roles if provided
         if (roles && Array.isArray(roles)) {
-        await setUserRoles(effectiveUserId, roles);
+          await setUserRoles(effectiveUserId, roles);
           // Wait a bit for index sync
           await new Promise(resolve => setTimeout(resolve, 500));
-        const updated = await getUserById(effectiveUserId);
+          const updated = await getUserById(effectiveUserId);
           if (updated) {
             return res.json({
               userId: updated.userId,
@@ -4136,7 +4524,7 @@ app.post('/admin/users', requireAuth, requireRole(['admin']), async (req, res) =
             });
           }
         }
-        
+
         return res.json({
           userId: finalUser.userId,
           email: finalUser.email,
@@ -4147,18 +4535,18 @@ app.post('/admin/users', requireAuth, requireRole(['admin']), async (req, res) =
         // If final attempt also fails, return error
         console.error(`❌ Final user creation attempt failed:`, finalErr.message);
         if (finalErr.code === 409) {
-          return res.status(409).json({ 
+          return res.status(409).json({
             error: 'User with this email or userId already exists',
             hint: 'The user exists but cannot be queried due to index sync delays. Wait a few seconds and try again, or check Appwrite Console manually.'
           });
         }
-        return res.status(500).json({ 
+        return res.status(500).json({
           error: 'Failed to create user after multiple attempts',
           hint: 'Check server logs for details. This may indicate a database configuration issue.'
         });
       }
     }
-    
+
     // Set roles if provided
     if (roles && Array.isArray(roles)) {
       const rolesSet = await setUserRoles(effectiveUserId, roles);
@@ -4199,11 +4587,11 @@ app.put('/admin/users/:userId/roles', requireAuth, requireRole(['admin']), async
   try {
     const { userId } = req.params;
     const { roles } = req.body;
-    
+
     if (!roles || !Array.isArray(roles)) {
       return res.status(400).json({ error: 'roles array is required' });
     }
-    
+
     // Validate roles
     const validRoles = ['admin', 'agent'];
     for (const role of roles) {
@@ -4211,10 +4599,10 @@ app.put('/admin/users/:userId/roles', requireAuth, requireRole(['admin']), async
         return res.status(400).json({ error: `Invalid role: ${role}` });
       }
     }
-    
+
     const changedBy = req.user.userId;
     console.log(`🔧 Updating roles for user ${userId} by ${changedBy}`);
-    
+
     // Try to find user with retries (index sync delays)
     let user = await getUserById(userId);
     if (!user) {
@@ -4229,7 +4617,7 @@ app.put('/admin/users/:userId/roles', requireAuth, requireRole(['admin']), async
         if (user) break;
       }
     }
-    
+
     // If still not found, try listing all users
     if (!user) {
       try {
@@ -4244,33 +4632,33 @@ app.put('/admin/users/:userId/roles', requireAuth, requireRole(['admin']), async
         // Ignore
       }
     }
-    
+
     if (!user) {
       console.error(`❌ User ${userId} not found for role update`);
       return res.status(404).json({ error: 'User not found. User may have been deleted or indexes may not be synced yet.' });
     }
-    
+
     const oldRoles = Array.isArray(user.roles) ? [...user.roles] : [];
-    
+
     // Filter out any invalid roles (like super_admin or viewer) from old roles for logging
     const filteredOldRoles = oldRoles.filter(role => ['admin', 'agent'].includes(role));
-    
+
     console.log(`📝 Updating roles for user ${userId}:`, {
       oldRoles: oldRoles,
       newRoles: roles,
       filteredOldRoles: filteredOldRoles
     });
-    
+
     const success = await setUserRoles(userId, roles);
-    
+
     if (!success) {
       console.error(`❌ setUserRoles returned false for user ${userId}`);
       return res.status(500).json({ error: 'Failed to update roles. Check server logs for details.' });
     }
-    
+
     // Log audit
     await logRoleChange(userId, changedBy, oldRoles, roles);
-    
+
     res.json({
       userId,
       roles,
@@ -4288,19 +4676,19 @@ app.delete('/admin/users/:userId', requireAuth, requireRole(['admin']), async (r
     if (!awDatabases || !APPWRITE_DATABASE_ID) {
       return res.status(503).json({ error: 'Appwrite not configured' });
     }
-    
+
     const { userId } = req.params;
     const user = await getUserById(userId);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
-    
+
     await awDatabases.deleteDocument(
       APPWRITE_DATABASE_ID,
       APPWRITE_USERS_COLLECTION_ID,
       user.$id
     );
-    
+
     res.json({ message: 'User deleted successfully' });
   } catch (err) {
     console.error('Error deleting user:', err);
@@ -4331,31 +4719,31 @@ app.get('/admin/accuracy', requireAuth, requireRole(['admin']), async (req, res)
     } catch (validationErr) {
       return res.status(400).json({ error: validationErr.message });
     }
-    
+
     // Parse pagination params
     const { limit, offset } = parsePaginationParams(req, { defaultLimit: 20, maxLimit: 100 });
-    
+
     if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_AI_ACCURACY_COLLECTION_ID) {
       return res.json({ items: [], total: 0, limit, offset, hasMore: false, error: 'Appwrite not configured' });
     }
-    
+
     const { sessionId, from, to, mark, sortBy = 'createdAt', order = 'desc' } = req.query;
     const queries = [];
-    
+
     if (sessionId) {
       queries.push(Query.equal('sessionId', sessionId));
     }
-    
+
     if (from || to) {
       const fromDate = from ? new Date(from) : new Date(0);
       const toDate = to ? new Date(to) : new Date();
       queries.push(Query.between('createdAt', fromDate.toISOString(), toDate.toISOString()));
     }
-    
+
     if (mark) {
       queries.push(Query.equal('humanMark', mark));
     }
-    
+
     // Add ordering
     // NOTE: For production, add indexes on createdAt, sessionId, humanMark for better performance
     // Index configuration:
@@ -4369,9 +4757,9 @@ app.get('/admin/accuracy', requireAuth, requireRole(['admin']), async (req, res)
         queries.push(Query.orderAsc('createdAt'));
       }
     }
-    
+
     console.log(`📋 Fetching accuracy records: limit=${limit}, offset=${offset}, filters: sessionId=${sessionId || 'none'}, from=${from || 'none'}, to=${to || 'none'}, mark=${mark || 'none'}`);
-    
+
     const result = await awDatabases.listDocuments(
       APPWRITE_DATABASE_ID,
       APPWRITE_AI_ACCURACY_COLLECTION_ID,
@@ -4379,11 +4767,11 @@ app.get('/admin/accuracy', requireAuth, requireRole(['admin']), async (req, res)
       limit,
       offset
     );
-    
+
     const paginationMeta = calculatePaginationMeta(result.total, limit, offset);
-    
+
     console.log(`✅ Found ${result.total} total accuracy record(s), ${result.documents.length} in this page`);
-    
+
     res.json({
       items: result.documents,
       records: result.documents, // Backward compatibility
@@ -4406,21 +4794,21 @@ app.get('/admin/accuracy/stats', requireAuth, requireRole(['admin']), async (req
     if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_AI_ACCURACY_COLLECTION_ID) {
       return res.status(503).json({ error: 'Appwrite not configured' });
     }
-    
+
     const { from, to } = req.query;
     const cacheKey = `stats_${from || 'all'}_${to || 'all'}`;
-    
+
     // Check cache
     const cached = accuracyStatsCache.get(cacheKey);
     if (cached) {
       return res.json(cached);
     }
-    
+
     const fromDate = from ? new Date(from) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000); // Default: last 7 days
     const toDate = to ? new Date(to) : new Date();
-    
+
     const queries = [Query.between('createdAt', fromDate.toISOString(), toDate.toISOString())];
-    
+
     // Stream through all records with pagination
     let totalScanned = 0;
     let totalResponses = 0;
@@ -4432,7 +4820,7 @@ app.get('/admin/accuracy/stats', requireAuth, requireRole(['admin']), async (req
     let hasMore = true;
     let offset = 0;
     const pageSize = 100;
-    
+
     while (hasMore && totalScanned < ACCURACY_MAX_SCAN_ROWS) {
       const pageQueries = [...queries, Query.limit(pageSize), Query.offset(offset)];
       const result = await awDatabases.listDocuments(
@@ -4440,28 +4828,28 @@ app.get('/admin/accuracy/stats', requireAuth, requireRole(['admin']), async (req
         APPWRITE_AI_ACCURACY_COLLECTION_ID,
         pageQueries
       );
-      
+
       for (const doc of result.documents) {
         totalScanned++;
         totalResponses++;
-        
+
         if (doc.confidence !== null && doc.confidence !== undefined) {
           totalConfidence += doc.confidence;
         }
-        
+
         if (doc.latencyMs !== null && doc.latencyMs !== undefined) {
           totalLatency += doc.latencyMs;
         }
-        
+
         if (doc.humanMark === 'up') helpfulCount++;
         else if (doc.humanMark === 'down') unhelpfulCount++;
         else if (doc.humanMark === 'flag') flaggedCount++;
       }
-      
+
       offset += pageSize;
       hasMore = result.documents.length === pageSize;
     }
-    
+
     if (totalScanned >= ACCURACY_MAX_SCAN_ROWS) {
       return res.status(413).json({
         error: 'Too many records to scan',
@@ -4470,7 +4858,7 @@ app.get('/admin/accuracy/stats', requireAuth, requireRole(['admin']), async (req
         maxAllowed: ACCURACY_MAX_SCAN_ROWS
       });
     }
-    
+
     const stats = {
       totalResponses,
       avgConfidence: totalResponses > 0 ? totalConfidence / totalResponses : 0,
@@ -4481,10 +4869,10 @@ app.get('/admin/accuracy/stats', requireAuth, requireRole(['admin']), async (req
       startDate: fromDate.toISOString(),
       endDate: toDate.toISOString()
     };
-    
+
     // Cache result
     accuracyStatsCache.set(cacheKey, stats);
-    
+
     res.json(stats);
   } catch (err) {
     console.error('Error computing accuracy stats:', err);
@@ -4498,14 +4886,14 @@ app.get('/admin/accuracy/:accuracyId', requireAuth, requireRole(['admin']), asyn
     if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_AI_ACCURACY_COLLECTION_ID) {
       return res.status(503).json({ error: 'Appwrite not configured' });
     }
-    
+
     const { accuracyId } = req.params;
     const doc = await awDatabases.getDocument(
       APPWRITE_DATABASE_ID,
       APPWRITE_AI_ACCURACY_COLLECTION_ID,
       accuracyId
     );
-    
+
     res.json(doc);
   } catch (err) {
     if (err.code === 404) {
@@ -4522,35 +4910,35 @@ app.post('/admin/accuracy/:accuracyId/feedback', requireAuth, async (req, res) =
     if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_AI_ACCURACY_COLLECTION_ID) {
       return res.status(503).json({ error: 'Appwrite not configured' });
     }
-    
+
     const { accuracyId } = req.params;
     const { mark, note } = req.body;
-    
+
     console.log(`📝 Adding feedback to accuracy record ${accuracyId}:`, { mark, note });
-    
+
     if (!mark || !['up', 'down', 'flag'].includes(mark)) {
       return res.status(400).json({ error: 'mark must be "up", "down", or "flag"' });
     }
-    
+
     // Get current record
     const current = await awDatabases.getDocument(
       APPWRITE_DATABASE_ID,
       APPWRITE_AI_ACCURACY_COLLECTION_ID,
       accuracyId
     );
-    
+
     // Update record - handle missing evaluation attribute gracefully
     const updateData = {
       humanMark: mark
     };
-    
+
     // Include evaluation if note is provided (even if empty string - convert to null to clear)
     if (note !== undefined) {
       updateData.evaluation = note === '' ? null : note;
     }
-    
+
     console.log(`📝 Update data:`, updateData);
-    
+
     try {
       const result = await awDatabases.updateDocument(
         APPWRITE_DATABASE_ID,
@@ -4576,14 +4964,14 @@ app.post('/admin/accuracy/:accuracyId/feedback', requireAuth, async (req, res) =
         throw updateErr;
       }
     }
-    
+
     // Log audit
     const adminId = req.user?.userId || 'anonymous';
     await logAccuracyAudit(accuracyId, adminId, 'feedback', note);
-    
+
     // Clear cache
     accuracyStatsCache.clear();
-    
+
     res.json({ success: true, accuracyId, mark });
   } catch (err) {
     if (err.code === 404) {
@@ -4600,14 +4988,14 @@ app.post('/session/:sessionId/feedback', async (req, res) => {
     if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_AI_ACCURACY_COLLECTION_ID) {
       return res.status(503).json({ error: 'Appwrite not configured' });
     }
-    
+
     const { sessionId } = req.params;
     const { mark } = req.body;
-    
+
     if (!mark || !['up', 'down', 'flag'].includes(mark)) {
       return res.status(400).json({ error: 'mark must be "up", "down", or "flag"' });
     }
-    
+
     // Find last AI accuracy record for this session
     const result = await awDatabases.listDocuments(
       APPWRITE_DATABASE_ID,
@@ -4618,13 +5006,13 @@ app.post('/session/:sessionId/feedback', async (req, res) => {
         Query.limit(1)
       ]
     );
-    
+
     if (result.documents.length === 0) {
       return res.status(404).json({ error: 'No AI accuracy records found for this session' });
     }
-    
+
     const accuracyId = result.documents[0].$id;
-    
+
     // Update record
     await awDatabases.updateDocument(
       APPWRITE_DATABASE_ID,
@@ -4632,13 +5020,13 @@ app.post('/session/:sessionId/feedback', async (req, res) => {
       accuracyId,
       { humanMark: mark }
     );
-    
+
     // Log audit
     await logAccuracyAudit(accuracyId, 'anonymous', 'feedback', `Session feedback: ${mark}`);
-    
+
     // Clear cache
     accuracyStatsCache.clear();
-    
+
     res.json({ success: true, accuracyId, mark });
   } catch (err) {
     console.error('Error updating session feedback:', err);
@@ -4652,12 +5040,12 @@ app.post('/admin/accuracy/:accuracyId/evaluate', requireAuth, requireRole(['admi
     if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_AI_ACCURACY_COLLECTION_ID) {
       return res.status(503).json({ error: 'Appwrite not configured' });
     }
-    
+
     const { accuracyId } = req.params;
     const { evaluation, humanMark } = req.body;
-    
+
     console.log(`📝 Evaluating accuracy record ${accuracyId}:`, { evaluation, humanMark });
-    
+
     const updateData = {};
     if (humanMark !== undefined && ['up', 'down', 'flag', null].includes(humanMark)) {
       updateData.humanMark = humanMark;
@@ -4667,13 +5055,13 @@ app.post('/admin/accuracy/:accuracyId/evaluate', requireAuth, requireRole(['admi
       // Convert empty string to null to clear evaluation
       updateData.evaluation = evaluation === '' ? null : evaluation;
     }
-    
+
     console.log(`📝 Update data:`, updateData);
-    
+
     if (Object.keys(updateData).length === 0) {
       return res.status(400).json({ error: 'No data to update. Provide evaluation or humanMark.' });
     }
-    
+
     try {
       const result = await awDatabases.updateDocument(
         APPWRITE_DATABASE_ID,
@@ -4704,14 +5092,14 @@ app.post('/admin/accuracy/:accuracyId/evaluate', requireAuth, requireRole(['admi
         throw updateErr;
       }
     }
-    
+
     // Log audit
     const adminId = req.user?.userId || 'anonymous';
     await logAccuracyAudit(accuracyId, adminId, 'evaluate', evaluation);
-    
+
     // Clear cache
     accuracyStatsCache.clear();
-    
+
     res.json({ success: true, accuracyId });
   } catch (err) {
     if (err.code === 404) {
@@ -4728,25 +5116,25 @@ app.get('/admin/accuracy/export', requireAuth, requireRole(['admin']), async (re
     if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_AI_ACCURACY_COLLECTION_ID) {
       return res.status(503).json({ error: 'Appwrite not configured' });
     }
-    
+
     const { format = 'json', from, to } = req.query;
     const fromDate = from ? new Date(from) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const toDate = to ? new Date(to) : new Date();
-    
+
     const queries = [Query.between('createdAt', fromDate.toISOString(), toDate.toISOString()), Query.orderAsc('createdAt')];
-    
+
     if (format === 'csv') {
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', `attachment; filename="accuracy_export_${Date.now()}.csv"`);
-      
+
       // Write CSV header
       res.write('createdAt,sessionId,aiText,confidence,latencyMs,tokens,responseType,humanMark,evaluation\n');
-      
+
       // Stream results
       let offset = 0;
       const pageSize = 100;
       let hasMore = true;
-      
+
       while (hasMore) {
         const pageQueries = [...queries, Query.limit(pageSize), Query.offset(offset)];
         const result = await awDatabases.listDocuments(
@@ -4754,7 +5142,7 @@ app.get('/admin/accuracy/export', requireAuth, requireRole(['admin']), async (re
           APPWRITE_AI_ACCURACY_COLLECTION_ID,
           pageQueries
         );
-        
+
         for (const doc of result.documents) {
           const row = [
             doc.createdAt || '',
@@ -4769,11 +5157,11 @@ app.get('/admin/accuracy/export', requireAuth, requireRole(['admin']), async (re
           ].join(',');
           res.write(row + '\n');
         }
-        
+
         offset += pageSize;
         hasMore = result.documents.length === pageSize;
       }
-      
+
       res.end();
     } else {
       // JSON export
@@ -4781,7 +5169,7 @@ app.get('/admin/accuracy/export', requireAuth, requireRole(['admin']), async (re
       let offset = 0;
       const pageSize = 100;
       let hasMore = true;
-      
+
       while (hasMore) {
         const pageQueries = [...queries, Query.limit(pageSize), Query.offset(offset)];
         const result = await awDatabases.listDocuments(
@@ -4789,12 +5177,12 @@ app.get('/admin/accuracy/export', requireAuth, requireRole(['admin']), async (re
           APPWRITE_AI_ACCURACY_COLLECTION_ID,
           pageQueries
         );
-        
+
         allDocs.push(...result.documents);
         offset += pageSize;
         hasMore = result.documents.length === pageSize;
       }
-      
+
       res.setHeader('Content-Type', 'application/json');
       res.setHeader('Content-Disposition', `attachment; filename="accuracy_export_${Date.now()}.json"`);
       res.json(allDocs);
@@ -4812,9 +5200,9 @@ app.post('/admin/accuracy/cleanup', requireAuth, requireRole(['admin']), async (
     if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_AI_ACCURACY_COLLECTION_ID) {
       return res.status(503).json({ error: 'Appwrite not configured' });
     }
-    
+
     const cutoffDate = new Date(Date.now() - ACCURACY_RETENTION_DAYS * 24 * 60 * 60 * 1000);
-    
+
     // Find old records
     const result = await awDatabases.listDocuments(
       APPWRITE_DATABASE_ID,
@@ -4824,7 +5212,7 @@ app.post('/admin/accuracy/cleanup', requireAuth, requireRole(['admin']), async (
         Query.limit(1000) // Process in batches
       ]
     );
-    
+
     let deleted = 0;
     for (const doc of result.documents) {
       try {
@@ -4838,7 +5226,7 @@ app.post('/admin/accuracy/cleanup', requireAuth, requireRole(['admin']), async (
         console.warn(`Failed to delete ${doc.$id}:`, delErr.message);
       }
     }
-    
+
     res.json({
       success: true,
       deleted,
@@ -4866,7 +5254,7 @@ async function logEncryptionAction(action, adminId, stats = {}) {
   if (!awDatabases || !APPWRITE_DATABASE_ID) {
     return;
   }
-  
+
   try {
     await awDatabases.createDocument(
       APPWRITE_DATABASE_ID,
@@ -4894,11 +5282,11 @@ app.get('/admin/encryption/status', requireAuth, requireRole(['admin']), async (
       redactPII: REDACT_PII,
       collections: {}
     };
-    
+
     if (!awDatabases || !APPWRITE_DATABASE_ID) {
       return res.json({ ...status, message: 'Appwrite not configured' });
     }
-    
+
     // Sample scan to count encrypted vs plaintext docs
     const collections = [
       { id: APPWRITE_MESSAGES_COLLECTION_ID, name: 'messages', field: 'encrypted' },
@@ -4906,10 +5294,10 @@ app.get('/admin/encryption/status', requireAuth, requireRole(['admin']), async (
       { id: APPWRITE_USERS_COLLECTION_ID, name: 'users', field: 'encrypted_notes' },
       { id: APPWRITE_AI_ACCURACY_COLLECTION_ID, name: 'ai_accuracy', field: 'encrypted_aiText' }
     ];
-    
+
     for (const coll of collections) {
       if (!coll.id) continue;
-      
+
       try {
         const sample = await awDatabases.listDocuments(
           APPWRITE_DATABASE_ID,
@@ -4917,10 +5305,10 @@ app.get('/admin/encryption/status', requireAuth, requireRole(['admin']), async (
           [],
           100
         );
-        
+
         let encryptedCount = 0;
         let plaintextCount = 0;
-        
+
         sample.documents.forEach(doc => {
           if (doc[coll.field] && encryption && encryption.isEncrypted(doc[coll.field])) {
             encryptedCount++;
@@ -4928,7 +5316,7 @@ app.get('/admin/encryption/status', requireAuth, requireRole(['admin']), async (
             plaintextCount++;
           }
         });
-        
+
         status.collections[coll.name] = {
           encrypted: encryptedCount,
           plaintext: plaintextCount,
@@ -4938,7 +5326,7 @@ app.get('/admin/encryption/status', requireAuth, requireRole(['admin']), async (
         status.collections[coll.name] = { error: err.message };
       }
     }
-    
+
     await logEncryptionAction('status_check', req.user?.userId || 'unknown', status);
     res.json(status);
   } catch (err) {
@@ -4951,17 +5339,17 @@ app.get('/admin/encryption/status', requireAuth, requireRole(['admin']), async (
 app.post('/admin/encryption/reencrypt', requireAuth, requireRole(['admin']), async (req, res) => {
   try {
     const { newMasterKeyBase64 } = req.body;
-    
+
     if (!newMasterKeyBase64) {
       return res.status(400).json({ error: 'newMasterKeyBase64 required in request body' });
     }
-    
+
     // Validate key length
     const keyBuffer = Buffer.from(newMasterKeyBase64, 'base64');
     if (keyBuffer.length !== 32) {
       return res.status(400).json({ error: 'newMasterKeyBase64 must decode to 32 bytes' });
     }
-    
+
     // For large datasets, return 202 and suggest using migration script
     res.status(202).json({
       message: 'Key rotation should be performed using migration script: node migrations/rotate_master_key.js',
@@ -4973,7 +5361,7 @@ app.post('/admin/encryption/reencrypt', requireAuth, requireRole(['admin']), asy
         '4. Update MASTER_KEY_BASE64 in environment after rotation'
       ]
     });
-    
+
     await logEncryptionAction('reencrypt_requested', req.user?.userId || 'unknown', { newKeySet: true });
   } catch (err) {
     console.error('Error requesting reencrypt:', err);
@@ -4987,15 +5375,15 @@ app.post('/admin/encryption/cleanup-plaintext', requireAuth, requireRole(['admin
     if (!awDatabases || !APPWRITE_DATABASE_ID) {
       return res.status(503).json({ error: 'Appwrite not configured' });
     }
-    
+
     const { collection, confirm } = req.body;
-    
+
     if (confirm !== 'yes') {
-      return res.status(400).json({ 
-        error: 'Must confirm with { "confirm": "yes" } to remove plaintext backups' 
+      return res.status(400).json({
+        error: 'Must confirm with { "confirm": "yes" } to remove plaintext backups'
       });
     }
-    
+
     // This is a dangerous operation - recommend using migration script
     res.status(400).json({
       error: 'Use migration script for cleanup',
@@ -5005,7 +5393,7 @@ app.post('/admin/encryption/cleanup-plaintext', requireAuth, requireRole(['admin
         'Or create a custom cleanup script'
       ]
     });
-    
+
     await logEncryptionAction('cleanup_requested', req.user?.userId || 'unknown', { collection });
   } catch (err) {
     console.error('Error requesting cleanup:', err);
@@ -5019,9 +5407,9 @@ app.get('/admin/encryption/audit', requireAuth, requireRole(['admin']), async (r
     if (!awDatabases || !APPWRITE_DATABASE_ID) {
       return res.json({ logs: [], message: 'Appwrite not configured' });
     }
-    
+
     const limit = parseInt(req.query.limit) || 50;
-    
+
     try {
       const result = await awDatabases.listDocuments(
         APPWRITE_DATABASE_ID,
@@ -5029,7 +5417,7 @@ app.get('/admin/encryption/audit', requireAuth, requireRole(['admin']), async (r
         [],
         limit
       );
-      
+
       res.json({ logs: result.documents });
     } catch (err) {
       // Collection might not exist
@@ -5051,7 +5439,7 @@ const FORCE_TLS = process.env.FORCE_TLS === 'true';
 server.listen(PORT, () => {
   console.log(`🚀 Socket.IO API server listening on port ${PORT}`);
   console.log(`📋 Environment: Gemini=${geminiClient ? '✅' : '❌'}, Appwrite=${awDatabases ? '✅' : '❌'}, Encryption=${ENCRYPTION_ENABLED ? '✅' : '❌'}`);
-  
+
   // TLS check
   if (FORCE_TLS) {
     console.log('🔒 TLS enforcement enabled (FORCE_TLS=true)');
@@ -5060,13 +5448,13 @@ server.listen(PORT, () => {
     console.warn('⚠️  TLS not enforced (set FORCE_TLS=true in production)');
     console.warn('   In production, use HTTPS/WSS and set FORCE_TLS=true');
   }
-  
+
   // Security recommendations
   if (!ENCRYPTION_ENABLED) {
     console.warn('⚠️  Encryption disabled - sensitive data stored in plaintext');
     console.warn('   Set MASTER_KEY_BASE64 to enable encryption');
   }
-  
+
   if (MASTER_KEY_BASE64 && !process.env.NODE_ENV?.includes('prod')) {
     console.warn('⚠️  PRODUCTION: Use KMS (AWS KMS/GCP KMS/HashiCorp Vault) instead of plaintext MASTER_KEY_BASE64');
   }
