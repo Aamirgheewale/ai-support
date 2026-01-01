@@ -737,7 +737,7 @@ export default function EmbedWidget({
       setOfflineFormData(prev => ({ ...prev, query: prev.query || userMessage }));
       setMessages(prev => [...prev, {
         sender: 'system',
-        text: 'Sorry, agents are busy. Please fill this form and we will get back to you.',
+        text: 'Sorry, agent is busy. Please fill this form and we will get back to you.',
         ts: Date.now()
       }]);
       chatTimeoutRef.current = null;
