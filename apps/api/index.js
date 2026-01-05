@@ -88,6 +88,7 @@ const APPWRITE_API_KEY = process.env.APPWRITE_API_KEY;
 const APPWRITE_DATABASE_ID = process.env.APPWRITE_DATABASE_ID;
 const APPWRITE_SESSIONS_COLLECTION_ID = process.env.APPWRITE_SESSIONS_COLLECTION_ID;
 const APPWRITE_MESSAGES_COLLECTION_ID = process.env.APPWRITE_MESSAGES_COLLECTION_ID;
+const APPWRITE_NOTIFICATIONS_COLLECTION_ID = process.env.APPWRITE_NOTIFICATIONS_COLLECTION_ID || 'notifications';
 const APPWRITE_USERS_COLLECTION_ID = 'users'; // Collection name (not ID)
 const APPWRITE_ROLE_CHANGES_COLLECTION_ID = 'roleChanges'; // Collection name
 const APPWRITE_AI_ACCURACY_COLLECTION_ID = 'ai_accuracy'; // Collection name
@@ -2689,6 +2690,16 @@ app.post('/api/tickets', async (req, res) => {
 
     console.log(`✅ Ticket created: ${ticketId} for ${email}`);
 
+    // Emit ticket_created event to admin feed
+    io.to('admin_feed').emit('ticket_created', {
+      ticketId,
+      name,
+      email,
+      query,
+      sessionId: sessionId || null,
+      timestamp: new Date().toISOString()
+    });
+
     // Send acknowledgment email via Resend
     if (resend) {
       try {
@@ -3010,6 +3021,126 @@ app.post('/api/tickets/reply', requireAuth, requireRole(['admin', 'agent']), asy
   } catch (err) {
     console.error('Error replying to ticket:', err);
     res.status(500).json({ error: err?.message || 'Failed to send reply' });
+  }
+});
+
+// ============================================================================
+// NOTIFICATION ENDPOINTS
+// ============================================================================
+
+// GET /api/notifications - Fetch notifications (Admin/Agent only)
+// Query param ?unreadOnly=true to fetch only unread
+app.get('/api/notifications', requireAuth, requireRole(['admin', 'agent']), async (req, res) => {
+  try {
+    if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_NOTIFICATIONS_COLLECTION_ID) {
+      return res.status(503).json({ error: 'Appwrite not configured' });
+    }
+
+    const userId = req.user.userId;
+    const unreadOnly = req.query.unreadOnly === 'true';
+
+    // Build query
+    const queries = [Query.orderDesc('$createdAt'), Query.limit(100)];
+    if (unreadOnly) {
+      queries.unshift(Query.equal('isRead', false));
+    }
+
+    const result = await awDatabases.listDocuments(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_NOTIFICATIONS_COLLECTION_ID,
+      queries
+    );
+
+    // Filter client-side: show broadcasts (targetUserId=null) OR user-specific notifications
+    const filteredNotifications = result.documents.filter(notif =>
+      notif.targetUserId === null || notif.targetUserId === userId
+    );
+
+    res.json({
+      notifications: filteredNotifications,
+      total: filteredNotifications.length
+    });
+
+  } catch (err) {
+    console.error('Error fetching notifications:', err);
+    res.status(500).json({ error: 'Failed to fetch notifications' });
+  }
+});
+
+// POST /api/notifications/create - Create a new notification (Admin/Agent only)
+app.post('/api/notifications/create', requireAuth, requireRole(['admin', 'agent']), async (req, res) => {
+  try {
+    if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_NOTIFICATIONS_COLLECTION_ID) {
+      return res.status(503).json({ error: 'Appwrite not configured' });
+    }
+
+    const { type, content, sessionId, targetUserId } = req.body;
+
+    if (!type || !content) {
+      return res.status(400).json({ error: 'type and content are required' });
+    }
+
+    const { ID } = require('node-appwrite');
+    const notificationData = {
+      type,
+      content,
+      sessionId: sessionId || '',
+      targetUserId: targetUserId || null,
+      isRead: false
+      // Note: createdAt is auto-managed by Appwrite as $createdAt
+    };
+
+    const notification = await awDatabases.createDocument(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_NOTIFICATIONS_COLLECTION_ID,
+      ID.unique(),
+      notificationData
+    );
+
+    console.log(`✅ Created notification: ${notification.$id} (type: ${type})`);
+
+    // Emit to admin feed
+    io.to('admin_feed').emit('new_notification', notification);
+
+    res.json({
+      success: true,
+      notification
+    });
+  } catch (err) {
+    console.error('Error creating notification:', err);
+    res.status(500).json({ error: err?.message || 'Failed to create notification' });
+  }
+});
+
+// PATCH /api/notifications/:id/read - Mark notification as read
+app.patch('/api/notifications/:id/read', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_NOTIFICATIONS_COLLECTION_ID) {
+      return res.status(503).json({ error: 'Appwrite not configured' });
+    }
+
+    // Update notification
+    await awDatabases.updateDocument(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_NOTIFICATIONS_COLLECTION_ID,
+      id,
+      { isRead: true }
+    );
+
+    console.log(`✅ Marked notification ${id} as read`);
+
+    res.json({
+      success: true,
+      notificationId: id
+    });
+  } catch (err) {
+    console.error('Error marking notification as read:', err);
+    if (err.code === 404) {
+      return res.status(404).json({ error: 'Notification not found' });
+    }
+    res.status(500).json({ error: err?.message || 'Failed to mark notification as read' });
   }
 });
 
@@ -4181,6 +4312,136 @@ app.get('/me', requireAuth, async (req, res) => {
   }
 });
 
+// PATCH /me/status - Update current user's status (online/away)
+app.patch('/me/status', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { status } = req.body;
+
+    // Validate status
+    const validStatuses = ['online', 'away'];
+    if (!status || !validStatuses.includes(status)) {
+      return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` });
+    }
+
+    // Check if users collection exists
+    const collectionExists = await checkUsersCollectionExists();
+    if (!collectionExists) {
+      return res.status(500).json({ error: 'Users collection not configured' });
+    }
+
+    // Get user document
+    const user = await getUserById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Update user status in database
+    await awDatabases.updateDocument(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_USERS_COLLECTION_ID,
+      user.$id,
+      { status: status }
+    );
+
+    console.log(`✅ User ${userId} status updated to: ${status}`);
+
+    res.json({ 
+      success: true, 
+      status: status,
+      message: `Status updated to ${status}` 
+    });
+  } catch (err) {
+    console.error('Error updating user status:', err);
+    res.status(500).json({ error: err?.message || 'Failed to update status' });
+  }
+});
+
+// GET /me/prefs - Get current user's preferences
+app.get('/me/prefs', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    const collectionExists = await checkUsersCollectionExists();
+    if (!collectionExists) {
+      return res.json({ prefs: {} });
+    }
+
+    const user = await getUserById(userId);
+    if (!user) {
+      return res.json({ prefs: {} });
+    }
+
+    // Parse prefs if stored as JSON string
+    let prefs = {};
+    if (user.prefs) {
+      try {
+        prefs = typeof user.prefs === 'string' ? JSON.parse(user.prefs) : user.prefs;
+      } catch {
+        prefs = {};
+      }
+    }
+
+    res.json({ prefs });
+  } catch (err) {
+    console.error('Error fetching user prefs:', err);
+    res.json({ prefs: {} });
+  }
+});
+
+// PATCH /me/prefs - Update current user's preferences (merge with existing)
+app.patch('/me/prefs', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const newPrefs = req.body;
+
+    if (!newPrefs || typeof newPrefs !== 'object') {
+      return res.status(400).json({ error: 'Invalid preferences object' });
+    }
+
+    const collectionExists = await checkUsersCollectionExists();
+    if (!collectionExists) {
+      return res.status(500).json({ error: 'Users collection not configured' });
+    }
+
+    const user = await getUserById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Parse existing prefs
+    let existingPrefs = {};
+    if (user.prefs) {
+      try {
+        existingPrefs = typeof user.prefs === 'string' ? JSON.parse(user.prefs) : user.prefs;
+      } catch {
+        existingPrefs = {};
+      }
+    }
+
+    // Merge with new prefs
+    const mergedPrefs = { ...existingPrefs, ...newPrefs };
+
+    // Update user document
+    await awDatabases.updateDocument(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_USERS_COLLECTION_ID,
+      user.$id,
+      { prefs: JSON.stringify(mergedPrefs) }
+    );
+
+    console.log(`✅ User ${userId} prefs updated`);
+
+    res.json({ 
+      success: true, 
+      prefs: mergedPrefs
+    });
+  } catch (err) {
+    console.error('Error updating user prefs:', err);
+    res.status(500).json({ error: err?.message || 'Failed to update preferences' });
+  }
+});
+
 // GET /users/:userId/profile - Get user profile (public info, additional metadata for own profile)
 app.get('/users/:userId/profile', requireAuth, async (req, res) => {
   try {
@@ -4214,6 +4475,69 @@ app.get('/users/:userId/profile', requireAuth, async (req, res) => {
   }
 });
 
+// PATCH /users/:userId/profile - Update user profile (name only, email cannot be changed)
+app.patch('/users/:userId/profile', requireAuth, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const currentUserId = req.user.userId;
+    const { name, email } = req.body;
+
+    // Users can only update their own profile
+    if (userId !== currentUserId) {
+      return res.status(403).json({ error: 'You can only update your own profile' });
+    }
+
+    // Validate name
+    if (name !== undefined && (!name || typeof name !== 'string' || name.trim().length === 0)) {
+      return res.status(400).json({ error: 'Name is required and must be a non-empty string' });
+    }
+
+    // Email cannot be changed (security)
+    if (email !== undefined) {
+      console.warn(`⚠️  User ${userId} attempted to change email, ignoring email field`);
+    }
+
+    const user = await getUserById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Prepare update data (only name, email is ignored)
+    const updateData = {};
+    if (name !== undefined) {
+      updateData.name = name.trim();
+    }
+
+    // Update user document in Appwrite
+    await awDatabases.updateDocument(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_USERS_COLLECTION_ID,
+      user.$id,
+      updateData
+    );
+
+    console.log(`✅ User ${userId} profile updated (name: ${updateData.name || 'unchanged'})`);
+
+    // Fetch updated user to return
+    const updatedUser = await getUserById(userId);
+    const profile = {
+      userId: updatedUser.userId,
+      email: updatedUser.email,
+      name: updatedUser.name,
+      roles: Array.isArray(updatedUser.roles) ? updatedUser.roles : [],
+      createdAt: updatedUser.createdAt || updatedUser.$createdAt
+    };
+
+    res.json({
+      success: true,
+      profile
+    });
+  } catch (err) {
+    console.error('Error updating user profile:', err);
+    res.status(500).json({ error: err?.message || 'Failed to update profile' });
+  }
+});
+
 // GET /admin/users/agents - List all agents (admin/agent only)
 // NOTE: This route must come BEFORE /admin/users to avoid route conflicts
 app.get('/admin/users/agents', requireAuth, requireRole(['admin', 'agent']), async (req, res) => {
@@ -4225,6 +4549,7 @@ app.get('/admin/users/agents', requireAuth, requireRole(['admin', 'agent']), asy
     console.log('📋 Fetching all agents...');
     console.log(`📊 Current agentSockets Map size: ${agentSockets.size}`);
     console.log(`📊 Current agentSockets keys:`, Array.from(agentSockets.keys()));
+    console.log(`📊 Current agentSockets entries:`, Array.from(agentSockets.entries()).map(([k, v]) => `${k} -> ${v}`));
 
     // Fetch all users and filter for agents
     // Note: Appwrite doesn't support array contains queries directly, so we fetch all and filter
@@ -4247,8 +4572,25 @@ app.get('/admin/users/agents', requireAuth, requireRole(['admin', 'agent']), asy
         // agentSockets maps agentId -> socketId, where agentId can be userId or custom agentId
         // First check if userId exists as a key in agentSockets
         let isOnline = agentSockets.has(userId);
+        
+        // Debug: Log the check
+        console.log(`🔍 Checking agent ${userId} (${doc.email}): agentSockets.has(${userId}) = ${isOnline}`);
 
-        // If not found by userId, check all connected sockets for matching userId
+        // If not found by userId, check all connected sockets for matching userId or agentId
+        // Also check agentSockets Map for any key that matches (in case agentId != userId)
+        if (!isOnline) {
+          // Check agentSockets Map for any entry where the key might match userId
+          // This handles cases where agentId === userId but stored differently
+          for (const [agentIdKey, socketId] of agentSockets.entries()) {
+            if (agentIdKey === userId) {
+              console.log(`✅ Found agent in agentSockets with key matching userId: ${agentIdKey} -> ${socketId}`);
+              isOnline = true;
+              break;
+            }
+          }
+        }
+
+        // If still not found, check all connected sockets for matching userId or agentId
         if (!isOnline && io && io.sockets) {
           try {
             // Get all connected sockets from the Socket.IO server
@@ -4260,17 +4602,24 @@ app.get('/admin/users/agents', requireAuth, requireRole(['admin', 'agent']), asy
               const socketUserId = socket.data?.userId;
               const socketAgentId = socket.data?.agentId;
               const isAuthenticated = socket.data?.authenticated;
+              const socketConnected = socket.connected;
+              
+              // Check if this socket is in agentSockets Map (means it's a valid agent connection)
+              const isInAgentSockets = Array.from(agentSockets.values()).includes(socketId);
 
-              // Debug: log all socket data for troubleshooting
-              if (socketUserId || socketAgentId) {
-                console.log(`🔍 Socket ${socketId}: userId=${socketUserId}, agentId=${socketAgentId}, authenticated=${isAuthenticated}, connected=${socket.connected}`);
-              }
-
-              // Match if socket has this userId and is authenticated, OR if agentId matches userId
-              if (isAuthenticated && (socketUserId === userId || socketAgentId === userId)) {
-                console.log(`✅ Found matching socket for userId ${userId}: socketId=${socketId}, agentId=${socketAgentId}, authenticated=${isAuthenticated}`);
+              // Match if:
+              // 1. Socket is connected AND
+              // 2. (Socket is authenticated OR socket is in agentSockets Map) AND
+              // 3. (socketUserId matches userId OR socketAgentId matches userId)
+              if (socketConnected && (isAuthenticated || isInAgentSockets) && (socketUserId === userId || socketAgentId === userId)) {
+                console.log(`✅ Found matching socket for userId ${userId}: socketId=${socketId}, userId=${socketUserId}, agentId=${socketAgentId}, authenticated=${isAuthenticated}, connected=${socketConnected}, inAgentSockets=${isInAgentSockets}`);
                 isOnline = true;
                 break;
+              }
+              
+              // Debug: log socket data for troubleshooting (only for matching userId/agentId)
+              if ((socketUserId === userId || socketAgentId === userId)) {
+                console.log(`🔍 Socket ${socketId}: userId=${socketUserId}, agentId=${socketAgentId}, authenticated=${isAuthenticated}, connected=${socketConnected}, inAgentSockets=${isInAgentSockets} (MATCHING USER)`);
               }
             }
           } catch (err) {
@@ -4283,6 +4632,20 @@ app.get('/admin/users/agents', requireAuth, requireRole(['admin', 'agent']), asy
           console.log(`✅ Agent ${userId} (${doc.email}) is ONLINE`);
         } else {
           console.log(`❌ Agent ${userId} (${doc.email}) is OFFLINE`);
+          // Additional debug: Check if any socket has this userId
+          if (io && io.sockets) {
+            const sockets = io.sockets.sockets;
+            let foundInSockets = false;
+            for (const [socketId, socket] of sockets.entries()) {
+              if (socket.data?.userId === userId || socket.data?.agentId === userId) {
+                console.log(`   ⚠️  Found socket ${socketId} with userId=${socket.data?.userId}, agentId=${socket.data?.agentId}, authenticated=${socket.data?.authenticated}`);
+                foundInSockets = true;
+              }
+            }
+            if (!foundInSockets) {
+              console.log(`   ℹ️  No socket found with userId or agentId matching ${userId}`);
+            }
+          }
         }
 
         return {
@@ -4293,7 +4656,8 @@ app.get('/admin/users/agents', requireAuth, requireRole(['admin', 'agent']), asy
           roles: Array.isArray(doc.roles) ? doc.roles : [],
           createdAt: doc.createdAt || doc.$createdAt,
           updatedAt: doc.updatedAt || doc.$updatedAt,
-          isOnline: isOnline
+          isOnline: isOnline,
+          status: doc.status || null // User-set status (online/away), null for offline
         };
       })
       .sort((a, b) => {

@@ -1,4 +1,5 @@
-import { useRef, useEffect, useState } from 'react'
+import { useRef, useEffect, useState, useCallback } from 'react'
+import { useAuth, DEFAULT_USER_PREFS, UserPrefs } from './useAuth'
 
 interface UseSoundOptions {
   enabled?: boolean
@@ -7,23 +8,52 @@ interface UseSoundOptions {
 
 /**
  * Custom hook for playing audio notifications
- * Handles browser autoplay policy by requiring user interaction
+ * Reads settings from user.prefs (Appwrite) - isolated per user
+ * Falls back to defaults if no user is logged in
+ * 
+ * NOTE: For components that need isRinging state and stopAllSounds,
+ * use useSoundContext from context/SoundContext.tsx instead
  */
 export function useSound(options: UseSoundOptions = {}) {
-  const { enabled = true, volume = 0.7 } = options
+  const { enabled = true } = options
+  const { user } = useAuth()
   
-  // Load audio enabled state from localStorage (shared across all instances)
-  const getStoredAudioEnabled = () => {
-    if (typeof window === 'undefined') return false
-    const stored = localStorage.getItem('ai-support-audio-enabled')
-    return stored === 'true'
-  }
-  
-  const [audioEnabled, setAudioEnabled] = useState(getStoredAudioEnabled)
-  const [userInteracted, setUserInteracted] = useState(false)
+  // Get settings from user.prefs or defaults
+  const getSettings = useCallback((): UserPrefs => {
+    if (user?.prefs) {
+      return { ...DEFAULT_USER_PREFS, ...user.prefs }
+    }
+    return DEFAULT_USER_PREFS
+  }, [user?.prefs])
+
+  const [settings, setSettings] = useState<UserPrefs>(getSettings)
+  const [isRinging, setIsRinging] = useState(false)
+  const [isPopPlaying, setIsPopPlaying] = useState(false)
   
   const ringSoundRef = useRef<HTMLAudioElement | null>(null)
   const popSoundRef = useRef<HTMLAudioElement | null>(null)
+  const ringRepeatCountRef = useRef(0)
+  const ringRepeatTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Update settings when user.prefs changes
+  useEffect(() => {
+    setSettings(getSettings())
+  }, [getSettings])
+
+  // Listen for prefs update events (for immediate updates before API response)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    
+    const handlePrefsUpdate = (e: CustomEvent<UserPrefs>) => {
+      setSettings({ ...DEFAULT_USER_PREFS, ...e.detail })
+    }
+    
+    window.addEventListener('user-prefs-updated', handlePrefsUpdate as EventListener)
+    
+    return () => {
+      window.removeEventListener('user-prefs-updated', handlePrefsUpdate as EventListener)
+    }
+  }, [])
 
   // Initialize audio objects
   useEffect(() => {
@@ -31,11 +61,9 @@ export function useSound(options: UseSoundOptions = {}) {
 
     try {
       ringSoundRef.current = new Audio('/sounds/Ring.mp3')
-      ringSoundRef.current.volume = volume
       ringSoundRef.current.preload = 'auto'
       
       popSoundRef.current = new Audio('/sounds/pop.mp3')
-      popSoundRef.current.volume = volume
       popSoundRef.current.preload = 'auto'
     } catch (err) {
       console.warn('Failed to initialize audio:', err)
@@ -43,6 +71,9 @@ export function useSound(options: UseSoundOptions = {}) {
 
     // Cleanup
     return () => {
+      if (ringRepeatTimeoutRef.current) {
+        clearTimeout(ringRepeatTimeoutRef.current)
+      }
       if (ringSoundRef.current) {
         ringSoundRef.current.pause()
         ringSoundRef.current = null
@@ -52,128 +83,161 @@ export function useSound(options: UseSoundOptions = {}) {
         popSoundRef.current = null
       }
     }
-  }, [volume])
-
-  // Custom setAudioEnabled that updates both state and localStorage
-  const updateAudioEnabled = (value: boolean) => {
-    setAudioEnabled(value)
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('ai-support-audio-enabled', String(value))
-      // Dispatch custom event for same-tab synchronization
-      window.dispatchEvent(new CustomEvent('audio-enabled-changed', { detail: value }))
-    }
-  }
-
-  // Listen for audio enabled changes (from other components in same tab)
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    
-    const handleAudioEnabledChange = (e: CustomEvent) => {
-      setAudioEnabled(e.detail)
-    }
-    
-    // Listen for storage events (when other tabs update it)
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'ai-support-audio-enabled') {
-        setAudioEnabled(e.newValue === 'true')
-      }
-    }
-    
-    window.addEventListener('audio-enabled-changed', handleAudioEnabledChange as EventListener)
-    window.addEventListener('storage', handleStorageChange)
-    
-    return () => {
-      window.removeEventListener('audio-enabled-changed', handleAudioEnabledChange as EventListener)
-      window.removeEventListener('storage', handleStorageChange)
-    }
   }, [])
 
-  // Enable audio on first user interaction (click, touch, keypress)
-  useEffect(() => {
-    if (userInteracted || !enabled) return
-
-    const enableAudio = () => {
-      setUserInteracted(true)
-      updateAudioEnabled(true)
-    }
-
-    const events = ['click', 'touchstart', 'keydown']
-    events.forEach(event => {
-      document.addEventListener(event, enableAudio, { once: true })
-    })
-
-    return () => {
-      events.forEach(event => {
-        document.removeEventListener(event, enableAudio)
-      })
-    }
-  }, [enabled, userInteracted])
-
-  const playRing = async () => {
-    // Check localStorage for current audio enabled state (shared across components)
-    const isAudioEnabled = typeof window !== 'undefined' && localStorage.getItem('ai-support-audio-enabled') === 'true'
-    if (!enabled || !isAudioEnabled || !ringSoundRef.current) return
+  // Play ring sound with volume from settings or override
+  const playRing = useCallback(async (volumeOverride?: number) => {
+    if (!enabled || !settings.masterEnabled || !ringSoundRef.current) return
     
-    try {
-      // Reset to start if already playing
-      if (ringSoundRef.current.currentTime > 0) {
+    // Get volume: use override (for test buttons with live preview), or user pref, or default
+    const volume = volumeOverride ?? settings.newSessionRingVolume ?? 70
+    // CRUCIAL: Convert 0-100 to 0.0-1.0
+    const decimalVolume = Math.max(0, Math.min(1, volume / 100))
+    
+    // Set volume BEFORE playing
+    ringSoundRef.current.volume = decimalVolume
+    
+    // Reset repeat counter
+    ringRepeatCountRef.current = 0
+    
+    // Clear any pending repeat timeout
+    if (ringRepeatTimeoutRef.current) {
+      clearTimeout(ringRepeatTimeoutRef.current)
+    }
+    
+    const playOnce = async () => {
+      if (!ringSoundRef.current) return
+      
+      try {
         ringSoundRef.current.currentTime = 0
+        setIsRinging(true)
+        await ringSoundRef.current.play()
+      } catch (err) {
+        console.log('Audio play blocked - user interaction required')
+        setIsRinging(false)
       }
-      await ringSoundRef.current.play()
-    } catch (err) {
-      // Autoplay blocked - user needs to interact first
-      console.log('Audio play blocked - user interaction required')
     }
-  }
+    
+    // Set up repeat logic
+    const handleEnded = () => {
+      ringRepeatCountRef.current++
+      const repeatCount = settings.repeatRing ?? 1
+      if (ringRepeatCountRef.current < repeatCount && ringSoundRef.current) {
+        ringRepeatTimeoutRef.current = setTimeout(() => {
+          playOnce()
+        }, 300)
+      } else {
+        setIsRinging(false)
+      }
+    }
+    
+    // Remove old listener and add new one
+    if (ringSoundRef.current) {
+      ringSoundRef.current.removeEventListener('ended', handleEnded)
+      ringSoundRef.current.addEventListener('ended', handleEnded)
+    }
+    
+    await playOnce()
+  }, [enabled, settings])
 
-  const playPop = async () => {
-    // Check localStorage for current audio enabled state (shared across components)
-    const isAudioEnabled = typeof window !== 'undefined' && localStorage.getItem('ai-support-audio-enabled') === 'true'
-    if (!enabled || !isAudioEnabled || !popSoundRef.current) return
+  // Play pop sound with volume from settings or override
+  const playPop = useCallback(async (volumeOverride?: number) => {
+    if (!enabled || !settings.masterEnabled || !popSoundRef.current) return
+    
+    // Get volume: use override (for test buttons with live preview), or user pref, or default
+    const volume = volumeOverride ?? settings.newMessagePopVolume ?? 70
+    // CRUCIAL: Convert 0-100 to 0.0-1.0
+    const decimalVolume = Math.max(0, Math.min(1, volume / 100))
+    
+    // Set volume BEFORE playing
+    popSoundRef.current.volume = decimalVolume
     
     try {
-      // Reset to start if already playing
-      if (popSoundRef.current.currentTime > 0) {
-        popSoundRef.current.currentTime = 0
-      }
+      popSoundRef.current.currentTime = 0
+      setIsPopPlaying(true)
       await popSoundRef.current.play()
+      
+      // Track when pop ends
+      popSoundRef.current.onended = () => setIsPopPlaying(false)
     } catch (err) {
-      // Autoplay blocked - user needs to interact first
       console.log('Audio play blocked - user interaction required')
+      setIsPopPlaying(false)
     }
-  }
+  }, [enabled, settings])
 
-  const pauseRing = () => {
+  // Play notification pop with notification volume
+  const playNotificationPop = useCallback(async (volumeOverride?: number) => {
+    if (!enabled || !settings.masterEnabled || !popSoundRef.current) return
+    
+    const volume = volumeOverride ?? settings.notificationPopVolume ?? 70
+    const decimalVolume = Math.max(0, Math.min(1, volume / 100))
+    
+    popSoundRef.current.volume = decimalVolume
+    
+    try {
+      popSoundRef.current.currentTime = 0
+      setIsPopPlaying(true)
+      await popSoundRef.current.play()
+      
+      popSoundRef.current.onended = () => setIsPopPlaying(false)
+    } catch (err) {
+      console.log('Audio play blocked - user interaction required')
+      setIsPopPlaying(false)
+    }
+  }, [enabled, settings])
+
+  // Stop ring sound (does NOT change masterEnabled)
+  const pauseRing = useCallback(() => {
+    // Clear any pending repeat timeout
+    if (ringRepeatTimeoutRef.current) {
+      clearTimeout(ringRepeatTimeoutRef.current)
+      ringRepeatTimeoutRef.current = null
+    }
+    
+    // Stop any pending repeats
+    ringRepeatCountRef.current = 999
+    
     if (ringSoundRef.current) {
       ringSoundRef.current.pause()
       ringSoundRef.current.currentTime = 0
     }
-  }
+    setIsRinging(false)
+  }, [])
 
-  const pausePop = () => {
+  // Stop pop sound
+  const pausePop = useCallback(() => {
     if (popSoundRef.current) {
       popSoundRef.current.pause()
       popSoundRef.current.currentTime = 0
     }
-  }
+    setIsPopPlaying(false)
+  }, [])
 
-  const isRingPlaying = () => {
+  // Stop ALL sounds (does NOT change masterEnabled)
+  const stopAllSounds = useCallback(() => {
+    pauseRing()
+    pausePop()
+  }, [pauseRing, pausePop])
+
+  const isRingPlayingFn = useCallback(() => {
     return ringSoundRef.current ? !ringSoundRef.current.paused : false
-  }
+  }, [])
 
-  const isPopPlaying = () => {
+  const isPopPlayingFn = useCallback(() => {
     return popSoundRef.current ? !popSoundRef.current.paused : false
-  }
+  }, [])
 
   return {
     playRing,
     playPop,
+    playNotificationPop,
     pauseRing,
     pausePop,
-    isRingPlaying,
-    isPopPlaying,
-    audioEnabled,
-    setAudioEnabled: updateAudioEnabled
+    stopAllSounds,
+    isRingPlaying: isRingPlayingFn,
+    isPopPlaying: isPopPlayingFn,
+    isRinging,
+    audioEnabled: settings.masterEnabled ?? true,
+    settings
   }
 }
-

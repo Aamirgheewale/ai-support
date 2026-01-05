@@ -26,7 +26,7 @@ export default function ConversationView() {
   const [socket, setSocket] = useState<any>(null)
   const [sessionStatus, setSessionStatus] = useState<string>('')
   const [assignedAgentId, setAssignedAgentId] = useState<string>('')
-  const [onlineAgents, setOnlineAgents] = useState<Array<{ userId: string; name: string; email: string; isOnline?: boolean }>>([])
+  const [onlineAgents, setOnlineAgents] = useState<Array<{ userId: string; name: string; email: string; isOnline?: boolean; status?: string }>>([])
   const [selectedAgentId, setSelectedAgentId] = useState<string>('')
   const [loadingAgents, setLoadingAgents] = useState(false)
   
@@ -80,6 +80,11 @@ export default function ConversationView() {
       if (sessionId) {
         sock.emit('join_session', { sessionId })
         console.log(`📱 Admin socket joined session room: ${sessionId}`)
+      }
+      // Join admin feed to receive agent online/offline updates
+      if (isAdmin) {
+        sock.emit('join_admin_feed')
+        console.log('📤 Joined admin feed for agent status updates')
       }
       // Auto-connect as agent if session has assigned agent and current user matches
       const currentUserId = user?.userId
@@ -224,6 +229,27 @@ export default function ConversationView() {
       }
     })
     
+    // Listen for agent online/offline status updates (admin only)
+    if (isAdmin) {
+      sock.on('agent_connected', (data: any) => {
+        console.log('📨 Received agent_connected:', data)
+        // Refresh the online agents list when an agent connects
+        loadOnlineAgents()
+      })
+      
+      sock.on('agent_disconnected', (data: any) => {
+        console.log('📨 Received agent_disconnected:', data)
+        // Refresh the online agents list when an agent disconnects
+        loadOnlineAgents()
+      })
+      
+      sock.on('agent_status_changed', (data: any) => {
+        console.log('📨 Received agent_status_changed:', data)
+        // Refresh the online agents list when agent status changes
+        loadOnlineAgents()
+      })
+    }
+    
     setSocket(sock)
     
     return () => {
@@ -241,7 +267,7 @@ export default function ConversationView() {
     }
   }, [assignedAgentId])
 
-  // Fetch online agents for admin dropdown
+  // Fetch all agents for admin dropdown (only online agents)
   const loadOnlineAgents = async () => {
     if (!isAdmin) return
     
@@ -259,11 +285,56 @@ export default function ConversationView() {
       }
 
       const data = await res.json()
-      // Filter only online agents
-      const online = (data.agents || []).filter((agent: any) => agent.isOnline === true)
-      setOnlineAgents(online)
+      const allAgents = data.agents || []
+      
+      // Debug: Log all agents and their online status
+      console.log(`📊 All agents received:`, allAgents.map((a: any) => ({
+        userId: a.userId,
+        name: a.name,
+        email: a.email,
+        isOnline: a.isOnline,
+        status: a.status
+      })))
+      
+      // Filter: Only show agents who are:
+      // 1. Currently online (have active socket connections) AND
+      // 2. Have status === 'online' (not 'away' or null)
+      const onlineAgentsFiltered = allAgents.filter((agent: any) => {
+        const hasSocketConnection = agent.isOnline === true
+        const hasOnlineStatus = agent.status === 'online'
+        
+        // Must have BOTH socket connection AND status === 'online'
+        const isOnline = hasSocketConnection && hasOnlineStatus
+        
+        if (!isOnline) {
+          console.log(`   ⚠️  Filtering out agent: ${agent.userId} (${agent.email}) - isOnline=${hasSocketConnection}, status=${agent.status}`)
+        }
+        
+        return isOnline
+      })
+      
+      // Sort by name for easier selection
+      const sortedAgents = onlineAgentsFiltered.sort((a: any, b: any) => {
+        const nameA = (a.name || a.email || '').toLowerCase()
+        const nameB = (b.name || b.email || '').toLowerCase()
+        return nameA.localeCompare(nameB)
+      })
+      
+      // CRITICAL: Set state with filtered online agents only
+      setOnlineAgents(sortedAgents)
+      console.log(`✅ Loaded ${sortedAgents.length} online agent(s) out of ${allAgents.length} total`)
+      console.log(`📋 Setting onlineAgents state with:`, sortedAgents.map(a => ({ 
+        userId: a.userId, 
+        name: a.name, 
+        email: a.email, 
+        isOnline: a.isOnline,
+        status: a.status 
+      })))
+      if (sortedAgents.length === 0 && allAgents.length > 0) {
+        console.warn(`⚠️  WARNING: No online agents found, but ${allAgents.length} total agent(s) exist. Check backend logs for agent connection status.`)
+      }
     } catch (err) {
-      console.error('Failed to load online agents:', err)
+      console.error('Failed to load agents:', err)
     } finally {
       setLoadingAgents(false)
     }
@@ -272,9 +343,25 @@ export default function ConversationView() {
   // Load online agents when component mounts (for admins)
   useEffect(() => {
     if (isAdmin && sessionId) {
+      console.log('🔄 useEffect: Loading online agents...')
       loadOnlineAgents()
+      
+      // Refresh online agents list periodically (every 30 seconds) to get real-time updates
+      const refreshInterval = setInterval(() => {
+        console.log('🔄 Periodic refresh: Reloading online agents...')
+        loadOnlineAgents()
+      }, 30000) // 30 seconds
+      
+      return () => clearInterval(refreshInterval)
     }
   }, [isAdmin, sessionId])
+  
+  // Also refresh when dropdown is opened (on focus)
+  const handleDropdownFocus = () => {
+    if (isAdmin) {
+      loadOnlineAgents()
+    }
+  }
   
   // Separate effect to reconnect when agentId changes
   useEffect(() => {
@@ -773,29 +860,61 @@ export default function ConversationView() {
           </button>
           {hasAnyRole(['agent', 'admin']) && (
             <>
-              {isAdmin && !assignedAgentId && (
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginLeft: '10px' }}>
-                  <select
-                    value={selectedAgentId}
-                    onChange={(e) => setSelectedAgentId(e.target.value)}
-                    disabled={loadingAgents}
-                    style={{
-                      padding: '8px 12px',
-                      border: '1px solid #ddd',
-                      borderRadius: '4px',
-                      fontSize: '14px',
-                      minWidth: '200px',
-                      background: 'white',
-                      cursor: loadingAgents ? 'not-allowed' : 'pointer'
-                    }}
-                  >
-                    <option value="">Select an agent...</option>
-                    {onlineAgents.map((agent) => (
-                      <option key={agent.userId} value={agent.userId}>
-                        {agent.name || agent.email} {agent.isOnline ? '🟢' : ''}
-                      </option>
-                    ))}
-                  </select>
+              {isAdmin && !assignedAgentId && (() => {
+                // Debug: Log rendering state
+                console.log('🎨 Rendering dropdown with:', {
+                  onlineAgents: onlineAgents.length,
+                  loadingAgents,
+                  selectedAgentId,
+                  hasAgents: onlineAgents.length > 0
+                })
+                
+                // Only disable if actively loading AND no agents available yet
+                // If agents are available, enable the dropdown even if loading (for real-time updates)
+                const shouldDisable = loadingAgents && onlineAgents.length === 0
+                
+                return (
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginLeft: '10px' }}>
+                    <select
+                      key={`agent-select-${onlineAgents.length}`} // Force re-render when onlineAgents changes
+                      value={selectedAgentId || ''} // Ensure value is never null/undefined
+                      onChange={(e) => setSelectedAgentId(e.target.value)}
+                      onFocus={handleDropdownFocus}
+                      disabled={shouldDisable} // Only disable when loading AND no agents available
+                      style={{
+                        padding: '8px 12px',
+                        border: '1px solid #ddd',
+                        borderRadius: '4px',
+                        fontSize: '14px',
+                        minWidth: '200px',
+                        background: shouldDisable ? '#f5f5f5' : 'white',
+                        cursor: shouldDisable ? 'not-allowed' : 'pointer',
+                        opacity: shouldDisable ? 0.6 : 1
+                      }}
+                    >
+                      <option value="">Select an agent...</option>
+                      {onlineAgents.length === 0 ? (
+                        <option value="" disabled>
+                          {loadingAgents ? 'Loading agents...' : 'No agents online'}
+                        </option>
+                      ) : (
+                        // Display ONLY online agents (already filtered in loadOnlineAgents)
+                        onlineAgents.map((agent) => {
+                          const displayName = agent.name || agent.email || 'Unknown'
+                          
+                          // Double-check: log if somehow a non-online agent got through
+                          if (agent.isOnline !== true || agent.status !== 'online') {
+                            console.warn(`⚠️  WARNING: Rendering non-online agent in dropdown: ${agent.userId} (isOnline=${agent.isOnline}, status=${agent.status})`)
+                          }
+                          
+                          return (
+                            <option key={agent.userId} value={agent.userId}>
+                              🟢 {displayName}
+                            </option>
+                          )
+                        })
+                      )}
+                    </select>
                   <button
                     onClick={assignToSelectedAgent}
                     disabled={!selectedAgentId || loadingAgents}
@@ -812,7 +931,8 @@ export default function ConversationView() {
                     Assign
                   </button>
                 </div>
-              )}
+                )
+              })()}
               {assignedAgentId && canSendMessages && sessionStatus === 'agent_assigned' ? (
                 <>
                   <button onClick={closeConversation} style={{ padding: '8px 16px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', marginLeft: '10px' }}>

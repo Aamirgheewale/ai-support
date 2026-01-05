@@ -58,6 +58,8 @@ export default function EmbedWidget({
   const [offlineFormData, setOfflineFormData] = useState({ name: '', email: '', mobile: '', query: '' });
   const [formSubmitted, setFormSubmitted] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [showAgentButton, setShowAgentButton] = useState(false); // Show "Connect to Agent" button
+  const [agentRequestSent, setAgentRequestSent] = useState(false); // Track if agent request was sent
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<number | null>(null);
   const messagesLoadedRef = useRef(false); // Track if messages have been loaded
@@ -727,12 +729,27 @@ export default function EmbedWidget({
     setStreamingText(null);
     startTypingIndicator();
 
+    // Keyword detection: Check if user mentions "agent"
+    if (userMessage.toLowerCase().includes('agent')) {
+      setShowAgentButton(true);
+    }
+
     // Start 3-minute timer when user sends a message
     if (chatTimeoutRef.current) {
       window.clearTimeout(chatTimeoutRef.current);
     }
     chatTimeoutRef.current = window.setTimeout(() => {
       console.log('⏰ 3-minute timeout expired, showing offline form');
+      
+      // Emit session_timeout event to backend (will create notification)
+      const socket = socketRef.current;
+      if (socket && sessionId && !conversationConcluded) {
+        socket.emit('session_timeout', {
+          sessionId,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
       setShowOfflineForm(true);
       setOfflineFormData(prev => ({ ...prev, query: prev.query || userMessage }));
       setMessages(prev => [...prev, {
@@ -741,7 +758,17 @@ export default function EmbedWidget({
         ts: Date.now()
       }]);
       chatTimeoutRef.current = null;
-    }, 60 * 1000); // 3 minutes 3*60*1000
+    }, 3 * 60 * 1000); // 3 minutes 3*60*1000
+  }
+
+  function handleRequestAgent() {
+    const socket = socketRef.current;
+    if (socket && sessionId) {
+      socket.emit('request_agent', { sessionId });
+      setAgentRequestSent(true);
+      setShowAgentButton(false);
+      console.log(`📤 Emitted request_agent event for session ${sessionId}`);
+    }
   }
 
   function handleKeyPress(e: React.KeyboardEvent) {
@@ -1177,6 +1204,40 @@ export default function EmbedWidget({
             }}>
               {m.text}
             </div>
+            {/* Connect to Agent Button - Show after bot messages when user mentions "agent" */}
+            {m.sender === 'bot' && i === messages.length - 1 && showAgentButton && !agentRequestSent && (
+              <button
+                onClick={handleRequestAgent}
+                style={{
+                  marginTop: '8px',
+                  padding: '8px 16px',
+                  background: '#2563eb',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  transition: 'background 0.2s',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = '#1d4ed8'}
+                onMouseLeave={(e) => e.currentTarget.style.background = '#2563eb'}
+              >
+                🤝 Connect to Agent
+              </button>
+            )}
+            {/* Agent Request Sent Message */}
+            {m.sender === 'bot' && i === messages.length - 1 && agentRequestSent && (
+              <p style={{
+                marginTop: '8px',
+                fontSize: '12px',
+                color: 'rgba(255, 255, 255, 0.7)',
+                fontStyle: 'italic'
+              }}>
+                ✓ Request sent. An agent will join shortly.
+              </p>
+            )}
             {m.type === 'conclusion_question' && m.options && !conversationConcluded && (
               <div style={{
                 marginTop: '8px',

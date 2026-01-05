@@ -13,6 +13,7 @@ interface Agent {
   createdAt?: string;
   updatedAt?: string;
   isOnline?: boolean;
+  status?: 'online' | 'away'; // User-set status
 }
 
 interface AgentSession {
@@ -340,17 +341,32 @@ export default function AgentsOnline() {
                       {formatDate(agent.createdAt)}
                     </td>
                     <td style={{ padding: '12px 16px' }}>
-                      <span style={{
-                        display: 'inline-block',
-                        padding: '4px 12px',
-                        background: agent.isOnline ? '#d1fae5' : '#fee2e2',
-                        color: agent.isOnline ? '#065f46' : '#991b1b',
-                        borderRadius: '12px',
-                        fontSize: '12px',
-                        fontWeight: '500'
-                      }}>
-                        {agent.isOnline ? 'Online' : 'Offline'}
-                      </span>
+                      {/* Status badge based on user-set status and connection status */}
+                      {agent.isOnline ? (
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '4px 12px',
+                          background: agent.status === 'away' ? '#fef3c7' : '#d1fae5',
+                          color: agent.status === 'away' ? '#92400e' : '#065f46',
+                          borderRadius: '12px',
+                          fontSize: '12px',
+                          fontWeight: '500'
+                        }}>
+                          {agent.status === 'away' ? '🟡 Away' : '🟢 Online'}
+                        </span>
+                      ) : (
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '4px 12px',
+                          background: '#fee2e2',
+                          color: '#991b1b',
+                          borderRadius: '12px',
+                          fontSize: '12px',
+                          fontWeight: '500'
+                        }}>
+                          ⚫ Offline
+                        </span>
+                      )}
                     </td>
                     <td style={{ padding: '12px 16px' }}>
                       <button

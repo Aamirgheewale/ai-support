@@ -40,6 +40,26 @@ function safeStorageClearToken() {
   }
 }
 
+// Sound/notification preferences stored per-user in Appwrite
+export interface UserPrefs {
+  masterEnabled?: boolean;
+  desktopNotifications?: boolean;
+  newSessionRingVolume?: number;
+  repeatRing?: number;
+  newMessagePopVolume?: number;
+  notificationPopVolume?: number;
+  [key: string]: any; // Allow additional prefs
+}
+
+export const DEFAULT_USER_PREFS: UserPrefs = {
+  masterEnabled: true,
+  desktopNotifications: true,
+  newSessionRingVolume: 70,
+  repeatRing: 1,
+  newMessagePopVolume: 70,
+  notificationPopVolume: 70
+};
+
 interface User {
   userId: string;
   email: string;
@@ -48,6 +68,7 @@ interface User {
   createdAt?: string;
   lastSeen?: string;
   userMeta?: Record<string, any>;
+  prefs?: UserPrefs;
 }
 
 interface AuthContextType {
@@ -61,6 +82,8 @@ interface AuthContextType {
   signup: (data: { name: string; email: string; role?: string }) => Promise<void>;
   signout: () => Promise<void>;
   refreshMe: () => Promise<void>;
+  updateUserStatus: (status: 'online' | 'away') => Promise<boolean>;
+  updateUserSettings: (newSettings: Partial<UserPrefs>) => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -99,6 +122,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (res.ok) {
         const userData = await res.json();
+        
+        // Fetch user preferences separately
+        try {
+          const prefsRes = await fetch(`${API_BASE}/me/prefs`, {
+            headers: {
+              'Authorization': `Bearer ${tokenToUse}`
+            },
+            credentials: 'include'
+          });
+          if (prefsRes.ok) {
+            const prefsData = await prefsRes.json();
+            userData.prefs = { ...DEFAULT_USER_PREFS, ...prefsData.prefs };
+          } else {
+            userData.prefs = DEFAULT_USER_PREFS;
+          }
+        } catch {
+          userData.prefs = DEFAULT_USER_PREFS;
+        }
+        
         setUser(userData);
         return userData;
       } else {
@@ -346,6 +388,84 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await fetchUser();
   };
 
+  const updateUserStatus = async (status: 'online' | 'away'): Promise<boolean> => {
+    const tokenToUse = token || safeStorageGetToken();
+    if (!tokenToUse || !user) {
+      console.warn('Cannot update status: no token or user');
+      return false;
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/me/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${tokenToUse}`
+        },
+        credentials: 'include',
+        body: JSON.stringify({ status })
+      });
+
+      if (res.ok) {
+        console.log(`✅ User status updated to: ${status}`);
+        return true;
+      } else {
+        const error = await res.json().catch(() => ({ error: 'Failed to update status' }));
+        console.error('Failed to update status:', error);
+        return false;
+      }
+    } catch (err) {
+      console.error('Error updating user status:', err);
+      return false;
+    }
+  };
+
+  const updateUserSettings = async (newSettings: Partial<UserPrefs>): Promise<boolean> => {
+    const tokenToUse = token || safeStorageGetToken();
+    if (!tokenToUse || !user) {
+      console.warn('Cannot update settings: no token or user');
+      return false;
+    }
+
+    // Optimistic update - merge new settings with existing prefs
+    const mergedPrefs = { ...DEFAULT_USER_PREFS, ...user.prefs, ...newSettings };
+    setUser(prev => prev ? { ...prev, prefs: mergedPrefs } : null);
+    
+    // Dispatch event for other components (like useSound) to pick up immediately
+    window.dispatchEvent(new CustomEvent('user-prefs-updated', { detail: mergedPrefs }));
+
+    try {
+      const res = await fetch(`${API_BASE}/me/prefs`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${tokenToUse}`
+        },
+        credentials: 'include',
+        body: JSON.stringify(newSettings)
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        console.log(`✅ User settings updated:`, data.prefs);
+        // Update with server response (in case of any transformations)
+        setUser(prev => prev ? { ...prev, prefs: { ...DEFAULT_USER_PREFS, ...data.prefs } } : null);
+        return true;
+      } else {
+        const error = await res.json().catch(() => ({ error: 'Failed to update settings' }));
+        console.error('Failed to update settings:', error);
+        // Revert optimistic update on failure
+        await fetchUser(tokenToUse);
+        return false;
+      }
+    } catch (err) {
+      console.error('Error updating user settings:', err);
+      // Revert optimistic update on failure
+      await fetchUser(tokenToUse);
+      return false;
+    }
+  };
+
   const hasRole = (role: string): boolean => {
     if (!user) return false;
     return user.roles.includes(role);
@@ -371,7 +491,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signin, 
       signup, 
       signout, 
-      refreshMe 
+      refreshMe,
+      updateUserStatus,
+      updateUserSettings
     }}>
       {children}
     </AuthContext.Provider>
