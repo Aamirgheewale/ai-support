@@ -190,26 +190,26 @@ export default function EmbedWidget({
           console.log(`🔒 Agent request already sent in this session ${sessionId} - button will not show again`);
           setAgentRequestSent(true);
         }
-        
+
         const savedTimerData = localStorage.getItem(`ai-support-agent-timer-${sessionId}`);
         if (savedTimerData) {
           const timerData = JSON.parse(savedTimerData);
           const { startTime, duration } = timerData;
           const elapsed = Math.floor((Date.now() - startTime) / 1000); // Elapsed time in seconds
           const remaining = Math.max(0, duration - elapsed); // Remaining time (can't be negative)
-          
+
           console.log(`🔄 Restoring agent timer: ${remaining}s remaining (elapsed: ${elapsed}s)`);
-          
+
           if (remaining > 0) {
             // Timer is still active, restore it
             setAgentRequestSent(true);
             setAgentWaitTimer(remaining);
-            
+
             // Clear any existing timer interval
             if (agentWaitTimerIntervalRef.current) {
               clearInterval(agentWaitTimerIntervalRef.current);
             }
-            
+
             // Start countdown interval from restored time
             agentWaitTimerIntervalRef.current = window.setInterval(() => {
               setAgentWaitTimer(prev => {
@@ -219,20 +219,20 @@ export default function EmbedWidget({
                     clearInterval(agentWaitTimerIntervalRef.current);
                     agentWaitTimerIntervalRef.current = null;
                   }
-                  
+
                   // Clear timer from localStorage
                   if (sessionId) {
                     localStorage.removeItem(`ai-support-agent-timer-${sessionId}`);
                   }
-                  
+
                   console.log('⏰ Agent wait timer expired - showing offline form as chat message');
                   // Add offline form as a chat message instead of separate form
                   setMessages(prev => {
                     // Check if offline form message already exists
-                    const hasOfflineFormMessage = prev.some(msg => 
+                    const hasOfflineFormMessage = prev.some(msg =>
                       msg.type === 'offline_form'
                     );
-                    
+
                     if (!hasOfflineFormMessage) {
                       return [...prev, {
                         sender: 'system',
@@ -244,10 +244,10 @@ export default function EmbedWidget({
                     return prev;
                   });
                   setOfflineFormData(prev => ({ ...prev, query: prev.query || '' }));
-                  
+
                   return null;
                 }
-                
+
                 return prev - 1; // Decrease by 1 second
               });
             }, 1000); // Update every second
@@ -258,10 +258,10 @@ export default function EmbedWidget({
             setOfflineFormData(prev => ({ ...prev, query: prev.query || '' }));
             setMessages(prev => {
               // Check if offline form message already exists
-              const hasOfflineFormMessage = prev.some(msg => 
+              const hasOfflineFormMessage = prev.some(msg =>
                 msg.type === 'offline_form'
               );
-              
+
               if (!hasOfflineFormMessage) {
                 return [...prev, {
                   sender: 'system',
@@ -553,18 +553,18 @@ export default function EmbedWidget({
       // AI Failure Detection: If confidence === 0, show offline form as chat message (NOT agent button)
       if (m.confidence === 0) {
         console.log('❌ AI failed (confidence === 0), showing offline form as chat message');
-        
+
         // Ensure agent button is NOT shown when AI fails
         setShowAgentButton(false);
         agentButtonShownRef.current = false;
-        
+
         setOfflineFormData(prev => ({ ...prev, query: prev.query || m.text || '' }));
         setMessages(prev => {
           // Check if offline form message already exists
-          const hasOfflineFormMessage = prev.some(msg => 
+          const hasOfflineFormMessage = prev.some(msg =>
             msg.type === 'offline_form'
           );
-          
+
           if (!hasOfflineFormMessage) {
             return [...prev, {
               sender: 'system',
@@ -590,10 +590,10 @@ export default function EmbedWidget({
         console.log('📋 Received offline form trigger from backend');
         setMessages(prev => {
           // Check if offline form message already exists
-          const hasOfflineFormMessage = prev.some(msg => 
+          const hasOfflineFormMessage = prev.some(msg =>
             msg.type === 'offline_form'
           );
-          
+
           if (!hasOfflineFormMessage) {
             return [...prev, {
               sender: 'system',
@@ -613,10 +613,10 @@ export default function EmbedWidget({
         if (m.type === 'business_hours_message') {
           console.log('🌙 Received business hours message from backend');
           // Check if business hours message already exists
-          const hasBusinessHoursMessage = prev.some(msg => 
+          const hasBusinessHoursMessage = prev.some(msg =>
             msg.type === 'business_hours_message'
           );
-          
+
           if (!hasBusinessHoursMessage) {
             return [...prev, {
               sender: 'bot',
@@ -627,7 +627,7 @@ export default function EmbedWidget({
           }
           return prev; // Don't add duplicate
         }
-        
+
         // Check for duplicates more thoroughly - check both exact text match and recent messages
         const exists = prev.some(msg =>
           msg.sender === 'bot' &&
@@ -639,16 +639,16 @@ export default function EmbedWidget({
           console.log('   ⚠️  Duplicate bot message detected, skipping');
           return prev;
         }
-        
+
         // Check if backend explicitly requested to show agent button
         // Only show if agent request hasn't been sent in this session AND during business hours
         if (m.showAgentButton === true) {
-          const agentRequestSentInSession = sessionId ? 
+          const agentRequestSentInSession = sessionId ?
             localStorage.getItem(`ai-support-agent-request-sent-${sessionId}`) === 'true' : false;
-          
+
           // Check business hours
           const inBusinessHours = isBusinessHours();
-          
+
           if (!agentRequestSentInSession && inBusinessHours) {
             console.log('🤖 Backend requested to show agent button (business hours)');
             setShowAgentButton(true);
@@ -657,13 +657,13 @@ export default function EmbedWidget({
             console.log('🔒 Backend requested button but conditions not met (already sent or outside business hours)');
           }
         }
-        
+
         // If showAgentButton is true and we haven't shown the button yet, mark that we should show it
         if (showAgentButton && !agentButtonShownRef.current) {
           console.log('🤖 Bot message received after "agent" keyword detected - button should appear');
           agentButtonShownRef.current = true; // Mark that button should be shown for this bot message
         }
-        
+
         return [...prev, {
           sender: 'bot',
           text: m.text,
@@ -720,27 +720,27 @@ export default function EmbedWidget({
     });
     socket.on('agent_joined', (data: any) => {
       console.log('📨 Widget received agent_joined:', data);
-      
+
       // Clear the agent wait timer since agent has joined
       if (agentWaitTimerIntervalRef.current) {
         clearInterval(agentWaitTimerIntervalRef.current);
         agentWaitTimerIntervalRef.current = null;
       }
       setAgentWaitTimer(null);
-      
+
       // Reset agent request sent flag so button can appear again if needed
       // This allows the button to show again if user needs another agent later
       setAgentRequestSent(false);
-      
+
       // Clear timer and agent request flag from localStorage
       if (sessionId) {
         localStorage.removeItem(`ai-support-agent-timer-${sessionId}`);
         localStorage.removeItem(`ai-support-agent-request-sent-${sessionId}`);
         console.log('🗑️  Cleared agent timer and request flag from localStorage');
       }
-      
+
       console.log('✅ Agent joined - cleared wait timer and reset agent request flag');
-      
+
       // Ensure we're in the session room when agent joins
       if (sessionId) {
         socket.emit('join_session', { sessionId });
@@ -782,14 +782,14 @@ export default function EmbedWidget({
       if (closedSessionId === sessionId) {
         console.log('🔒 Conversation closed by agent - resetting chat widget');
         setConversationConcluded(true);
-        
+
         // Clear agent wait timer
         if (agentWaitTimerIntervalRef.current) {
           clearInterval(agentWaitTimerIntervalRef.current);
           agentWaitTimerIntervalRef.current = null;
         }
         setAgentWaitTimer(null);
-        
+
         // Clear ALL localStorage when agent closes conversation
         if (sessionId) {
           localStorage.removeItem('ai-support-session-id');
@@ -817,7 +817,7 @@ export default function EmbedWidget({
       socket.off('agent_joined');
       socket.off('session_error');
       socket.off('conversation_closed');
-      
+
       // Cleanup agent wait timer on unmount
       if (agentWaitTimerIntervalRef.current) {
         clearInterval(agentWaitTimerIntervalRef.current);
@@ -843,17 +843,19 @@ export default function EmbedWidget({
     // Hide offline form when starting chat (whether in business hours or not)
     setShowOfflineForm(false);
 
-    const sid = sessionId || `s_${Date.now()}`;
+    // IMPORTANT: Always generate a NEW session ID when starting a chat
+    // This ensures "Start New Chat" creates a fresh session, not reusing the old one
+    const sid = `s_${Date.now()}`;
     setSessionId(sid);
     // Store sessionId in localStorage
     localStorage.setItem('ai-support-session-id', sid);
-    
+
     // Clear agent request flag for new session (allows button to show again)
     localStorage.removeItem(`ai-support-agent-request-sent-${sid}`);
     setAgentRequestSent(false);
     setShowAgentButton(false);
     console.log(`🆕 Starting new session ${sid} - cleared agent request flag`);
-    
+
     // Clear old messages and storage for new session
     setMessages([]);
     localStorage.removeItem(`ai-support-messages-${sid}`); // Clear old messages
@@ -985,12 +987,12 @@ export default function EmbedWidget({
     // Only show button if it hasn't been clicked in this session AND during business hours
     if (userMessage.toLowerCase().includes('agent')) {
       // Check if agent request was already sent in this session
-      const agentRequestSentInSession = sessionId ? 
+      const agentRequestSentInSession = sessionId ?
         localStorage.getItem(`ai-support-agent-request-sent-${sessionId}`) === 'true' : false;
-      
+
       // Check business hours
       const inBusinessHours = isBusinessHours();
-      
+
       if (!agentRequestSentInSession && inBusinessHours) {
         console.log('🔍 Keyword "agent" detected in message (business hours):', userMessage);
         setShowAgentButton(true);
@@ -1001,10 +1003,10 @@ export default function EmbedWidget({
         console.log('🌙 Keyword "agent" detected outside business hours - showing offline form');
         setMessages(prev => {
           // Check if business hours message already exists
-          const hasBusinessHoursMessage = prev.some(msg => 
+          const hasBusinessHoursMessage = prev.some(msg =>
             msg.type === 'business_hours_message'
           );
-          
+
           if (!hasBusinessHoursMessage) {
             return [...prev, {
               sender: 'system',
@@ -1032,7 +1034,7 @@ export default function EmbedWidget({
     }
     chatTimeoutRef.current = window.setTimeout(() => {
       console.log('⏰ 3-minute timeout expired, showing offline form');
-      
+
       // Emit session_timeout event to backend (will create notification)
       const socket = socketRef.current;
       if (socket && sessionId && !conversationConcluded) {
@@ -1041,7 +1043,7 @@ export default function EmbedWidget({
           timestamp: new Date().toISOString()
         });
       }
-      
+
       setShowOfflineForm(true);
       setOfflineFormData(prev => ({ ...prev, query: prev.query || userMessage }));
       setMessages(prev => [...prev, {
@@ -1060,11 +1062,11 @@ export default function EmbedWidget({
       setAgentRequestSent(true);
       setShowAgentButton(false);
       agentButtonShownRef.current = false; // Reset ref
-      
+
       // Mark that agent request was sent in this session (persist across reloads)
       localStorage.setItem(`ai-support-agent-request-sent-${sessionId}`, 'true');
       console.log(`🔒 Marked agent request as sent for session ${sessionId} - button will not show again`);
-      
+
       // Remove the "Click the button below to talk to an agent." message immediately
       setMessages(prev => {
         return prev.filter(msg => {
@@ -1072,11 +1074,11 @@ export default function EmbedWidget({
           // Check for both exact match and variations
           if (msg.sender === 'bot' && msg.text) {
             const textLower = msg.text.toLowerCase();
-            const isAgentPromptMessage = 
+            const isAgentPromptMessage =
               textLower.includes('click the button below to talk to an agent') ||
               textLower.includes('click the button below') && textLower.includes('agent') ||
               msg.type === 'agent_request_prompt'; // Also check by type
-            
+
             if (isAgentPromptMessage) {
               console.log('🗑️  Removing agent prompt message:', msg.text);
               return false; // Filter out this message
@@ -1085,11 +1087,11 @@ export default function EmbedWidget({
           return true; // Keep all other messages
         });
       });
-      
+
       // Start 3-minute countdown timer (180 seconds)
       const TIMER_DURATION = 3 * 60; // 3 minutes in seconds
       const timerStartTime = Date.now();
-      
+
       // Save timer start time to localStorage for persistence across reloads
       if (sessionId) {
         localStorage.setItem(`ai-support-agent-timer-${sessionId}`, JSON.stringify({
@@ -1098,15 +1100,15 @@ export default function EmbedWidget({
         }));
         console.log(`💾 Saved agent timer to localStorage for session ${sessionId}`);
       }
-      
+
       setAgentWaitTimer(TIMER_DURATION);
       console.log(`📤 Emitted request_agent event for session ${sessionId}, starting ${TIMER_DURATION}s timer`);
-      
+
       // Clear any existing timer
       if (agentWaitTimerIntervalRef.current) {
         clearInterval(agentWaitTimerIntervalRef.current);
       }
-      
+
       // Start countdown interval
       agentWaitTimerIntervalRef.current = window.setInterval(() => {
         setAgentWaitTimer(prev => {
@@ -1116,20 +1118,20 @@ export default function EmbedWidget({
               clearInterval(agentWaitTimerIntervalRef.current);
               agentWaitTimerIntervalRef.current = null;
             }
-            
+
             // Clear timer from localStorage
             if (sessionId) {
               localStorage.removeItem(`ai-support-agent-timer-${sessionId}`);
             }
-            
+
             console.log('⏰ Agent wait timer expired - showing offline form as chat message');
             // Add offline form as a chat message instead of separate form
             setMessages(prev => {
               // Check if offline form message already exists
-              const hasOfflineFormMessage = prev.some(msg => 
+              const hasOfflineFormMessage = prev.some(msg =>
                 msg.type === 'offline_form'
               );
-              
+
               if (!hasOfflineFormMessage) {
                 return [...prev, {
                   sender: 'system',
@@ -1141,10 +1143,10 @@ export default function EmbedWidget({
               return prev;
             });
             setOfflineFormData(prev => ({ ...prev, query: prev.query || '' }));
-            
+
             return null;
           }
-          
+
           // Update localStorage with current remaining time
           if (sessionId && prev > 0) {
             const elapsed = TIMER_DURATION - prev;
@@ -1154,7 +1156,7 @@ export default function EmbedWidget({
               duration: TIMER_DURATION
             }));
           }
-          
+
           return prev - 1; // Decrease by 1 second
         });
       }, 1000); // Update every second
@@ -1730,7 +1732,7 @@ export default function EmbedWidget({
             {(() => {
               const isLastMessage = i === messages.length - 1;
               const shouldShowButton = m.sender === 'bot' && isLastMessage && showAgentButton && !agentRequestSent;
-              
+
               if (m.sender === 'bot' && showAgentButton) {
                 console.log('🔘 Button render check for bot message:', {
                   sender: m.sender,
@@ -1743,60 +1745,60 @@ export default function EmbedWidget({
                   shouldShow: shouldShowButton
                 });
               }
-              
+
               return shouldShowButton;
             })() && (
-              <div style={{ marginTop: '12px' }}>
-                <button
-                  onClick={handleRequestAgent}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    padding: '12px 20px',
-                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '8px',
-                    fontSize: '14px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    transition: 'all 0.3s ease',
-                    boxShadow: '0 4px 6px rgba(102, 126, 234, 0.3), 0 2px 4px rgba(0,0,0,0.1)',
-                    transform: 'translateY(0)',
-                    width: '100%',
-                    maxWidth: '280px'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'linear-gradient(135deg, #764ba2 0%, #667eea 100%)';
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.boxShadow = '0 6px 12px rgba(102, 126, 234, 0.4), 0 4px 6px rgba(0,0,0,0.15)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = '0 4px 6px rgba(102, 126, 234, 0.3), 0 2px 4px rgba(0,0,0,0.1)';
-                  }}
-                  onMouseDown={(e) => {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = '0 2px 4px rgba(102, 126, 234, 0.3), 0 1px 2px rgba(0,0,0,0.1)';
-                  }}
-                  onMouseUp={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.boxShadow = '0 6px 12px rgba(102, 126, 234, 0.4), 0 4px 6px rgba(0,0,0,0.15)';
-                  }}
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                    <circle cx="9" cy="7" r="4"></circle>
-                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                  </svg>
-                  <span>Connect to Agent</span>
-                </button>
-              </div>
-            )}
+                <div style={{ marginTop: '12px' }}>
+                  <button
+                    onClick={handleRequestAgent}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      padding: '12px 20px',
+                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      transition: 'all 0.3s ease',
+                      boxShadow: '0 4px 6px rgba(102, 126, 234, 0.3), 0 2px 4px rgba(0,0,0,0.1)',
+                      transform: 'translateY(0)',
+                      width: '100%',
+                      maxWidth: '280px'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = 'linear-gradient(135deg, #764ba2 0%, #667eea 100%)';
+                      e.currentTarget.style.transform = 'translateY(-2px)';
+                      e.currentTarget.style.boxShadow = '0 6px 12px rgba(102, 126, 234, 0.4), 0 4px 6px rgba(0,0,0,0.15)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = '0 4px 6px rgba(102, 126, 234, 0.3), 0 2px 4px rgba(0,0,0,0.1)';
+                    }}
+                    onMouseDown={(e) => {
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = '0 2px 4px rgba(102, 126, 234, 0.3), 0 1px 2px rgba(0,0,0,0.1)';
+                    }}
+                    onMouseUp={(e) => {
+                      e.currentTarget.style.transform = 'translateY(-2px)';
+                      e.currentTarget.style.boxShadow = '0 6px 12px rgba(102, 126, 234, 0.4), 0 4px 6px rgba(0,0,0,0.15)';
+                    }}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                      <circle cx="9" cy="7" r="4"></circle>
+                      <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                      <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                    </svg>
+                    <span>Connect to Agent</span>
+                  </button>
+                </div>
+              )}
             {m.type === 'conclusion_question' && m.options && !conversationConcluded && (
               <div style={{
                 marginTop: '8px',
