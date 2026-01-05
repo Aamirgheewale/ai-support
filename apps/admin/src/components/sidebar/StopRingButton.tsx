@@ -13,7 +13,7 @@ export default function StopRingButton() {
   if (!isRinging) return null
 
   return (
-    <div className="fixed bottom-4 left-4 z-[9999]">
+    <div className="fixed bottom-20 left-4 z-[9999]">
       <button
         onClick={stopAllSounds}
         className="flex items-center gap-2 px-4 py-3 bg-red-500 hover:bg-red-600 text-white font-medium rounded-xl shadow-lg transition-all animate-pulse"

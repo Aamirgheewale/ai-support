@@ -71,7 +71,19 @@ export default function AudioNotifications() {
       console.log('🔔 [CHANNEL A] session_started:', data)
       const { sessionId } = data || {}
       if (sessionId) {
-        playRingRef.current()
+        // Attempt to play ring sound with error handling
+        try {
+          console.log('🔊 Attempting to play ring sound...')
+          const playPromise = playRingRef.current()
+          if (playPromise && typeof playPromise.then === 'function') {
+            playPromise.catch((err: any) => {
+              console.error('❌ Failed to play ring sound:', err)
+              console.warn('💡 Audio may be blocked by browser autoplay policy. User interaction required.')
+            })
+          }
+        } catch (err) {
+          console.error('❌ Error calling playRing:', err)
+        }
         
         const toastId = `session-${sessionId}-${Date.now()}`
         setToasts(prev => [...prev, {

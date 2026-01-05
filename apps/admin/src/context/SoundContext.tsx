@@ -62,11 +62,34 @@ export function SoundProvider({ children }: { children: ReactNode }) {
     if (typeof window === 'undefined') return
 
     try {
+      console.log('🔊 Initializing audio files...')
+      
       ringSoundRef.current = new Audio('/sounds/Ring.mp3')
       ringSoundRef.current.preload = 'auto'
       
+      // Add error handlers for audio loading
+      ringSoundRef.current.addEventListener('error', (e) => {
+        console.error('❌ Failed to load Ring.mp3:', e)
+        console.error('   Audio error details:', {
+          code: ringSoundRef.current?.error?.code,
+          message: ringSoundRef.current?.error?.message
+        })
+      })
+      
+      ringSoundRef.current.addEventListener('canplaythrough', () => {
+        console.log('✅ Ring.mp3 loaded and ready to play')
+      })
+      
       popSoundRef.current = new Audio('/sounds/pop.mp3')
       popSoundRef.current.preload = 'auto'
+      
+      popSoundRef.current.addEventListener('error', (e) => {
+        console.error('❌ Failed to load pop.mp3:', e)
+      })
+      
+      popSoundRef.current.addEventListener('canplaythrough', () => {
+        console.log('✅ pop.mp3 loaded and ready to play')
+      })
       
       // Track when ring ends
       ringSoundRef.current.addEventListener('ended', handleRingEnded)
@@ -80,8 +103,10 @@ export function SoundProvider({ children }: { children: ReactNode }) {
       // Track when pop ends
       popSoundRef.current.addEventListener('ended', () => setIsPopPlaying(false))
       popSoundRef.current.addEventListener('pause', () => setIsPopPlaying(false))
+      
+      console.log('✅ Audio initialization complete')
     } catch (err) {
-      console.warn('Failed to initialize audio:', err)
+      console.error('❌ Failed to initialize audio:', err)
     }
 
     // Cleanup
@@ -129,7 +154,42 @@ export function SoundProvider({ children }: { children: ReactNode }) {
 
   // Play ring sound
   const playRing = useCallback(async (volumeOverride?: number) => {
-    if (!settings.masterEnabled || !ringSoundRef.current) return
+    console.log('🔊 playRing called:', {
+      masterEnabled: settings.masterEnabled,
+      hasAudioRef: !!ringSoundRef.current,
+      volume: volumeOverride ?? settings.newSessionRingVolume ?? 70,
+      readyState: ringSoundRef.current?.readyState,
+      networkState: ringSoundRef.current?.networkState,
+      error: ringSoundRef.current?.error
+    })
+    
+    if (!settings.masterEnabled) {
+      console.warn('⚠️ playRing: Audio disabled (masterEnabled = false)')
+      return
+    }
+    
+    if (!ringSoundRef.current) {
+      console.error('❌ playRing: Audio element not initialized (ringSoundRef.current is null)')
+      return
+    }
+    
+    // Check if audio has an error
+    if (ringSoundRef.current.error) {
+      console.error('❌ playRing: Audio has error:', {
+        code: ringSoundRef.current.error.code,
+        message: ringSoundRef.current.error.message
+      })
+      return
+    }
+    
+    // Check if audio is ready to play
+    if (ringSoundRef.current.readyState < 2) {
+      console.warn('⚠️ playRing: Audio not ready (readyState:', ringSoundRef.current.readyState, ')')
+      // Try to load the audio
+      ringSoundRef.current.load()
+      // Wait a bit for it to load
+      await new Promise(resolve => setTimeout(resolve, 100))
+    }
     
     // Get volume: use override (for test buttons), or user pref, or default
     const volume = volumeOverride ?? settings.newSessionRingVolume ?? 70
@@ -137,6 +197,7 @@ export function SoundProvider({ children }: { children: ReactNode }) {
     
     // CRUCIAL: Set volume BEFORE playing
     ringSoundRef.current.volume = decimalVolume
+    console.log(`🔊 Ring volume set to ${volume}% (${decimalVolume})`)
     
     // Reset repeat counter
     ringRepeatCountRef.current = 0
@@ -149,9 +210,13 @@ export function SoundProvider({ children }: { children: ReactNode }) {
     try {
       ringSoundRef.current.currentTime = 0
       setIsRinging(true)
+      console.log('🔊 Attempting to play ring sound... (readyState:', ringSoundRef.current.readyState, ')')
       await ringSoundRef.current.play()
-    } catch (err) {
-      console.log('Audio play blocked - user interaction required')
+      console.log('✅ Ring sound playing successfully')
+    } catch (err: any) {
+      console.error('❌ Failed to play ring sound:', err)
+      console.warn('💡 Audio may be blocked by browser autoplay policy. User interaction required.')
+      console.warn('💡 Try clicking anywhere on the page first, then test again.')
       setIsRinging(false)
     }
   }, [settings.masterEnabled, settings.newSessionRingVolume])

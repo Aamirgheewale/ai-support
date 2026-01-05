@@ -160,6 +160,125 @@ function isEndingPhrase(userMessage) {
   return false;
 }
 
+/**
+ * Detect if user message indicates they want to talk to a human agent
+ * @param {string} userMessage - The user's message text
+ * @returns {boolean} - True if message indicates wanting human agent
+ */
+function detectHumanAgentIntent(userMessage) {
+  if (!userMessage || typeof userMessage !== 'string') {
+    return false;
+  }
+
+  // Normalize the message: lowercase, trim, remove punctuation, remove extra spaces
+  const normalized = userMessage.toLowerCase().trim().replace(/[.,!?;:]/g, '').replace(/\s+/g, ' ');
+  const noSpaceText = normalized.replace(/\s+/g, '');
+  
+  console.log(`🔍 STRICT: Checking human agent intent for: "${userMessage}" (normalized: "${normalized}")`);
+
+  // STRICT Keywords and phrases that indicate wanting to talk to a human agent
+  const humanAgentPhrases = [
+    // Direct requests - STRICT MATCHES
+    'talk to agent', 'speak to agent', 'connect to agent', 'want agent', 'need agent',
+    'talk to human', 'speak to human', 'connect to human', 'want human', 'need human',
+    'talk to person', 'speak to person', 'connect to person', 'want person', 'need person',
+    'talk to representative', 'speak to representative', 'connect to representative',
+    'talk to support', 'speak to support', 'connect to support',
+    'talk to someone', 'speak to someone', 'connect to someone',
+    'talk to a agent', 'speak to a agent', 'connect to a agent',
+    'talk to a human', 'speak to a human', 'connect to a human',
+    'talk to a person', 'speak to a person', 'connect to a person',
+    
+    // Variations with "I want/need" - STRICT
+    'i want to talk to agent', 'i want to speak to agent', 'i want agent',
+    'i need to talk to agent', 'i need to speak to agent', 'i need agent',
+    'i want to talk to human', 'i want to speak to human', 'i want human',
+    'i need to talk to human', 'i need to speak to human', 'i need human',
+    'i want to talk to person', 'i want to speak to person',
+    'i need to talk to person', 'i need to speak to person',
+    'i want to talk to a agent', 'i want to talk to a human', 'i want to talk to a person',
+    'i need to talk to a agent', 'i need to talk to a human', 'i need to talk to a person',
+    
+    // Variations with "can I" - STRICT
+    'can i talk to agent', 'can i speak to agent', 'can i talk to human',
+    'can i speak to human', 'can i talk to person', 'can i speak to person',
+    'can i talk to someone', 'can i speak to someone',
+    'can i talk to a agent', 'can i talk to a human', 'can i talk to a person',
+    
+    // Variations with "let me" - STRICT
+    'let me talk to agent', 'let me speak to agent', 'let me talk to human',
+    'let me speak to human', 'let me talk to person', 'let me speak to person',
+    'let me talk to a agent', 'let me talk to a human', 'let me talk to a person',
+    
+    // Frustration indicators - STRICT
+    'not helping', 'not useful', 'not working', 'cant help', "can't help",
+    'useless', 'not answering', 'not responding', 'not understanding',
+    'you are not helping', 'youre not helping', "you're not helping",
+    'this is not helping', 'this is useless', 'you cant help',
+    
+    // Explicit requests - STRICT
+    'transfer to agent', 'transfer to human', 'transfer to person',
+    'connect me to agent', 'connect me to human', 'connect me to person',
+    'get me an agent', 'get me a human', 'get me a person',
+    'i want real person', 'i need real person', 'real person please',
+    'human support', 'human help', 'person support', 'person help',
+    'i want to connect to agent', 'i need to connect to agent',
+    'i want to connect to human', 'i need to connect to human',
+    
+    // Additional strict patterns
+    'show me agent', 'give me agent', 'bring agent', 'call agent',
+    'show me human', 'give me human', 'bring human', 'call human',
+    'i want live agent', 'i need live agent', 'live agent please',
+    'i want live person', 'i need live person', 'live person please',
+    'i want real agent', 'i need real agent', 'real agent please'
+  ];
+
+  // Check for exact matches
+  if (humanAgentPhrases.includes(normalized)) {
+    return true;
+  }
+
+  // Check if message contains any of the key phrases
+  for (const phrase of humanAgentPhrases) {
+    const phraseNoSpace = phrase.replace(/\s+/g, '');
+    
+    // Check if message contains the phrase
+    if (normalized.includes(phrase) || noSpaceText.includes(phraseNoSpace)) {
+      return true;
+    }
+  }
+
+  // STRICT Check for combination patterns: "agent" + action words
+  const agentKeywords = ['agent', 'human', 'person', 'representative', 'support', 'someone', 'live agent', 'real person', 'real agent'];
+  const actionWords = ['talk', 'speak', 'connect', 'transfer', 'want', 'need', 'get', 'show', 'give', 'bring', 'call'];
+  
+  const hasAgentKeyword = agentKeywords.some(keyword => normalized.includes(keyword));
+  const hasActionWord = actionWords.some(action => normalized.includes(action));
+  
+  // STRICT: If message contains both agent keyword and action word, likely wants human
+  if (hasAgentKeyword && hasActionWord) {
+    // Additional STRICT check: make sure it's not just mentioning "agent" in a different context
+    // e.g., "what is an agent" should not trigger this
+    const contextWords = ['what', 'who', 'is', 'are', 'explain', 'tell me about', 'define', 'how does', 'how do', 'what does', 'what do'];
+    const hasContextWord = contextWords.some(context => normalized.includes(context));
+    
+    // If it has context words, it's probably asking about agents, not wanting one
+    if (!hasContextWord) {
+      console.log(`🔍 STRICT: Detected agent keyword + action word combination: "${userMessage}"`);
+      return true;
+    } else {
+      console.log(`⚠️  STRICT: Context word detected, skipping: "${userMessage}"`);
+    }
+  }
+
+  // Additional STRICT check: Single word "agent" with strong intent indicators
+  if (normalized === 'agent' || normalized === 'human' || normalized === 'person') {
+    return true;
+  }
+
+  return false;
+}
+
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
@@ -349,6 +468,29 @@ function initializeSocket(dependencies) {
       if (!sessionId) {
         console.warn(`⚠️  request_agent: missing sessionId from ${socket.id}`);
         return;
+      }
+
+      // Send instant bot message to user confirming the request
+      const confirmationMessage = "An agent has been requested. A support representative will join the chat as soon as they become available.";
+      
+      try {
+        // Save bot message to database
+        await chatService.saveMessageToAppwrite(sessionId, 'bot', confirmationMessage, { 
+          confidence: 1,
+          type: 'agent_request_confirmation'
+        });
+
+        // Emit bot message to user's session
+        io.to(sessionId).emit('bot_message', { 
+          text: confirmationMessage, 
+          confidence: 1,
+          type: 'agent_request_confirmation'
+        });
+
+        console.log(`✅ Sent agent request confirmation message to session ${sessionId}`);
+      } catch (msgErr) {
+        console.error(`❌ Failed to send confirmation message:`, msgErr?.message || msgErr);
+        // Continue with notification creation even if message fails
       }
 
       // Create notification in Appwrite
@@ -806,6 +948,70 @@ function initializeSocket(dependencies) {
         }
 
         console.log(`✅ User message saved successfully [${sessionId}]`);
+
+        // STRICT CHECK: Detect if user wants to talk to a human agent - MUST BE FIRST, BEFORE ANY AI PROCESSING
+        const wantsHumanAgent = detectHumanAgentIntent(trimmedText);
+        if (wantsHumanAgent) {
+          // Check business hours (Mon-Fri, 09:00 - 17:00)
+          const now = new Date();
+          const day = now.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+          const hour = now.getHours();
+          const inBusinessHours = (day >= 1 && day <= 5) && (hour >= 9 && hour < 17);
+          
+          console.log(`🚨 STRICT: User wants human agent - BLOCKING ALL AI RESPONSES [${sessionId}]`);
+          console.log(`   📅 Business hours check: ${inBusinessHours ? 'IN' : 'OUTSIDE'} business hours (Day: ${day}, Hour: ${hour})`);
+          
+          // Broadcast user message to admin_feed for audio notifications
+          io.to('admin_feed').emit('user_message_for_agent', {
+            sessionId: sessionId,
+            text: trimmedText,
+            ts: Date.now()
+          });
+          
+          if (inBusinessHours) {
+            // During business hours - show button
+            const agentRequestMessage = 'Click the button below to talk to an agent.';
+            await chatService.saveMessageToAppwrite(sessionId, 'bot', agentRequestMessage, { 
+              confidence: 1,
+              type: 'agent_request_prompt'
+            });
+            
+            // Emit bot message with special type to trigger button display
+            io.to(sessionId).emit('bot_message', { 
+              text: agentRequestMessage, 
+              confidence: 1,
+              type: 'agent_request_prompt',
+              showAgentButton: true // Signal to frontend to show button
+            });
+            
+            console.log(`✅ Sent agent request prompt (AI BLOCKED) - business hours [${sessionId}]`);
+          } else {
+            // Outside business hours - show message and offline form
+            const businessHoursMessage = 'An agent will contact you during business hours.';
+            await chatService.saveMessageToAppwrite(sessionId, 'bot', businessHoursMessage, { 
+              confidence: 1,
+              type: 'business_hours_message'
+            });
+            
+            // Emit bot message with offline form trigger
+            io.to(sessionId).emit('bot_message', { 
+              text: businessHoursMessage, 
+              confidence: 1,
+              type: 'business_hours_message'
+            });
+            
+            // Also emit offline form message
+            io.to(sessionId).emit('bot_message', { 
+              text: '', 
+              confidence: 1,
+              type: 'offline_form'
+            });
+            
+            console.log(`✅ Sent business hours message + offline form (AI BLOCKED) - outside business hours [${sessionId}]`);
+          }
+          
+          return; // CRITICAL: Return early - NO AI PROCESSING AT ALL
+        }
 
         // Broadcast user message to admin_feed for audio notifications (all admins) - for ALL user messages
         io.to('admin_feed').emit('user_message_for_agent', {

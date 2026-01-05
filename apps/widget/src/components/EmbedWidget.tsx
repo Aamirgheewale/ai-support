@@ -60,11 +60,14 @@ export default function EmbedWidget({
   const [formError, setFormError] = useState<string | null>(null);
   const [showAgentButton, setShowAgentButton] = useState(false); // Show "Connect to Agent" button
   const [agentRequestSent, setAgentRequestSent] = useState(false); // Track if agent request was sent
+  const [agentWaitTimer, setAgentWaitTimer] = useState<number | null>(null); // Countdown timer in seconds (180 = 3 minutes)
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<number | null>(null);
   const messagesLoadedRef = useRef(false); // Track if messages have been loaded
   const socketRef = useRef<Socket | null>(null); // Store socket instance
   const chatTimeoutRef = useRef<number | null>(null); // 3-minute timer
+  const agentButtonShownRef = useRef(false); // Track if button has been shown for current showAgentButton state
+  const agentWaitTimerIntervalRef = useRef<number | null>(null); // Interval for countdown timer
 
   // Business hours check (Mon-Fri, 09:00 - 17:00)
   // TEST MODE: Add ?testBusinessHours=false to URL to force offline form
@@ -176,6 +179,118 @@ export default function EmbedWidget({
       loadMessagesFromStorage(sessionId);
     }
   }, [sessionId]);
+
+  // Restore agent wait timer from localStorage on mount/reload
+  useEffect(() => {
+    if (sessionId) {
+      try {
+        // Check if agent request was already sent in this session
+        const agentRequestSentInSession = localStorage.getItem(`ai-support-agent-request-sent-${sessionId}`);
+        if (agentRequestSentInSession === 'true') {
+          console.log(`🔒 Agent request already sent in this session ${sessionId} - button will not show again`);
+          setAgentRequestSent(true);
+        }
+        
+        const savedTimerData = localStorage.getItem(`ai-support-agent-timer-${sessionId}`);
+        if (savedTimerData) {
+          const timerData = JSON.parse(savedTimerData);
+          const { startTime, duration } = timerData;
+          const elapsed = Math.floor((Date.now() - startTime) / 1000); // Elapsed time in seconds
+          const remaining = Math.max(0, duration - elapsed); // Remaining time (can't be negative)
+          
+          console.log(`🔄 Restoring agent timer: ${remaining}s remaining (elapsed: ${elapsed}s)`);
+          
+          if (remaining > 0) {
+            // Timer is still active, restore it
+            setAgentRequestSent(true);
+            setAgentWaitTimer(remaining);
+            
+            // Clear any existing timer interval
+            if (agentWaitTimerIntervalRef.current) {
+              clearInterval(agentWaitTimerIntervalRef.current);
+            }
+            
+            // Start countdown interval from restored time
+            agentWaitTimerIntervalRef.current = window.setInterval(() => {
+              setAgentWaitTimer(prev => {
+                if (prev === null || prev <= 0) {
+                  // Timer reached 0, show offline form
+                  if (agentWaitTimerIntervalRef.current) {
+                    clearInterval(agentWaitTimerIntervalRef.current);
+                    agentWaitTimerIntervalRef.current = null;
+                  }
+                  
+                  // Clear timer from localStorage
+                  if (sessionId) {
+                    localStorage.removeItem(`ai-support-agent-timer-${sessionId}`);
+                  }
+                  
+                  console.log('⏰ Agent wait timer expired - showing offline form as chat message');
+                  // Add offline form as a chat message instead of separate form
+                  setMessages(prev => {
+                    // Check if offline form message already exists
+                    const hasOfflineFormMessage = prev.some(msg => 
+                      msg.type === 'offline_form'
+                    );
+                    
+                    if (!hasOfflineFormMessage) {
+                      return [...prev, {
+                        sender: 'system',
+                        text: 'Sorry, agent is busy. Please fill this form and we will get back to you.',
+                        type: 'offline_form',
+                        ts: Date.now()
+                      }];
+                    }
+                    return prev;
+                  });
+                  setOfflineFormData(prev => ({ ...prev, query: prev.query || '' }));
+                  
+                  return null;
+                }
+                
+                return prev - 1; // Decrease by 1 second
+              });
+            }, 1000); // Update every second
+          } else {
+            // Timer already expired, show offline form as chat message
+            console.log('⏰ Restored timer already expired - showing offline form as chat message');
+            localStorage.removeItem(`ai-support-agent-timer-${sessionId}`);
+            setOfflineFormData(prev => ({ ...prev, query: prev.query || '' }));
+            setMessages(prev => {
+              // Check if offline form message already exists
+              const hasOfflineFormMessage = prev.some(msg => 
+                msg.type === 'offline_form'
+              );
+              
+              if (!hasOfflineFormMessage) {
+                return [...prev, {
+                  sender: 'system',
+                  text: 'Sorry, agent is busy. Please fill this form and we will get back to you.',
+                  type: 'offline_form',
+                  ts: Date.now()
+                }];
+              }
+              return prev;
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to restore agent timer from localStorage:', err);
+        // Clear corrupted data
+        localStorage.removeItem(`ai-support-agent-timer-${sessionId}`);
+      }
+    }
+  }, [sessionId]);
+
+  // Cleanup agent wait timer on unmount
+  useEffect(() => {
+    return () => {
+      if (agentWaitTimerIntervalRef.current) {
+        clearInterval(agentWaitTimerIntervalRef.current);
+        agentWaitTimerIntervalRef.current = null;
+      }
+    };
+  }, []);
 
   // Initialize socket connection immediately on mount (even if widget is closed)
   useEffect(() => {
@@ -387,6 +502,13 @@ export default function EmbedWidget({
     }
 
     socket.on('session_started', ({ sessionId: newSessionId }: any) => {
+      // Clear agent request flag for new session (allows button to show again)
+      if (newSessionId) {
+        localStorage.removeItem(`ai-support-agent-request-sent-${newSessionId}`);
+        setAgentRequestSent(false);
+        setShowAgentButton(false);
+        console.log(`🆕 New session ${newSessionId} - cleared agent request flag`);
+      }
       setSessionId(newSessionId);
       // Store sessionId in localStorage for persistence
       if (newSessionId) {
@@ -428,23 +550,84 @@ export default function EmbedWidget({
         chatTimeoutRef.current = null;
       }
 
-      // AI Failure Detection: If confidence === 0, show offline form
+      // AI Failure Detection: If confidence === 0, show offline form as chat message (NOT agent button)
       if (m.confidence === 0) {
-        console.log('❌ AI failed (confidence === 0), showing offline form');
-        setShowOfflineForm(true);
+        console.log('❌ AI failed (confidence === 0), showing offline form as chat message');
+        
+        // Ensure agent button is NOT shown when AI fails
+        setShowAgentButton(false);
+        agentButtonShownRef.current = false;
+        
         setOfflineFormData(prev => ({ ...prev, query: prev.query || m.text || '' }));
-        setMessages(prev => [...prev, {
-          sender: 'system',
-          text: 'Our AI is having trouble. Please fill this form so a Agent can help.',
-          ts: Date.now()
-        }]);
+        setMessages(prev => {
+          // Check if offline form message already exists
+          const hasOfflineFormMessage = prev.some(msg => 
+            msg.type === 'offline_form'
+          );
+          
+          if (!hasOfflineFormMessage) {
+            return [...prev, {
+              sender: 'system',
+              text: 'Our AI is having trouble. Please fill this form so an agent can help.',
+              ts: Date.now()
+            }, {
+              sender: 'system',
+              text: '',
+              type: 'offline_form',
+              ts: Date.now()
+            }];
+          }
+          return prev;
+        });
         return;
       }
 
       // Switch to chat mode when receiving real bot messages from socket
       setIsChatMode(true);
 
+      // Handle offline form message separately (before adding to messages)
+      if (m.type === 'offline_form') {
+        console.log('📋 Received offline form trigger from backend');
+        setMessages(prev => {
+          // Check if offline form message already exists
+          const hasOfflineFormMessage = prev.some(msg => 
+            msg.type === 'offline_form'
+          );
+          
+          if (!hasOfflineFormMessage) {
+            return [...prev, {
+              sender: 'system',
+              text: '',
+              type: 'offline_form',
+              ts: Date.now()
+            }];
+          }
+          return prev; // Don't add duplicate
+        });
+        setOfflineFormData(prev => ({ ...prev, query: prev.query || '' }));
+        return; // Don't process as regular bot message
+      }
+
       setMessages(prev => {
+        // Handle business hours message from backend - add it separately
+        if (m.type === 'business_hours_message') {
+          console.log('🌙 Received business hours message from backend');
+          // Check if business hours message already exists
+          const hasBusinessHoursMessage = prev.some(msg => 
+            msg.type === 'business_hours_message'
+          );
+          
+          if (!hasBusinessHoursMessage) {
+            return [...prev, {
+              sender: 'bot',
+              text: m.text || 'An agent will contact you during business hours.',
+              type: 'business_hours_message',
+              ts: Date.now()
+            }];
+          }
+          return prev; // Don't add duplicate
+        }
+        
         // Check for duplicates more thoroughly - check both exact text match and recent messages
         const exists = prev.some(msg =>
           msg.sender === 'bot' &&
@@ -456,6 +639,31 @@ export default function EmbedWidget({
           console.log('   ⚠️  Duplicate bot message detected, skipping');
           return prev;
         }
+        
+        // Check if backend explicitly requested to show agent button
+        // Only show if agent request hasn't been sent in this session AND during business hours
+        if (m.showAgentButton === true) {
+          const agentRequestSentInSession = sessionId ? 
+            localStorage.getItem(`ai-support-agent-request-sent-${sessionId}`) === 'true' : false;
+          
+          // Check business hours
+          const inBusinessHours = isBusinessHours();
+          
+          if (!agentRequestSentInSession && inBusinessHours) {
+            console.log('🤖 Backend requested to show agent button (business hours)');
+            setShowAgentButton(true);
+            agentButtonShownRef.current = false; // Reset so button can appear
+          } else {
+            console.log('🔒 Backend requested button but conditions not met (already sent or outside business hours)');
+          }
+        }
+        
+        // If showAgentButton is true and we haven't shown the button yet, mark that we should show it
+        if (showAgentButton && !agentButtonShownRef.current) {
+          console.log('🤖 Bot message received after "agent" keyword detected - button should appear');
+          agentButtonShownRef.current = true; // Mark that button should be shown for this bot message
+        }
+        
         return [...prev, {
           sender: 'bot',
           text: m.text,
@@ -512,6 +720,27 @@ export default function EmbedWidget({
     });
     socket.on('agent_joined', (data: any) => {
       console.log('📨 Widget received agent_joined:', data);
+      
+      // Clear the agent wait timer since agent has joined
+      if (agentWaitTimerIntervalRef.current) {
+        clearInterval(agentWaitTimerIntervalRef.current);
+        agentWaitTimerIntervalRef.current = null;
+      }
+      setAgentWaitTimer(null);
+      
+      // Reset agent request sent flag so button can appear again if needed
+      // This allows the button to show again if user needs another agent later
+      setAgentRequestSent(false);
+      
+      // Clear timer and agent request flag from localStorage
+      if (sessionId) {
+        localStorage.removeItem(`ai-support-agent-timer-${sessionId}`);
+        localStorage.removeItem(`ai-support-agent-request-sent-${sessionId}`);
+        console.log('🗑️  Cleared agent timer and request flag from localStorage');
+      }
+      
+      console.log('✅ Agent joined - cleared wait timer and reset agent request flag');
+      
       // Ensure we're in the session room when agent joins
       if (sessionId) {
         socket.emit('join_session', { sessionId });
@@ -553,11 +782,21 @@ export default function EmbedWidget({
       if (closedSessionId === sessionId) {
         console.log('🔒 Conversation closed by agent - resetting chat widget');
         setConversationConcluded(true);
+        
+        // Clear agent wait timer
+        if (agentWaitTimerIntervalRef.current) {
+          clearInterval(agentWaitTimerIntervalRef.current);
+          agentWaitTimerIntervalRef.current = null;
+        }
+        setAgentWaitTimer(null);
+        
         // Clear ALL localStorage when agent closes conversation
         if (sessionId) {
           localStorage.removeItem('ai-support-session-id');
           localStorage.removeItem(`ai-support-messages-${sessionId}`);
           localStorage.removeItem(`ai-support-concluded-${sessionId}`);
+          localStorage.removeItem(`ai-support-agent-timer-${sessionId}`);
+          localStorage.removeItem(`ai-support-agent-request-sent-${sessionId}`);
           console.log('🧹 Cleared localStorage - conversation closed by agent');
         }
         // Clear messages and reset state, then show notification
@@ -578,6 +817,12 @@ export default function EmbedWidget({
       socket.off('agent_joined');
       socket.off('session_error');
       socket.off('conversation_closed');
+      
+      // Cleanup agent wait timer on unmount
+      if (agentWaitTimerIntervalRef.current) {
+        clearInterval(agentWaitTimerIntervalRef.current);
+        agentWaitTimerIntervalRef.current = null;
+      }
     };
   }, [sessionId]);
 
@@ -602,6 +847,13 @@ export default function EmbedWidget({
     setSessionId(sid);
     // Store sessionId in localStorage
     localStorage.setItem('ai-support-session-id', sid);
+    
+    // Clear agent request flag for new session (allows button to show again)
+    localStorage.removeItem(`ai-support-agent-request-sent-${sid}`);
+    setAgentRequestSent(false);
+    setShowAgentButton(false);
+    console.log(`🆕 Starting new session ${sid} - cleared agent request flag`);
+    
     // Clear old messages and storage for new session
     setMessages([]);
     localStorage.removeItem(`ai-support-messages-${sid}`); // Clear old messages
@@ -730,8 +982,48 @@ export default function EmbedWidget({
     startTypingIndicator();
 
     // Keyword detection: Check if user mentions "agent"
+    // Only show button if it hasn't been clicked in this session AND during business hours
     if (userMessage.toLowerCase().includes('agent')) {
-      setShowAgentButton(true);
+      // Check if agent request was already sent in this session
+      const agentRequestSentInSession = sessionId ? 
+        localStorage.getItem(`ai-support-agent-request-sent-${sessionId}`) === 'true' : false;
+      
+      // Check business hours
+      const inBusinessHours = isBusinessHours();
+      
+      if (!agentRequestSentInSession && inBusinessHours) {
+        console.log('🔍 Keyword "agent" detected in message (business hours):', userMessage);
+        setShowAgentButton(true);
+        agentButtonShownRef.current = false; // Reset flag so button can show on next bot message
+        console.log('✅ showAgentButton set to true, agentButtonShownRef reset');
+      } else if (!agentRequestSentInSession && !inBusinessHours) {
+        // Outside business hours - show message and offline form instead of button
+        console.log('🌙 Keyword "agent" detected outside business hours - showing offline form');
+        setMessages(prev => {
+          // Check if business hours message already exists
+          const hasBusinessHoursMessage = prev.some(msg => 
+            msg.type === 'business_hours_message'
+          );
+          
+          if (!hasBusinessHoursMessage) {
+            return [...prev, {
+              sender: 'system',
+              text: 'An agent will contact you during business hours.',
+              type: 'business_hours_message',
+              ts: Date.now()
+            }, {
+              sender: 'system',
+              text: '',
+              type: 'offline_form',
+              ts: Date.now()
+            }];
+          }
+          return prev;
+        });
+        setOfflineFormData(prev => ({ ...prev, query: prev.query || userMessage }));
+      } else {
+        console.log('🔒 Agent request already sent in this session - button will not show');
+      }
     }
 
     // Start 3-minute timer when user sends a message
@@ -767,7 +1059,105 @@ export default function EmbedWidget({
       socket.emit('request_agent', { sessionId });
       setAgentRequestSent(true);
       setShowAgentButton(false);
-      console.log(`📤 Emitted request_agent event for session ${sessionId}`);
+      agentButtonShownRef.current = false; // Reset ref
+      
+      // Mark that agent request was sent in this session (persist across reloads)
+      localStorage.setItem(`ai-support-agent-request-sent-${sessionId}`, 'true');
+      console.log(`🔒 Marked agent request as sent for session ${sessionId} - button will not show again`);
+      
+      // Remove the "Click the button below to talk to an agent." message immediately
+      setMessages(prev => {
+        return prev.filter(msg => {
+          // Remove bot messages that contain the agent request prompt text
+          // Check for both exact match and variations
+          if (msg.sender === 'bot' && msg.text) {
+            const textLower = msg.text.toLowerCase();
+            const isAgentPromptMessage = 
+              textLower.includes('click the button below to talk to an agent') ||
+              textLower.includes('click the button below') && textLower.includes('agent') ||
+              msg.type === 'agent_request_prompt'; // Also check by type
+            
+            if (isAgentPromptMessage) {
+              console.log('🗑️  Removing agent prompt message:', msg.text);
+              return false; // Filter out this message
+            }
+          }
+          return true; // Keep all other messages
+        });
+      });
+      
+      // Start 3-minute countdown timer (180 seconds)
+      const TIMER_DURATION = 3 * 60; // 3 minutes in seconds
+      const timerStartTime = Date.now();
+      
+      // Save timer start time to localStorage for persistence across reloads
+      if (sessionId) {
+        localStorage.setItem(`ai-support-agent-timer-${sessionId}`, JSON.stringify({
+          startTime: timerStartTime,
+          duration: TIMER_DURATION
+        }));
+        console.log(`💾 Saved agent timer to localStorage for session ${sessionId}`);
+      }
+      
+      setAgentWaitTimer(TIMER_DURATION);
+      console.log(`📤 Emitted request_agent event for session ${sessionId}, starting ${TIMER_DURATION}s timer`);
+      
+      // Clear any existing timer
+      if (agentWaitTimerIntervalRef.current) {
+        clearInterval(agentWaitTimerIntervalRef.current);
+      }
+      
+      // Start countdown interval
+      agentWaitTimerIntervalRef.current = window.setInterval(() => {
+        setAgentWaitTimer(prev => {
+          if (prev === null || prev <= 0) {
+            // Timer reached 0, show offline form
+            if (agentWaitTimerIntervalRef.current) {
+              clearInterval(agentWaitTimerIntervalRef.current);
+              agentWaitTimerIntervalRef.current = null;
+            }
+            
+            // Clear timer from localStorage
+            if (sessionId) {
+              localStorage.removeItem(`ai-support-agent-timer-${sessionId}`);
+            }
+            
+            console.log('⏰ Agent wait timer expired - showing offline form as chat message');
+            // Add offline form as a chat message instead of separate form
+            setMessages(prev => {
+              // Check if offline form message already exists
+              const hasOfflineFormMessage = prev.some(msg => 
+                msg.type === 'offline_form'
+              );
+              
+              if (!hasOfflineFormMessage) {
+                return [...prev, {
+                  sender: 'system',
+                  text: 'Sorry, agent is busy. Please fill this form and we will get back to you.',
+                  type: 'offline_form',
+                  ts: Date.now()
+                }];
+              }
+              return prev;
+            });
+            setOfflineFormData(prev => ({ ...prev, query: prev.query || '' }));
+            
+            return null;
+          }
+          
+          // Update localStorage with current remaining time
+          if (sessionId && prev > 0) {
+            const elapsed = TIMER_DURATION - prev;
+            const currentStartTime = timerStartTime + (elapsed * 1000);
+            localStorage.setItem(`ai-support-agent-timer-${sessionId}`, JSON.stringify({
+              startTime: currentStartTime,
+              duration: TIMER_DURATION
+            }));
+          }
+          
+          return prev - 1; // Decrease by 1 second
+        });
+      }, 1000); // Update every second
     }
   }
 
@@ -1182,61 +1572,230 @@ export default function EmbedWidget({
               marginBottom: '4px'
             }}
           >
-            <div style={{
-              maxWidth: '75%',
-              padding: '10px 14px',
-              borderRadius: '12px',
-              background: m.sender === 'user'
-                ? '#ffffff'
-                : m.sender === 'system'
-                  ? '#000000'
-                  : '#ffffff',
-              color: m.sender === 'system' ? '#ffffff' : (m.sender === 'user' ? '#000000' : '#000000'),
-              fontSize: '14px',
-              lineHeight: '1.5',
-              boxShadow: m.sender !== 'system' ? '0 1px 2px rgba(0,0,0,0.1)' : 'none',
-              border: m.sender === 'system' ? '1px solid rgba(255, 255, 255, 0.2)' : 'none',
-              wordWrap: 'break-word',
-              overflowWrap: 'break-word',
-              boxSizing: 'border-box',
-              overflow: 'hidden',
-              margin: 0
-            }}>
-              {m.text}
-            </div>
-            {/* Connect to Agent Button - Show after bot messages when user mentions "agent" */}
-            {m.sender === 'bot' && i === messages.length - 1 && showAgentButton && !agentRequestSent && (
-              <button
-                onClick={handleRequestAgent}
-                style={{
-                  marginTop: '8px',
-                  padding: '8px 16px',
-                  background: '#2563eb',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '6px',
-                  fontSize: '13px',
-                  fontWeight: 500,
-                  cursor: 'pointer',
-                  transition: 'background 0.2s',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.background = '#1d4ed8'}
-                onMouseLeave={(e) => e.currentTarget.style.background = '#2563eb'}
-              >
-                🤝 Connect to Agent
-              </button>
-            )}
-            {/* Agent Request Sent Message */}
-            {m.sender === 'bot' && i === messages.length - 1 && agentRequestSent && (
-              <p style={{
-                marginTop: '8px',
-                fontSize: '12px',
-                color: 'rgba(255, 255, 255, 0.7)',
-                fontStyle: 'italic'
+            {m.type === 'offline_form' ? (
+              // Render offline form inline as chat message
+              <div style={{
+                maxWidth: '100%',
+                width: '100%',
+                background: 'white',
+                padding: '20px',
+                borderRadius: '12px',
+                color: '#000000',
+                marginTop: '8px'
               }}>
-                ✓ Request sent. An agent will join shortly.
-              </p>
+                {formSubmitted ? (
+                  <div style={{ textAlign: 'center', color: '#4CAF50' }}>
+                    <p style={{ fontSize: '16px', fontWeight: 500, margin: 0 }}>✓ Query noted. Check your mail.</p>
+                  </div>
+                ) : (
+                  <form onSubmit={handleFormSubmit}>
+                    <h3 style={{ marginTop: 0, marginBottom: '16px', fontSize: '18px', fontWeight: 600 }}>Contact Form</h3>
+                    {formError && (
+                      <div style={{
+                        background: '#ffebee',
+                        color: '#c62828',
+                        padding: '10px',
+                        borderRadius: '6px',
+                        marginBottom: '16px',
+                        fontSize: '14px'
+                      }}>
+                        {formError}
+                      </div>
+                    )}
+                    <div style={{ marginBottom: '16px' }}>
+                      <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: 500 }}>
+                        Name <span style={{ color: 'red' }}>*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={offlineFormData.name}
+                        onChange={(e) => setOfflineFormData(prev => ({ ...prev, name: e.target.value }))}
+                        required
+                        style={{
+                          width: '100%',
+                          padding: '10px',
+                          border: '1px solid #ddd',
+                          borderRadius: '6px',
+                          fontSize: '14px',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                    </div>
+                    <div style={{ marginBottom: '16px' }}>
+                      <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: 500 }}>
+                        Email <span style={{ color: 'red' }}>*</span>
+                      </label>
+                      <input
+                        type="email"
+                        value={offlineFormData.email}
+                        onChange={(e) => setOfflineFormData(prev => ({ ...prev, email: e.target.value }))}
+                        required
+                        style={{
+                          width: '100%',
+                          padding: '10px',
+                          border: '1px solid #ddd',
+                          borderRadius: '6px',
+                          fontSize: '14px',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                    </div>
+                    <div style={{ marginBottom: '16px' }}>
+                      <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: 500 }}>
+                        Mobile
+                      </label>
+                      <input
+                        type="tel"
+                        value={offlineFormData.mobile}
+                        onChange={(e) => setOfflineFormData(prev => ({ ...prev, mobile: e.target.value }))}
+                        style={{
+                          width: '100%',
+                          padding: '10px',
+                          border: '1px solid #ddd',
+                          borderRadius: '6px',
+                          fontSize: '14px',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                    </div>
+                    <div style={{ marginBottom: '16px' }}>
+                      <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: 500 }}>
+                        Query <span style={{ color: 'red' }}>*</span>
+                      </label>
+                      <textarea
+                        value={offlineFormData.query}
+                        onChange={(e) => setOfflineFormData(prev => ({ ...prev, query: e.target.value }))}
+                        required
+                        rows={4}
+                        style={{
+                          width: '100%',
+                          padding: '10px',
+                          border: '1px solid #ddd',
+                          borderRadius: '6px',
+                          fontSize: '14px',
+                          resize: 'vertical',
+                          fontFamily: 'inherit',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      style={{
+                        width: '100%',
+                        padding: '12px',
+                        background: 'linear-gradient(135deg, #000000 0%, #ffffff 100%)',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        fontSize: '16px',
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                        transition: 'opacity 0.2s'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
+                      onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+                    >
+                      Submit Query
+                    </button>
+                  </form>
+                )}
+              </div>
+            ) : (
+              <div style={{
+                maxWidth: '75%',
+                padding: '10px 14px',
+                borderRadius: '12px',
+                background: m.sender === 'user'
+                  ? '#ffffff'
+                  : m.sender === 'system'
+                    ? '#000000'
+                    : '#ffffff',
+                color: m.sender === 'system' ? '#ffffff' : (m.sender === 'user' ? '#000000' : '#000000'),
+                fontSize: '14px',
+                lineHeight: '1.5',
+                boxShadow: m.sender !== 'system' ? '0 1px 2px rgba(0,0,0,0.1)' : 'none',
+                border: m.sender === 'system' ? '1px solid rgba(255, 255, 255, 0.2)' : 'none',
+                wordWrap: 'break-word',
+                overflowWrap: 'break-word',
+                boxSizing: 'border-box',
+                overflow: 'hidden',
+                margin: 0
+              }}>
+                {m.text}
+              </div>
+            )}
+            {/* Connect to Agent Button - Show after bot messages when user mentions "agent" */}
+            {/* Show button after the LAST bot message when showAgentButton is true */}
+            {(() => {
+              const isLastMessage = i === messages.length - 1;
+              const shouldShowButton = m.sender === 'bot' && isLastMessage && showAgentButton && !agentRequestSent;
+              
+              if (m.sender === 'bot' && showAgentButton) {
+                console.log('🔘 Button render check for bot message:', {
+                  sender: m.sender,
+                  messageIndex: i,
+                  totalMessages: messages.length,
+                  isLastMessage,
+                  showAgentButton,
+                  agentRequestSent,
+                  agentButtonShown: agentButtonShownRef.current,
+                  shouldShow: shouldShowButton
+                });
+              }
+              
+              return shouldShowButton;
+            })() && (
+              <div style={{ marginTop: '12px' }}>
+                <button
+                  onClick={handleRequestAgent}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    padding: '12px 20px',
+                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    transition: 'all 0.3s ease',
+                    boxShadow: '0 4px 6px rgba(102, 126, 234, 0.3), 0 2px 4px rgba(0,0,0,0.1)',
+                    transform: 'translateY(0)',
+                    width: '100%',
+                    maxWidth: '280px'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'linear-gradient(135deg, #764ba2 0%, #667eea 100%)';
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.boxShadow = '0 6px 12px rgba(102, 126, 234, 0.4), 0 4px 6px rgba(0,0,0,0.15)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = '0 4px 6px rgba(102, 126, 234, 0.3), 0 2px 4px rgba(0,0,0,0.1)';
+                  }}
+                  onMouseDown={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = '0 2px 4px rgba(102, 126, 234, 0.3), 0 1px 2px rgba(0,0,0,0.1)';
+                  }}
+                  onMouseUp={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.boxShadow = '0 6px 12px rgba(102, 126, 234, 0.4), 0 4px 6px rgba(0,0,0,0.15)';
+                  }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="9" cy="7" r="4"></circle>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                  </svg>
+                  <span>Connect to Agent</span>
+                </button>
+              </div>
             )}
             {m.type === 'conclusion_question' && m.options && !conversationConcluded && (
               <div style={{
@@ -1407,6 +1966,60 @@ export default function EmbedWidget({
             padding: '20px'
           }}>
             Type your message below to get started...
+          </div>
+        )}
+
+        {/* Agent Wait Timer - Show when agent request is sent (at bottom of messages) */}
+        {agentRequestSent && agentWaitTimer !== null && agentWaitTimer > 0 && (
+          <div style={{
+            background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.15) 0%, rgba(118, 75, 162, 0.15) 100%)',
+            border: '1px solid rgba(102, 126, 234, 0.3)',
+            borderRadius: '12px',
+            padding: '16px',
+            margin: '12px 0',
+            textAlign: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontSize: '14px',
+              fontWeight: 600,
+              color: '#ffffff'
+            }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polyline points="12 6 12 12 16 14"></polyline>
+              </svg>
+              <span>Agent will join in</span>
+            </div>
+            <div style={{
+              fontSize: '24px',
+              fontWeight: 'bold',
+              color: '#667eea',
+              fontFamily: 'monospace',
+              letterSpacing: '1px'
+            }}>
+              {(() => {
+                const minutes = Math.floor(agentWaitTimer / 60);
+                const seconds = agentWaitTimer % 60;
+                if (minutes > 0) {
+                  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                }
+                return `${seconds}s`;
+              })()}
+            </div>
+            <div style={{
+              fontSize: '12px',
+              color: 'rgba(255, 255, 255, 0.7)',
+              fontStyle: 'italic'
+            }}>
+              {agentWaitTimer > 60 ? 'Please wait...' : 'Almost there...'}
+            </div>
           </div>
         )}
 

@@ -72,7 +72,7 @@ export default function NotificationsPage() {
     const NotificationCard = ({ notification }: { notification: typeof notifications[0] }) => (
         <div
             onClick={() => handleNotificationClick(notification)}
-            className="px-4 py-2.5 border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer flex items-start justify-between group relative"
+            className="px-4 py-2.5 border-b border-gray-100 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 hover:border-blue-300 hover:shadow-md hover:border-l-4 hover:border-l-blue-500 transition-all duration-200 ease-in-out cursor-pointer flex items-start justify-between group relative"
         >
             <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">

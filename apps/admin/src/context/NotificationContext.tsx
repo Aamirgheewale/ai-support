@@ -166,7 +166,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         }
     };
 
-    // Delete notification (optimistic UI update)
+    // Delete notification (optimistic UI update + API call)
     const deleteNotification = async (id: string) => {
         try {
             // Optimistic update: Remove from state immediately
@@ -176,27 +176,32 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
                 return filtered;
             });
 
-            // Remove from processedIds to allow re-processing if it comes back
+            // Remove from processedIds to prevent re-adding
             processedIds.current.delete(id);
 
-            // Optional: Call API endpoint if it exists
-            // For now, we'll just update local state
-            // If you add a DELETE endpoint later, uncomment this:
-            /*
+            // Call API endpoint to delete from database
             const currentToken = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
             if (currentToken) {
                 const response = await fetch(`${API_BASE}/api/notifications/${id}`, {
                     method: 'DELETE',
                     headers: {
-                        'Authorization': `Bearer ${currentToken}`
+                        'Authorization': `Bearer ${currentToken}`,
+                        'Content-Type': 'application/json'
                     }
                 });
+                
                 if (!response.ok) {
-                    // Revert on failure
+                    const errorData = await response.json().catch(() => ({ error: 'Failed to delete notification' }));
+                    console.error('❌ Failed to delete notification from database:', errorData);
+                    // Revert on failure by refetching
                     await fetchNotifications();
+                    throw new Error(errorData.error || 'Failed to delete notification');
                 }
+                
+                console.log(`✅ Successfully deleted notification ${id} from database`);
+            } else {
+                console.warn('⚠️  No auth token found, notification deleted from UI only');
             }
-            */
         } catch (error) {
             console.error('Failed to delete notification:', error);
             // Revert on error by refetching

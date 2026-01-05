@@ -3144,6 +3144,57 @@ app.patch('/api/notifications/:id/read', requireAuth, async (req, res) => {
   }
 });
 
+// DELETE /api/notifications/:id - Delete notification (Admin/Agent only)
+app.delete('/api/notifications/:id', requireAuth, requireRole(['admin', 'agent']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.userId;
+
+    if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_NOTIFICATIONS_COLLECTION_ID) {
+      return res.status(503).json({ error: 'Appwrite not configured' });
+    }
+
+    // First, verify the notification exists and user has permission
+    try {
+      const notification = await awDatabases.getDocument(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_NOTIFICATIONS_COLLECTION_ID,
+        id
+      );
+
+      // Check permission: user can delete if it's a broadcast (targetUserId=null) or their own notification
+      if (notification.targetUserId !== null && notification.targetUserId !== userId) {
+        return res.status(403).json({ error: 'Not authorized to delete this notification' });
+      }
+    } catch (getErr) {
+      if (getErr.code === 404) {
+        return res.status(404).json({ error: 'Notification not found' });
+      }
+      throw getErr;
+    }
+
+    // Delete the notification
+    await awDatabases.deleteDocument(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_NOTIFICATIONS_COLLECTION_ID,
+      id
+    );
+
+    console.log(`✅ Deleted notification ${id}`);
+
+    res.json({
+      success: true,
+      notificationId: id
+    });
+  } catch (err) {
+    console.error('Error deleting notification:', err);
+    if (err.code === 404) {
+      return res.status(404).json({ error: 'Notification not found' });
+    }
+    res.status(500).json({ error: err?.message || 'Failed to delete notification' });
+  }
+});
+
 // ============================================================================
 // ANALYTICS & METRICS ENDPOINTS
 // ============================================================================
