@@ -15,23 +15,25 @@ interface SoundContextType {
   isPopPlaying: boolean
   audioEnabled: boolean
   settings: UserPrefs
+  // Settings control
+  setAudioEnabled: (enabled: boolean) => void
 }
 
 const SoundContext = createContext<SoundContextType | undefined>(undefined)
 
 export function SoundProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
-  
+
   // State
   const [isRinging, setIsRinging] = useState(false)
   const [isPopPlaying, setIsPopPlaying] = useState(false)
   const [settings, setSettings] = useState<UserPrefs>(DEFAULT_USER_PREFS)
-  
+
   // Audio refs
   const ringSoundRef = useRef<HTMLAudioElement | null>(null)
   const popSoundRef = useRef<HTMLAudioElement | null>(null)
   const ringRepeatCountRef = useRef(0)
-  const ringRepeatTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const ringRepeatTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Update settings when user.prefs changes
   useEffect(() => {
@@ -45,13 +47,13 @@ export function SoundProvider({ children }: { children: ReactNode }) {
   // Listen for prefs update events (for immediate updates before API response)
   useEffect(() => {
     if (typeof window === 'undefined') return
-    
+
     const handlePrefsUpdate = (e: CustomEvent<UserPrefs>) => {
       setSettings({ ...DEFAULT_USER_PREFS, ...e.detail })
     }
-    
+
     window.addEventListener('user-prefs-updated', handlePrefsUpdate as EventListener)
-    
+
     return () => {
       window.removeEventListener('user-prefs-updated', handlePrefsUpdate as EventListener)
     }
@@ -63,10 +65,10 @@ export function SoundProvider({ children }: { children: ReactNode }) {
 
     try {
       console.log('🔊 Initializing audio files...')
-      
+
       ringSoundRef.current = new Audio('/sounds/Ring.mp3')
       ringSoundRef.current.preload = 'auto'
-      
+
       // Add error handlers for audio loading
       ringSoundRef.current.addEventListener('error', (e) => {
         console.error('❌ Failed to load Ring.mp3:', e)
@@ -75,22 +77,22 @@ export function SoundProvider({ children }: { children: ReactNode }) {
           message: ringSoundRef.current?.error?.message
         })
       })
-      
+
       ringSoundRef.current.addEventListener('canplaythrough', () => {
         console.log('✅ Ring.mp3 loaded and ready to play')
       })
-      
+
       popSoundRef.current = new Audio('/sounds/pop.mp3')
       popSoundRef.current.preload = 'auto'
-      
+
       popSoundRef.current.addEventListener('error', (e) => {
         console.error('❌ Failed to load pop.mp3:', e)
       })
-      
+
       popSoundRef.current.addEventListener('canplaythrough', () => {
         console.log('✅ pop.mp3 loaded and ready to play')
       })
-      
+
       // Track when ring ends
       ringSoundRef.current.addEventListener('ended', handleRingEnded)
       ringSoundRef.current.addEventListener('pause', () => {
@@ -99,11 +101,11 @@ export function SoundProvider({ children }: { children: ReactNode }) {
           setIsRinging(false)
         }
       })
-      
+
       // Track when pop ends
       popSoundRef.current.addEventListener('ended', () => setIsPopPlaying(false))
       popSoundRef.current.addEventListener('pause', () => setIsPopPlaying(false))
-      
+
       console.log('✅ Audio initialization complete')
     } catch (err) {
       console.error('❌ Failed to initialize audio:', err)
@@ -129,13 +131,13 @@ export function SoundProvider({ children }: { children: ReactNode }) {
   const handleRingEnded = useCallback(() => {
     ringRepeatCountRef.current++
     const repeatCount = settings.repeatRing ?? 1
-    
+
     if (ringRepeatCountRef.current < repeatCount && ringSoundRef.current) {
       // Schedule next repeat
       ringRepeatTimeoutRef.current = setTimeout(() => {
         if (ringSoundRef.current && ringRepeatCountRef.current < repeatCount) {
           ringSoundRef.current.currentTime = 0
-          ringSoundRef.current.play().catch(() => {})
+          ringSoundRef.current.play().catch(() => { })
         }
       }, 300)
     } else {
@@ -162,17 +164,17 @@ export function SoundProvider({ children }: { children: ReactNode }) {
       networkState: ringSoundRef.current?.networkState,
       error: ringSoundRef.current?.error
     })
-    
+
     if (!settings.masterEnabled) {
       console.warn('⚠️ playRing: Audio disabled (masterEnabled = false)')
       return
     }
-    
+
     if (!ringSoundRef.current) {
       console.error('❌ playRing: Audio element not initialized (ringSoundRef.current is null)')
       return
     }
-    
+
     // Check if audio has an error
     if (ringSoundRef.current.error) {
       console.error('❌ playRing: Audio has error:', {
@@ -181,7 +183,7 @@ export function SoundProvider({ children }: { children: ReactNode }) {
       })
       return
     }
-    
+
     // Check if audio is ready to play
     if (ringSoundRef.current.readyState < 2) {
       console.warn('⚠️ playRing: Audio not ready (readyState:', ringSoundRef.current.readyState, ')')
@@ -190,23 +192,23 @@ export function SoundProvider({ children }: { children: ReactNode }) {
       // Wait a bit for it to load
       await new Promise(resolve => setTimeout(resolve, 100))
     }
-    
+
     // Get volume: use override (for test buttons), or user pref, or default
     const volume = volumeOverride ?? settings.newSessionRingVolume ?? 70
     const decimalVolume = Math.max(0, Math.min(1, volume / 100))
-    
+
     // CRUCIAL: Set volume BEFORE playing
     ringSoundRef.current.volume = decimalVolume
     console.log(`🔊 Ring volume set to ${volume}% (${decimalVolume})`)
-    
+
     // Reset repeat counter
     ringRepeatCountRef.current = 0
-    
+
     // Clear any pending repeat timeout
     if (ringRepeatTimeoutRef.current) {
       clearTimeout(ringRepeatTimeoutRef.current)
     }
-    
+
     try {
       ringSoundRef.current.currentTime = 0
       setIsRinging(true)
@@ -224,14 +226,14 @@ export function SoundProvider({ children }: { children: ReactNode }) {
   // Play pop sound
   const playPop = useCallback(async (volumeOverride?: number) => {
     if (!settings.masterEnabled || !popSoundRef.current) return
-    
+
     // Get volume: use override (for test buttons), or user pref, or default
     const volume = volumeOverride ?? settings.newMessagePopVolume ?? 70
     const decimalVolume = Math.max(0, Math.min(1, volume / 100))
-    
+
     // CRUCIAL: Set volume BEFORE playing
     popSoundRef.current.volume = decimalVolume
-    
+
     try {
       popSoundRef.current.currentTime = 0
       setIsPopPlaying(true)
@@ -245,12 +247,12 @@ export function SoundProvider({ children }: { children: ReactNode }) {
   // Play notification pop (different volume setting)
   const playNotificationPop = useCallback(async (volumeOverride?: number) => {
     if (!settings.masterEnabled || !popSoundRef.current) return
-    
+
     const volume = volumeOverride ?? settings.notificationPopVolume ?? 70
     const decimalVolume = Math.max(0, Math.min(1, volume / 100))
-    
+
     popSoundRef.current.volume = decimalVolume
-    
+
     try {
       popSoundRef.current.currentTime = 0
       setIsPopPlaying(true)
@@ -268,16 +270,16 @@ export function SoundProvider({ children }: { children: ReactNode }) {
       clearTimeout(ringRepeatTimeoutRef.current)
       ringRepeatTimeoutRef.current = null
     }
-    
+
     // Stop any pending repeats
     ringRepeatCountRef.current = 999
-    
+
     // Pause and reset
     if (ringSoundRef.current) {
       ringSoundRef.current.pause()
       ringSoundRef.current.currentTime = 0
     }
-    
+
     setIsRinging(false)
   }, [])
 
@@ -296,6 +298,17 @@ export function SoundProvider({ children }: { children: ReactNode }) {
     stopPop()
   }, [stopRing, stopPop])
 
+  // Set audio enabled/disabled
+  const setAudioEnabled = useCallback((enabled: boolean) => {
+    setSettings(prev => ({ ...prev, masterEnabled: enabled }))
+    // Also dispatch event for immediate UI updates
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('user-prefs-updated', {
+        detail: { ...settings, masterEnabled: enabled }
+      }))
+    }
+  }, [settings])
+
   return (
     <SoundContext.Provider value={{
       playRing,
@@ -307,7 +320,8 @@ export function SoundProvider({ children }: { children: ReactNode }) {
       isRinging,
       isPopPlaying,
       audioEnabled: settings.masterEnabled ?? true,
-      settings
+      settings,
+      setAudioEnabled
     }}>
       {children}
     </SoundContext.Provider>

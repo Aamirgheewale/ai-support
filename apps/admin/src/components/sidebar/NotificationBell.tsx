@@ -22,7 +22,7 @@ export default function NotificationBell() {
   const [prevCount, setPrevCount] = useState(unreadCount)
   const popoverRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
-  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Play pop sound when notification count increases
   useEffect(() => {
@@ -112,17 +112,17 @@ export default function NotificationBell() {
         className="relative p-2 rounded-lg hover:bg-gray-100 transition-colors"
         aria-label="Notifications"
       >
-        <svg 
-          className="w-5 h-5 text-gray-500" 
-          fill="none" 
-          viewBox="0 0 24 24" 
+        <svg
+          className="w-5 h-5 text-gray-500"
+          fill="none"
+          viewBox="0 0 24 24"
           stroke="currentColor"
         >
-          <path 
-            strokeLinecap="round" 
-            strokeLinejoin="round" 
-            strokeWidth={2} 
-            d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" 
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
           />
         </svg>
 
@@ -160,21 +160,19 @@ export default function NotificationBell() {
             <div className="flex border-b border-gray-100">
               <button
                 onClick={() => setActiveTab('all')}
-                className={`flex-1 px-4 py-2 text-sm font-medium transition-colors ${
-                  activeTab === 'all'
+                className={`flex-1 px-4 py-2 text-sm font-medium transition-colors ${activeTab === 'all'
                     ? 'text-blue-600 border-b-2 border-blue-600'
                     : 'text-gray-500 hover:text-gray-700'
-                }`}
+                  }`}
               >
                 All
               </button>
               <button
                 onClick={() => setActiveTab('unread')}
-                className={`flex-1 px-4 py-2 text-sm font-medium transition-colors relative ${
-                  activeTab === 'unread'
+                className={`flex-1 px-4 py-2 text-sm font-medium transition-colors relative ${activeTab === 'unread'
                     ? 'text-blue-600 border-b-2 border-blue-600'
                     : 'text-gray-500 hover:text-gray-700'
-                }`}
+                  }`}
               >
                 Unread
                 {unreadCount > 0 && (

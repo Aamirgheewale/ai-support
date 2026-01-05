@@ -17,7 +17,7 @@ interface UseSoundOptions {
 export function useSound(options: UseSoundOptions = {}) {
   const { enabled = true } = options
   const { user } = useAuth()
-  
+
   // Get settings from user.prefs or defaults
   const getSettings = useCallback((): UserPrefs => {
     if (user?.prefs) {
@@ -29,11 +29,11 @@ export function useSound(options: UseSoundOptions = {}) {
   const [settings, setSettings] = useState<UserPrefs>(getSettings)
   const [isRinging, setIsRinging] = useState(false)
   const [isPopPlaying, setIsPopPlaying] = useState(false)
-  
+
   const ringSoundRef = useRef<HTMLAudioElement | null>(null)
   const popSoundRef = useRef<HTMLAudioElement | null>(null)
   const ringRepeatCountRef = useRef(0)
-  const ringRepeatTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const ringRepeatTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Update settings when user.prefs changes
   useEffect(() => {
@@ -43,13 +43,13 @@ export function useSound(options: UseSoundOptions = {}) {
   // Listen for prefs update events (for immediate updates before API response)
   useEffect(() => {
     if (typeof window === 'undefined') return
-    
+
     const handlePrefsUpdate = (e: CustomEvent<UserPrefs>) => {
       setSettings({ ...DEFAULT_USER_PREFS, ...e.detail })
     }
-    
+
     window.addEventListener('user-prefs-updated', handlePrefsUpdate as EventListener)
-    
+
     return () => {
       window.removeEventListener('user-prefs-updated', handlePrefsUpdate as EventListener)
     }
@@ -62,7 +62,7 @@ export function useSound(options: UseSoundOptions = {}) {
     try {
       ringSoundRef.current = new Audio('/sounds/Ring.mp3')
       ringSoundRef.current.preload = 'auto'
-      
+
       popSoundRef.current = new Audio('/sounds/pop.mp3')
       popSoundRef.current.preload = 'auto'
     } catch (err) {
@@ -88,26 +88,26 @@ export function useSound(options: UseSoundOptions = {}) {
   // Play ring sound with volume from settings or override
   const playRing = useCallback(async (volumeOverride?: number) => {
     if (!enabled || !settings.masterEnabled || !ringSoundRef.current) return
-    
+
     // Get volume: use override (for test buttons with live preview), or user pref, or default
     const volume = volumeOverride ?? settings.newSessionRingVolume ?? 70
     // CRUCIAL: Convert 0-100 to 0.0-1.0
     const decimalVolume = Math.max(0, Math.min(1, volume / 100))
-    
+
     // Set volume BEFORE playing
     ringSoundRef.current.volume = decimalVolume
-    
+
     // Reset repeat counter
     ringRepeatCountRef.current = 0
-    
+
     // Clear any pending repeat timeout
     if (ringRepeatTimeoutRef.current) {
       clearTimeout(ringRepeatTimeoutRef.current)
     }
-    
+
     const playOnce = async () => {
       if (!ringSoundRef.current) return
-      
+
       try {
         ringSoundRef.current.currentTime = 0
         setIsRinging(true)
@@ -117,7 +117,7 @@ export function useSound(options: UseSoundOptions = {}) {
         setIsRinging(false)
       }
     }
-    
+
     // Set up repeat logic
     const handleEnded = () => {
       ringRepeatCountRef.current++
@@ -130,33 +130,33 @@ export function useSound(options: UseSoundOptions = {}) {
         setIsRinging(false)
       }
     }
-    
+
     // Remove old listener and add new one
     if (ringSoundRef.current) {
       ringSoundRef.current.removeEventListener('ended', handleEnded)
       ringSoundRef.current.addEventListener('ended', handleEnded)
     }
-    
+
     await playOnce()
   }, [enabled, settings])
 
   // Play pop sound with volume from settings or override
   const playPop = useCallback(async (volumeOverride?: number) => {
     if (!enabled || !settings.masterEnabled || !popSoundRef.current) return
-    
+
     // Get volume: use override (for test buttons with live preview), or user pref, or default
     const volume = volumeOverride ?? settings.newMessagePopVolume ?? 70
     // CRUCIAL: Convert 0-100 to 0.0-1.0
     const decimalVolume = Math.max(0, Math.min(1, volume / 100))
-    
+
     // Set volume BEFORE playing
     popSoundRef.current.volume = decimalVolume
-    
+
     try {
       popSoundRef.current.currentTime = 0
       setIsPopPlaying(true)
       await popSoundRef.current.play()
-      
+
       // Track when pop ends
       popSoundRef.current.onended = () => setIsPopPlaying(false)
     } catch (err) {
@@ -168,17 +168,17 @@ export function useSound(options: UseSoundOptions = {}) {
   // Play notification pop with notification volume
   const playNotificationPop = useCallback(async (volumeOverride?: number) => {
     if (!enabled || !settings.masterEnabled || !popSoundRef.current) return
-    
+
     const volume = volumeOverride ?? settings.notificationPopVolume ?? 70
     const decimalVolume = Math.max(0, Math.min(1, volume / 100))
-    
+
     popSoundRef.current.volume = decimalVolume
-    
+
     try {
       popSoundRef.current.currentTime = 0
       setIsPopPlaying(true)
       await popSoundRef.current.play()
-      
+
       popSoundRef.current.onended = () => setIsPopPlaying(false)
     } catch (err) {
       console.log('Audio play blocked - user interaction required')
@@ -193,10 +193,10 @@ export function useSound(options: UseSoundOptions = {}) {
       clearTimeout(ringRepeatTimeoutRef.current)
       ringRepeatTimeoutRef.current = null
     }
-    
+
     // Stop any pending repeats
     ringRepeatCountRef.current = 999
-    
+
     if (ringSoundRef.current) {
       ringSoundRef.current.pause()
       ringSoundRef.current.currentTime = 0
@@ -227,6 +227,17 @@ export function useSound(options: UseSoundOptions = {}) {
     return popSoundRef.current ? !popSoundRef.current.paused : false
   }, [])
 
+  // Set audio enabled/disabled
+  const setAudioEnabled = useCallback((enabled: boolean) => {
+    setSettings(prev => ({ ...prev, masterEnabled: enabled }))
+    // Dispatch event for immediate UI updates
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('user-prefs-updated', {
+        detail: { ...settings, masterEnabled: enabled }
+      }))
+    }
+  }, [settings])
+
   return {
     playRing,
     playPop,
@@ -238,6 +249,7 @@ export function useSound(options: UseSoundOptions = {}) {
     isPopPlaying: isPopPlayingFn,
     isRinging,
     audioEnabled: settings.masterEnabled ?? true,
-    settings
+    settings,
+    setAudioEnabled
   }
 }
