@@ -11,23 +11,23 @@
 
 const PRELOADED_RESPONSES_MAP = new Map([
   // Greetings
-  ['hello', "Hi! I'm your AI chat assistant. Ask me any question related to VTU internyet portal and I will provide you quick response."],
-  ['hi', "Hi! I'm your AI chat assistant. Ask me any question related to VTU internyet portal and I will provide you quick response."],
-  ['hey', "Hi! I'm your AI chat assistant. Ask me any question related to VTU internyet portal and I will provide you quick response."],
-  ['hi there', "Hi! I'm your AI chat assistant. Ask me any question related to VTU internyet portal and I will provide you quick response."],
-  ['hello there', "Hi! I'm your AI chat assistant. Ask me any question related to VTU internyet portal and I will provide you quick response."],
-  ['hey there', "Hi! I'm your AI chat assistant. Ask me any question related to VTU internyet portal and I will provide you quick response."],
-  ['good morning', "Good morning! I'm your AI chat assistant. Ask me any question related to VTU internyet portal and I will provide you quick response."],
-  ['good afternoon', "Good afternoon! I'm your AI chat assistant. Ask me any question related to VTU internyet portal and I will provide you quick response."],
-  ['good evening', "Good evening! I'm your AI chat assistant. Ask me any question related to VTU internyet portal and I will provide you quick response."],
+  ['hello', "Hi! I'm your AI Assistant. Ask me any question related to VTU internyet portal and I will provide you quick response."],
+  ['hi', "Hi! I'm your AI Assistant. Ask me any question related to VTU internyet portal and I will provide you quick response."],
+  ['hey', "Hi! I'm your AI Assistant. Ask me any question related to VTU internyet portal and I will provide you quick response."],
+  ['hi there', "Hi! I'm your AI Assistant. Ask me any question related to VTU internyet portal and I will provide you quick response."],
+  ['hello there', "Hi! I'm your AI Assistant. Ask me any question related to VTU internyet portal and I will provide you quick response."],
+  ['hey there', "Hi! I'm your AI Assistant. Ask me any question related to VTU internyet portal and I will provide you quick response."],
+  ['good morning', "Good morning! I'm your AI Assistant. Ask me any question related to VTU internyet portal and I will provide you quick response."],
+  ['good afternoon', "Good afternoon! I'm your AI Assistant. Ask me any question related to VTU internyet portal and I will provide you quick response."],
+  ['good evening', "Good evening! I'm your AI Assistant. Ask me any question related to VTU internyet portal and I will provide you quick response."],
 
   // Common initial questions
   ['what can you do', "I can help you with questions about VTU internyet portal. Ask me about services, plans, troubleshooting, or any portal-related queries."],
   ['what do you do', "I can help you with questions about VTU internyet portal. Ask me about services, plans, troubleshooting, or any portal-related queries."],
   ['how can you help', "I can help you with questions about VTU internyet portal. Ask me about services, plans, troubleshooting, or any portal-related queries."],
   ['how can you help me', "I can help you with questions about VTU internyet portal. Ask me about services, plans, troubleshooting, or any portal-related queries."],
-  ['what are you', "I'm an AI chat assistant for VTU internyet portal. I can answer questions about services, plans, and help with portal-related issues."],
-  ['who are you', "I'm an AI chat assistant for VTU internyet portal. I can answer questions about services, plans, and help with portal-related issues."],
+  ['what are you', "I'm an AI Assistant for VTU internyet portal. I can answer questions about services, plans, and help with portal-related issues."],
+  ['who are you', "I'm an AI Assistant for VTU internyet portal. I can answer questions about services, plans, and help with portal-related issues."],
   ['what is this', "This is a support chat for VTU internyet portal. I can help you with questions about services, plans, and portal-related queries."],
   ['help', "I'm here to help! Ask me any question related to VTU internyet portal - services, plans, troubleshooting, or account-related queries."],
   ['i need help', "I'm here to help! Ask me any question related to VTU internyet portal - services, plans, troubleshooting, or account-related queries."],
@@ -55,9 +55,9 @@ const PARTIAL_MATCHES = [
   { key: 'how can you help me', response: "I can help you with questions about VTU internyet portal. Ask me about services, plans, troubleshooting, or any portal-related queries." },
   { key: 'can you help me', response: "Yes, I can help! Ask me any question related to VTU internyet portal and I'll provide you with a quick response." },
   { key: 'i need help', response: "I'm here to help! Ask me any question related to VTU internyet portal - services, plans, troubleshooting, or account-related queries." },
-  { key: 'hello', response: "Hi! I'm your AI chat assistant. Ask me any question related to VTU internyet portal and I will provide you quick response." },
-  { key: 'hi', response: "Hi! I'm your AI chat assistant. Ask me any question related to VTU internyet portal and I will provide you quick response." },
-  { key: 'hey', response: "Hi! I'm your AI chat assistant. Ask me any question related to VTU internyet portal and I will provide you quick response." },
+  { key: 'hello', response: "Hi! I'm your AI Assistant. Ask me any question related to VTU internyet portal and I will provide you quick response." },
+  { key: 'hi', response: "Hi! I'm your AI Assistant. Ask me any question related to VTU internyet portal and I will provide you quick response." },
+  { key: 'hey', response: "Hi! I'm your AI Assistant. Ask me any question related to VTU internyet portal and I will provide you quick response." },
   { key: 'what can you', response: "I can help you with questions about VTU internyet portal. Ask me about services, plans, troubleshooting, or any portal-related queries." },
   { key: 'what do you', response: "I can help you with questions about VTU internyet portal. Ask me about services, plans, troubleshooting, or any portal-related queries." },
   { key: 'how can you', response: "I can help you with questions about VTU internyet portal. Ask me about services, plans, troubleshooting, or any portal-related queries." },
@@ -173,7 +173,7 @@ function detectHumanAgentIntent(userMessage) {
   // Normalize the message: lowercase, trim, remove punctuation, remove extra spaces
   const normalized = userMessage.toLowerCase().trim().replace(/[.,!?;:]/g, '').replace(/\s+/g, ' ');
   const noSpaceText = normalized.replace(/\s+/g, '');
-  
+
   console.log(`🔍 STRICT: Checking human agent intent for: "${userMessage}" (normalized: "${normalized}")`);
 
   // STRICT Keywords and phrases that indicate wanting to talk to a human agent
@@ -188,7 +188,7 @@ function detectHumanAgentIntent(userMessage) {
     'talk to a agent', 'speak to a agent', 'connect to a agent',
     'talk to a human', 'speak to a human', 'connect to a human',
     'talk to a person', 'speak to a person', 'connect to a person',
-    
+
     // Variations with "I want/need" - STRICT
     'i want to talk to agent', 'i want to speak to agent', 'i want agent',
     'i need to talk to agent', 'i need to speak to agent', 'i need agent',
@@ -198,24 +198,24 @@ function detectHumanAgentIntent(userMessage) {
     'i need to talk to person', 'i need to speak to person',
     'i want to talk to a agent', 'i want to talk to a human', 'i want to talk to a person',
     'i need to talk to a agent', 'i need to talk to a human', 'i need to talk to a person',
-    
+
     // Variations with "can I" - STRICT
     'can i talk to agent', 'can i speak to agent', 'can i talk to human',
     'can i speak to human', 'can i talk to person', 'can i speak to person',
     'can i talk to someone', 'can i speak to someone',
     'can i talk to a agent', 'can i talk to a human', 'can i talk to a person',
-    
+
     // Variations with "let me" - STRICT
     'let me talk to agent', 'let me speak to agent', 'let me talk to human',
     'let me speak to human', 'let me talk to person', 'let me speak to person',
     'let me talk to a agent', 'let me talk to a human', 'let me talk to a person',
-    
+
     // Frustration indicators - STRICT
     'not helping', 'not useful', 'not working', 'cant help', "can't help",
     'useless', 'not answering', 'not responding', 'not understanding',
     'you are not helping', 'youre not helping', "you're not helping",
     'this is not helping', 'this is useless', 'you cant help',
-    
+
     // Explicit requests - STRICT
     'transfer to agent', 'transfer to human', 'transfer to person',
     'connect me to agent', 'connect me to human', 'connect me to person',
@@ -224,7 +224,7 @@ function detectHumanAgentIntent(userMessage) {
     'human support', 'human help', 'person support', 'person help',
     'i want to connect to agent', 'i need to connect to agent',
     'i want to connect to human', 'i need to connect to human',
-    
+
     // Additional strict patterns
     'show me agent', 'give me agent', 'bring agent', 'call agent',
     'show me human', 'give me human', 'bring human', 'call human',
@@ -241,7 +241,7 @@ function detectHumanAgentIntent(userMessage) {
   // Check if message contains any of the key phrases
   for (const phrase of humanAgentPhrases) {
     const phraseNoSpace = phrase.replace(/\s+/g, '');
-    
+
     // Check if message contains the phrase
     if (normalized.includes(phrase) || noSpaceText.includes(phraseNoSpace)) {
       return true;
@@ -251,17 +251,17 @@ function detectHumanAgentIntent(userMessage) {
   // STRICT Check for combination patterns: "agent" + action words
   const agentKeywords = ['agent', 'human', 'person', 'representative', 'support', 'someone', 'live agent', 'real person', 'real agent'];
   const actionWords = ['talk', 'speak', 'connect', 'transfer', 'want', 'need', 'get', 'show', 'give', 'bring', 'call'];
-  
+
   const hasAgentKeyword = agentKeywords.some(keyword => normalized.includes(keyword));
   const hasActionWord = actionWords.some(action => normalized.includes(action));
-  
+
   // STRICT: If message contains both agent keyword and action word, likely wants human
   if (hasAgentKeyword && hasActionWord) {
     // Additional STRICT check: make sure it's not just mentioning "agent" in a different context
     // e.g., "what is an agent" should not trigger this
     const contextWords = ['what', 'who', 'is', 'are', 'explain', 'tell me about', 'define', 'how does', 'how do', 'what does', 'what do'];
     const hasContextWord = contextWords.some(context => normalized.includes(context));
-    
+
     // If it has context words, it's probably asking about agents, not wanting one
     if (!hasContextWord) {
       console.log(`🔍 STRICT: Detected agent keyword + action word combination: "${userMessage}"`);
@@ -472,17 +472,17 @@ function initializeSocket(dependencies) {
 
       // Send instant bot message to user confirming the request
       const confirmationMessage = "An agent has been requested. A support representative will join the chat as soon as they become available.";
-      
+
       try {
         // Save bot message to database
-        await chatService.saveMessageToAppwrite(sessionId, 'bot', confirmationMessage, { 
+        await chatService.saveMessageToAppwrite(sessionId, 'bot', confirmationMessage, {
           confidence: 1,
           type: 'agent_request_confirmation'
         });
 
         // Emit bot message to user's session
-        io.to(sessionId).emit('bot_message', { 
-          text: confirmationMessage, 
+        io.to(sessionId).emit('bot_message', {
+          text: confirmationMessage,
           confidence: 1,
           type: 'agent_request_confirmation'
         });
@@ -688,7 +688,7 @@ function initializeSocket(dependencies) {
       const roomSize = room ? room.size : 0;
       console.log(`📱 Socket ${socket.id} joined session room: ${sessionId} (${roomSize} socket(s) total)`);
 
-      const welcomeMsg = "Hi! I'm your AI chat assistant. Ask me any question related to VTU internyet portal and I will provide you quick response.";
+      const welcomeMsg = "Hi! I'm your AI Assistant. Ask me any question related to VTU internyet portal and I will provide you quick response.";
       socket.emit('session_started', { sessionId });
       // Broadcast session_started to admin_feed for audio notifications
       console.log(`📢 Broadcasting session_started to admin_feed for session: ${sessionId}`);
@@ -734,7 +734,7 @@ function initializeSocket(dependencies) {
       }
 
       console.log(`⏰ Session timeout received: ${sessionId}`);
-      
+
       // Create notification in Appwrite
       if (!databases || !databaseId) {
         console.warn(`⚠️  Appwrite not configured, cannot save session_timeout notification`);
@@ -744,7 +744,7 @@ function initializeSocket(dependencies) {
       try {
         const { ID } = require('node-appwrite');
         const APPWRITE_NOTIFICATIONS_COLLECTION_ID = process.env.APPWRITE_NOTIFICATIONS_COLLECTION_ID || 'notifications';
-        
+
         // Create notification data - DO NOT include createdAt/timestamp
         // Appwrite automatically manages $createdAt and $updatedAt fields
         const notificationData = {
@@ -789,7 +789,7 @@ function initializeSocket(dependencies) {
     // Handle user messages - CRITICAL: Check for agent assignment before AI
     socket.on('user_message', async (data) => {
       try {
-        const { sessionId, text } = data || {};
+        const { sessionId, text, type, attachmentUrl } = data || {};
 
         if (!sessionId || typeof sessionId !== 'string') {
           console.warn(`❌ user_message: missing or invalid sessionId from ${socket.id}`);
@@ -825,7 +825,7 @@ function initializeSocket(dependencies) {
 
         if (conversationConcluded) {
           console.log(`💾 Attempting to save user message to Appwrite...`);
-          await chatService.saveMessageToAppwrite(sessionId, 'user', trimmedText);
+          await chatService.saveMessageToAppwrite(sessionId, 'user', trimmedText, { type, attachmentUrl });
           // Broadcast user message to admin_feed for audio notifications
           io.to('admin_feed').emit('user_message_for_agent', {
             sessionId: sessionId,
@@ -864,7 +864,7 @@ function initializeSocket(dependencies) {
         if (trimmedLower === 'thank you for helping' || trimmedLower === 'thankyou for helping' ||
           (trimmedLower.includes('thank you') && trimmedLower.includes('helping'))) {
           const finalMessage = 'All the queries are solved, thank you have a good day';
-          await chatService.saveMessageToAppwrite(sessionId, 'user', trimmedText);
+          await chatService.saveMessageToAppwrite(sessionId, 'user', trimmedText, { type, attachmentUrl });
           // Broadcast user message to admin_feed for audio notifications
           io.to('admin_feed').emit('user_message_for_agent', {
             sessionId: sessionId,
@@ -930,7 +930,7 @@ function initializeSocket(dependencies) {
 
           if (isConcluded) {
             const newSessionMsg = 'This conversation has ended. Please click "Start Chat" to begin a new session.';
-            await chatService.saveMessageToAppwrite(sessionId, 'user', trimmedText);
+            await chatService.saveMessageToAppwrite(sessionId, 'user', trimmedText, { type, attachmentUrl });
             // Broadcast user message to admin_feed for audio notifications
             io.to('admin_feed').emit('user_message_for_agent', {
               sessionId: sessionId,
@@ -942,9 +942,9 @@ function initializeSocket(dependencies) {
             return;
           }
 
-          await chatService.saveMessageToAppwrite(sessionId, 'user', trimmedText);
+          await chatService.saveMessageToAppwrite(sessionId, 'user', trimmedText, { type, attachmentUrl });
         } else {
-          await chatService.saveMessageToAppwrite(sessionId, 'user', trimmedText);
+          await chatService.saveMessageToAppwrite(sessionId, 'user', trimmedText, { type, attachmentUrl });
         }
 
         console.log(`✅ User message saved successfully [${sessionId}]`);
@@ -957,59 +957,59 @@ function initializeSocket(dependencies) {
           const day = now.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
           const hour = now.getHours();
           const inBusinessHours = (day >= 1 && day <= 5) && (hour >= 9 && hour < 17);
-          
+
           console.log(`🚨 STRICT: User wants human agent - BLOCKING ALL AI RESPONSES [${sessionId}]`);
           console.log(`   📅 Business hours check: ${inBusinessHours ? 'IN' : 'OUTSIDE'} business hours (Day: ${day}, Hour: ${hour})`);
-          
+
           // Broadcast user message to admin_feed for audio notifications
           io.to('admin_feed').emit('user_message_for_agent', {
             sessionId: sessionId,
             text: trimmedText,
             ts: Date.now()
           });
-          
+
           if (inBusinessHours) {
             // During business hours - show button
             const agentRequestMessage = 'Click the button below to talk to an agent.';
-            await chatService.saveMessageToAppwrite(sessionId, 'bot', agentRequestMessage, { 
+            await chatService.saveMessageToAppwrite(sessionId, 'bot', agentRequestMessage, {
               confidence: 1,
               type: 'agent_request_prompt'
             });
-            
+
             // Emit bot message with special type to trigger button display
-            io.to(sessionId).emit('bot_message', { 
-              text: agentRequestMessage, 
+            io.to(sessionId).emit('bot_message', {
+              text: agentRequestMessage,
               confidence: 1,
               type: 'agent_request_prompt',
               showAgentButton: true // Signal to frontend to show button
             });
-            
+
             console.log(`✅ Sent agent request prompt (AI BLOCKED) - business hours [${sessionId}]`);
           } else {
             // Outside business hours - show message and offline form
             const businessHoursMessage = 'An agent will contact you during business hours.';
-            await chatService.saveMessageToAppwrite(sessionId, 'bot', businessHoursMessage, { 
+            await chatService.saveMessageToAppwrite(sessionId, 'bot', businessHoursMessage, {
               confidence: 1,
               type: 'business_hours_message'
             });
-            
+
             // Emit bot message with offline form trigger
-            io.to(sessionId).emit('bot_message', { 
-              text: businessHoursMessage, 
+            io.to(sessionId).emit('bot_message', {
+              text: businessHoursMessage,
               confidence: 1,
               type: 'business_hours_message'
             });
-            
+
             // Also emit offline form message
-            io.to(sessionId).emit('bot_message', { 
-              text: '', 
+            io.to(sessionId).emit('bot_message', {
+              text: '',
               confidence: 1,
               type: 'offline_form'
             });
-            
+
             console.log(`✅ Sent business hours message + offline form (AI BLOCKED) - outside business hours [${sessionId}]`);
           }
-          
+
           return; // CRITICAL: Return early - NO AI PROCESSING AT ALL
         }
 
@@ -1103,6 +1103,127 @@ function initializeSocket(dependencies) {
 
         // No agent assigned - proceed with AI flow
         console.log(`🤖 Processing with AI for session ${sessionId}`);
+
+        // Check if this is an image message - analyze with Gemini Vision
+        if (type === 'image' && attachmentUrl) {
+          console.log(`🖼️  Image message detected, analyzing with Gemini Vision...`);
+
+          const imageLatencyStart = process.hrtime.bigint();
+
+          try {
+            // Fetch image from Appwrite URL
+            const imageResponse = await fetch(attachmentUrl);
+            if (!imageResponse.ok) {
+              throw new Error(`Failed to fetch image: ${imageResponse.statusText}`);
+            }
+
+            const imageBuffer = await imageResponse.arrayBuffer();
+            const base64Image = Buffer.from(imageBuffer).toString('base64');
+
+            // Determine MIME type from URL or default to jpeg
+            let mimeType = 'image/jpeg';
+            if (attachmentUrl.toLowerCase().includes('.png')) {
+              mimeType = 'image/png';
+            }
+
+            console.log(`📸 Image fetched and converted to base64 (${mimeType})`);
+
+            // Use the same Gemini model that's already initialized for text responses
+            // This ensures we use a model that's working and has quota available
+            let visionModel = geminiClientRef.model;
+
+            // If model isn't initialized yet, try to initialize it
+            if (!visionModel && geminiClientRef.client) {
+              const modelCandidates = [
+                'gemini-pro',
+                'gemini-1.5-pro',
+                'gemini-1.5-flash'
+              ];
+
+              for (const candidate of modelCandidates) {
+                try {
+                  visionModel = geminiClientRef.client.getGenerativeModel({ model: candidate });
+                  geminiClientRef.model = visionModel;
+                  geminiClientRef.modelName = candidate;
+                  console.log(`✅ Initialized vision model: ${candidate}`);
+                  break;
+                } catch (modelErr) {
+                  console.log(`⚠️  Model ${candidate} not available, trying next...`);
+                  continue;
+                }
+              }
+            }
+
+            if (!visionModel) {
+              throw new Error('No Gemini model available for vision analysis');
+            }
+
+            // Prepare the prompt
+            const imagePrompt = trimmedText && trimmedText !== 'Image'
+              ? `${trimmedText}\n\nProvide a clear, helpful response in a concise paragraph.`
+              : 'Describe what you see in this image in a concise paragraph. Focus on the key elements and provide helpful information the user might need.';
+
+            console.log(`🔍 Analyzing image with prompt: "${imagePrompt.substring(0, 50)}..."`);
+
+            // Call Gemini Vision API
+            const visionResult = await visionModel.generateContent([
+              {
+                inlineData: {
+                  mimeType: mimeType,
+                  data: base64Image
+                }
+              },
+              imagePrompt
+            ]);
+
+            const response = await visionResult.response;
+            const aiText = response.text();
+
+            console.log(`✅ Gemini Vision analysis complete: "${aiText.substring(0, 100)}..."`);
+
+            // Save AI response to database
+            await chatService.saveMessageToAppwrite(sessionId, 'bot', aiText, {
+              confidence: 0.95,
+              type: 'image_analysis'
+            });
+
+            // Send response to user
+            io.to(sessionId).emit('bot_message', {
+              text: aiText,
+              confidence: 0.95,
+              type: 'image_analysis'
+            });
+
+            // Save accuracy record
+            const latencyEnd = process.hrtime.bigint();
+            const visionLatencyMs = Number(latencyEnd - imageLatencyStart) / 1000000;
+
+            await saveAccuracyRecord(
+              { databases, databaseId, aiAccuracyCollectionId, REDACT_PII },
+              sessionId,
+              trimmedText,
+              aiText,
+              0.95,
+              Math.round(visionLatencyMs),
+              null,
+              'vision',
+              { model: geminiClientRef.modelName || 'gemini-vision', type: 'image_analysis' }
+            );
+
+            console.log(`📊 Image analysis complete for session ${sessionId} (${Math.round(visionLatencyMs)}ms)`);
+            return; // Exit early - image has been analyzed
+
+          } catch (imageErr) {
+            console.error(`❌ Image analysis failed:`, imageErr?.message || imageErr);
+
+            // Send error message to user
+            const errorMsg = 'Sorry, I had trouble analyzing the image. Please try uploading it again or describe what you need help with.';
+            await chatService.saveMessageToAppwrite(sessionId, 'bot', errorMsg, { confidence: 1 });
+            io.to(sessionId).emit('bot_message', { text: errorMsg, confidence: 1 });
+            return;
+          }
+        }
+
 
         // Check for preloaded responses
         const preloadedResponse = getPreloadedResponse(trimmedText);
@@ -1208,11 +1329,11 @@ function initializeSocket(dependencies) {
           if (!geminiClientRef.model && geminiClientRef.client) {
             const modelCandidates = [
               process.env.GEMINI_MODEL,
-              'gemini-2.5-flash-lite',
-              'gemini-2.0-flash',
-              'gemini-1.5-flash',
-              'gemini-1.5-pro',
-              'gemini-pro'
+              'gemini-1.5-pro',      // Try this first - has vision + good quota
+              'gemini-1.5-flash',    // Second choice - fast with good quota
+              'gemini-pro',          // Fallback to older stable model
+              'gemini-2.0-flash',    // Last resort - has quota issues
+              'gemini-2.5-flash-lite'
             ].filter(Boolean);
 
             for (const candidate of modelCandidates) {
@@ -1569,17 +1690,17 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
         console.log(`✅ Agent authenticated and connected: ${finalAgentId} (user: ${userId}, socket: ${socket.id})`);
         console.log(`📊 agentSockets Map now has ${agentSockets.size} entries:`, Array.from(agentSockets.keys()));
         socket.emit('agent_connected', { agentId: finalAgentId, userId });
-        
+
         // Emit agent_connected event to admin feed for real-time updates
-        io.to('admin_feed').emit('agent_connected', { 
-          agentId: finalAgentId, 
+        io.to('admin_feed').emit('agent_connected', {
+          agentId: finalAgentId,
           userId,
           timestamp: new Date().toISOString()
         });
-        
+
         // Also emit unified agent_status_changed event
-        io.to('admin_feed').emit('agent_status_changed', { 
-          agentId: finalAgentId, 
+        io.to('admin_feed').emit('agent_status_changed', {
+          agentId: finalAgentId,
           userId: userId,
           status: 'online',
           action: 'connected'
@@ -1611,17 +1732,17 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
         socket.data.agentId = finalAgentId;
         console.log(`👤 Agent connected (DEV MODE): ${finalAgentId} (socket: ${socket.id})`);
         socket.emit('agent_connected', { agentId: finalAgentId });
-        
+
         // Emit agent_connected event to admin feed for real-time updates
-        io.to('admin_feed').emit('agent_connected', { 
-          agentId: finalAgentId, 
+        io.to('admin_feed').emit('agent_connected', {
+          agentId: finalAgentId,
           userId: finalAgentId,
           timestamp: new Date().toISOString()
         });
-        
+
         // Also emit unified agent_status_changed event
-        io.to('admin_feed').emit('agent_status_changed', { 
-          agentId: finalAgentId, 
+        io.to('admin_feed').emit('agent_status_changed', {
+          agentId: finalAgentId,
           userId: finalAgentId,
           status: 'online',
           action: 'connected'
@@ -1644,32 +1765,32 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
       socket.join(`agents:${finalAgentId}`);
       console.log(`👤 Agent connected: ${finalAgentId} (socket: ${socket.id})`);
       socket.emit('agent_connected', { agentId: finalAgentId });
-      
+
       // Emit to admin feed for real-time updates
-      io.to('admin_feed').emit('agent_connected', { 
-        agentId: finalAgentId, 
+      io.to('admin_feed').emit('agent_connected', {
+        agentId: finalAgentId,
         userId: socket.data.userId || finalAgentId,
         timestamp: new Date().toISOString()
       });
-      
-      io.to('admin_feed').emit('agent_status_changed', { 
-        agentId: finalAgentId, 
+
+      io.to('admin_feed').emit('agent_status_changed', {
+        agentId: finalAgentId,
         userId: socket.data.userId || finalAgentId,
         status: 'online',
         action: 'connected'
       });
-      
+
       // Notify admin feed about agent status change (online)
-      io.to('admin_feed').emit('agent_status_changed', { 
-        agentId: finalAgentId, 
+      io.to('admin_feed').emit('agent_status_changed', {
+        agentId: finalAgentId,
         userId: socket.data.userId || finalAgentId,
         status: 'online',
         action: 'connected'
       });
-      
+
       // Emit agent_connected event to admin feed
-      io.to('admin_feed').emit('agent_connected', { 
-        agentId: finalAgentId, 
+      io.to('admin_feed').emit('agent_connected', {
+        agentId: finalAgentId,
         userId: socket.data.userId || finalAgentId,
         timestamp: new Date().toISOString()
       });
@@ -1730,7 +1851,7 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
 
     // Agent message handler
     socket.on('agent_message', async (data) => {
-      const { sessionId, text, agentId } = data || {};
+      const { sessionId, text, agentId, type, attachmentUrl } = data || {};
       if (!sessionId || !text || !agentId) {
         socket.emit('error', { error: 'sessionId, text, and agentId required' });
         return;
@@ -1770,7 +1891,7 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
 
       let saveSuccess = false;
       try {
-        saveSuccess = await chatService.saveMessageToAppwrite(sessionId, 'agent', text, { agentId });
+        saveSuccess = await chatService.saveMessageToAppwrite(sessionId, 'agent', text, { agentId, type, attachmentUrl });
         if (saveSuccess) {
           console.log(`✅ Agent message saved to Appwrite: ${sessionId} (agent: ${agentId})`);
         }
@@ -1782,6 +1903,8 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
         text,
         agentId,
         sender: 'agent',
+        type,
+        attachmentUrl,
         ts: Date.now(),
         sessionId
       };
@@ -1884,26 +2007,26 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
           disconnectedAgentId = agentId;
           disconnectedUserId = socket.data?.userId || agentId;
           agentSockets.delete(agentId);
-          
+
           // Notify admin feed about agent status change (offline)
-          io.to('admin_feed').emit('agent_status_changed', { 
-            agentId: agentId, 
+          io.to('admin_feed').emit('agent_status_changed', {
+            agentId: agentId,
             userId: disconnectedUserId,
             status: 'offline',
             action: 'disconnected'
           });
           console.log(`👤 Agent ${agentId} disconnected`);
-          
+
           // Emit agent_disconnected event to admin feed for real-time updates
-          io.to('admin_feed').emit('agent_disconnected', { 
-            agentId, 
+          io.to('admin_feed').emit('agent_disconnected', {
+            agentId,
             userId: socket.data.userId || agentId,
             timestamp: new Date().toISOString()
           });
-          
+
           // Also emit unified agent_status_changed event
-          io.to('admin_feed').emit('agent_status_changed', { 
-            agentId: agentId, 
+          io.to('admin_feed').emit('agent_status_changed', {
+            agentId: agentId,
             userId: socket.data?.userId || agentId,
             status: 'offline',
             action: 'disconnected'

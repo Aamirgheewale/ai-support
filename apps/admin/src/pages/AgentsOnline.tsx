@@ -35,6 +35,7 @@ export default function AgentsOnline() {
   const [sessionHistory, setSessionHistory] = useState<Record<string, AgentSession[]>>({});
   const [loadingSessions, setLoadingSessions] = useState<Record<string, boolean>>({});
   const [sessionError, setSessionError] = useState<Record<string, string | null>>({});
+  const [currentPage, setCurrentPage] = useState<Record<string, number>>({});
 
   useEffect(() => {
     loadAgents();
@@ -68,10 +69,10 @@ export default function AgentsOnline() {
     if (!dateString) return 'N/A';
     try {
       const date = new Date(dateString);
-      return date.toLocaleDateString('en-US', { 
-        year: 'numeric', 
-        month: 'short', 
-        day: 'numeric' 
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
       });
     } catch {
       return 'N/A';
@@ -82,9 +83,9 @@ export default function AgentsOnline() {
     if (!dateString) return 'N/A';
     try {
       const date = new Date(dateString);
-      return date.toLocaleString('en-US', { 
-        year: 'numeric', 
-        month: 'short', 
+      return date.toLocaleString('en-US', {
+        year: 'numeric',
+        month: 'short',
         day: 'numeric',
         hour: '2-digit',
         minute: '2-digit'
@@ -101,8 +102,11 @@ export default function AgentsOnline() {
       return;
     }
 
+    // Reset to page 1 when viewing a different agent
+    setCurrentPage(prev => ({ ...prev, [agentId]: 1 }));
+
     setExpandedAgentId(agentId);
-    
+
     // If we already have the session history for this agent, don't fetch again
     if (sessionHistory[agentId]) {
       return;
@@ -136,6 +140,20 @@ export default function AgentsOnline() {
     } finally {
       setLoadingSessions(prev => ({ ...prev, [agentId]: false }));
     }
+  };
+
+  const handleNextPage = (agentId: string) => {
+    setCurrentPage(prev => ({
+      ...prev,
+      [agentId]: (prev[agentId] || 1) + 1
+    }));
+  };
+
+  const handlePrevPage = (agentId: string) => {
+    setCurrentPage(prev => ({
+      ...prev,
+      [agentId]: Math.max(1, (prev[agentId] || 1) - 1)
+    }));
   };
 
   const handleExportHistory = (agentId: string, agentName: string) => {
@@ -175,10 +193,10 @@ export default function AgentsOnline() {
   if (!hasRole('admin') && !hasRole('agent')) {
     return (
       <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
-        <div style={{ 
-          background: '#fee2e2', 
-          border: '1px solid #fecaca', 
-          borderRadius: '8px', 
+        <div style={{
+          background: '#fee2e2',
+          border: '1px solid #fecaca',
+          borderRadius: '8px',
           padding: '16px',
           color: '#991b1b'
         }}>
@@ -192,15 +210,15 @@ export default function AgentsOnline() {
     <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <h1 style={{ margin: 0, fontSize: '24px', fontWeight: '600' }}>Agents Online</h1>
-        <button 
-          onClick={loadAgents} 
+        <button
+          onClick={loadAgents}
           disabled={loading}
-          style={{ 
-            padding: '8px 16px', 
-            background: loading ? '#ccc' : '#667eea', 
-            color: 'white', 
-            border: 'none', 
-            borderRadius: '4px', 
+          style={{
+            padding: '8px 16px',
+            background: loading ? '#ccc' : '#667eea',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
             cursor: loading ? 'not-allowed' : 'pointer',
             fontSize: '14px'
           }}
@@ -210,10 +228,10 @@ export default function AgentsOnline() {
       </div>
 
       {error && (
-        <div style={{ 
-          background: '#fee2e2', 
-          border: '1px solid #fecaca', 
-          borderRadius: '8px', 
+        <div style={{
+          background: '#fee2e2',
+          border: '1px solid #fecaca',
+          borderRadius: '8px',
           padding: '12px',
           marginBottom: '20px',
           color: '#991b1b'
@@ -227,10 +245,10 @@ export default function AgentsOnline() {
           <p>Loading agents...</p>
         </div>
       ) : agents.length === 0 ? (
-        <div style={{ 
-          background: '#f8f9fa', 
-          border: '1px solid #dee2e6', 
-          borderRadius: '8px', 
+        <div style={{
+          background: '#f8f9fa',
+          border: '1px solid #dee2e6',
+          borderRadius: '8px',
           padding: '40px',
           textAlign: 'center',
           color: '#6c757d'
@@ -238,76 +256,76 @@ export default function AgentsOnline() {
           <p style={{ margin: 0, fontSize: '16px' }}>No agents found.</p>
         </div>
       ) : (
-        <div style={{ 
-          background: 'white', 
-          border: '1px solid #dee2e6', 
+        <div style={{
+          background: 'white',
+          border: '1px solid #dee2e6',
           borderRadius: '8px',
           overflow: 'hidden'
         }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: '#f8f9fa', borderBottom: '2px solid #dee2e6' }}>
-                <th style={{ 
-                  padding: '12px 16px', 
-                  textAlign: 'left', 
-                  fontWeight: '600', 
+                <th style={{
+                  padding: '12px 16px',
+                  textAlign: 'left',
+                  fontWeight: '600',
                   fontSize: '14px',
                   color: '#495057'
                 }}>
                   Agent Name
                 </th>
-                <th style={{ 
-                  padding: '12px 16px', 
-                  textAlign: 'left', 
-                  fontWeight: '600', 
+                <th style={{
+                  padding: '12px 16px',
+                  textAlign: 'left',
+                  fontWeight: '600',
                   fontSize: '14px',
                   color: '#495057'
                 }}>
                   Role
                 </th>
-                <th style={{ 
-                  padding: '12px 16px', 
-                  textAlign: 'left', 
-                  fontWeight: '600', 
+                <th style={{
+                  padding: '12px 16px',
+                  textAlign: 'left',
+                  fontWeight: '600',
                   fontSize: '14px',
                   color: '#495057'
                 }}>
                   Email
                 </th>
-                <th style={{ 
-                  padding: '12px 16px', 
-                  textAlign: 'left', 
-                  fontWeight: '600', 
+                <th style={{
+                  padding: '12px 16px',
+                  textAlign: 'left',
+                  fontWeight: '600',
                   fontSize: '14px',
                   color: '#495057'
                 }}>
                   On-Boarded Date
                 </th>
-                <th style={{ 
-                  padding: '12px 16px', 
-                  textAlign: 'left', 
-                  fontWeight: '600', 
+                <th style={{
+                  padding: '12px 16px',
+                  textAlign: 'left',
+                  fontWeight: '600',
                   fontSize: '14px',
                   color: '#495057'
                 }}>
                   Status
                 </th>
-                <th style={{ 
-                  padding: '12px 16px', 
-                  textAlign: 'left', 
-                  fontWeight: '600', 
+                <th style={{
+                  padding: '12px 16px',
+                  textAlign: 'left',
+                  fontWeight: '600',
                   fontSize: '14px',
                   color: '#495057'
                 }}>
-                  Actions
+                  History
                 </th>
               </tr>
             </thead>
             <tbody>
               {agents.map((agent, index) => (
                 <React.Fragment key={agent.userId}>
-                  <tr 
-                    style={{ 
+                  <tr
+                    style={{
                       borderBottom: expandedAgentId === agent.userId ? 'none' : (index < agents.length - 1 ? '1px solid #dee2e6' : 'none'),
                       transition: 'background-color 0.2s'
                     }}
@@ -388,168 +406,236 @@ export default function AgentsOnline() {
                     </td>
                   </tr>
                   {expandedAgentId === agent.userId && (
-                  <tr>
-                    <td colSpan={6} style={{ padding: '0', borderBottom: '1px solid #dee2e6' }}>
-                      <div style={{
-                        background: '#f8f9fa',
-                        padding: '20px',
-                        borderTop: '2px solid #667eea'
-                      }}>
+                    <tr>
+                      <td colSpan={6} style={{ padding: '0', borderBottom: '1px solid #dee2e6' }}>
                         <div style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          marginBottom: '16px'
+                          background: '#f8f9fa',
+                          padding: '20px',
+                          borderTop: '2px solid #667eea'
                         }}>
-                          <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#212529' }}>
-                            Session History - {agent.name || agent.email}
-                          </h3>
-                          <button
-                            onClick={() => handleExportHistory(agent.userId, agent.name || agent.email)}
-                            disabled={!sessionHistory[agent.userId] || sessionHistory[agent.userId].length === 0}
-                            style={{
-                              padding: '8px 16px',
-                              background: (!sessionHistory[agent.userId] || sessionHistory[agent.userId].length === 0) ? '#ccc' : '#28a745',
-                              color: 'white',
-                              border: 'none',
-                              borderRadius: '4px',
-                              cursor: (!sessionHistory[agent.userId] || sessionHistory[agent.userId].length === 0) ? 'not-allowed' : 'pointer',
-                              fontSize: '14px',
-                              fontWeight: '500'
-                            }}
-                          >
-                            Export Agent History
-                          </button>
-                        </div>
+                          <div style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            marginBottom: '16px'
+                          }}>
+                            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#212529' }}>
+                              Session History - {agent.name || agent.email}
+                            </h3>
+                            <button
+                              onClick={() => handleExportHistory(agent.userId, agent.name || agent.email)}
+                              disabled={!sessionHistory[agent.userId] || sessionHistory[agent.userId].length === 0}
+                              style={{
+                                padding: '8px 16px',
+                                background: (!sessionHistory[agent.userId] || sessionHistory[agent.userId].length === 0) ? '#ccc' : '#28a745',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: (!sessionHistory[agent.userId] || sessionHistory[agent.userId].length === 0) ? 'not-allowed' : 'pointer',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}
+                            >
+                              Export Agent History
+                            </button>
+                          </div>
 
-                        {loadingSessions[agent.userId] ? (
-                          <div style={{ textAlign: 'center', padding: '20px' }}>
-                            <p style={{ color: '#6c757d' }}>Loading session history...</p>
-                          </div>
-                        ) : sessionError[agent.userId] ? (
-                          <div style={{
-                            background: '#fee2e2',
-                            border: '1px solid #fecaca',
-                            borderRadius: '8px',
-                            padding: '12px',
-                            color: '#991b1b'
-                          }}>
-                            <p style={{ margin: 0 }}>Error: {sessionError[agent.userId]}</p>
-                          </div>
-                        ) : !sessionHistory[agent.userId] || sessionHistory[agent.userId].length === 0 ? (
-                          <div style={{
-                            background: '#f8f9fa',
-                            border: '1px solid #dee2e6',
-                            borderRadius: '8px',
-                            padding: '20px',
-                            textAlign: 'center',
-                            color: '#6c757d'
-                          }}>
-                            <p style={{ margin: 0 }}>No session history found for this agent.</p>
-                          </div>
-                        ) : (
-                          <div style={{
-                            background: 'white',
-                            border: '1px solid #dee2e6',
-                            borderRadius: '8px',
-                            overflow: 'hidden'
-                          }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                              <thead>
-                                <tr style={{ background: '#f8f9fa', borderBottom: '2px solid #dee2e6' }}>
-                                  <th style={{
-                                    padding: '10px 12px',
-                                    textAlign: 'left',
-                                    fontWeight: '600',
-                                    fontSize: '13px',
-                                    color: '#495057'
-                                  }}>
-                                    Session ID
-                                  </th>
-                                  <th style={{
-                                    padding: '10px 12px',
-                                    textAlign: 'left',
-                                    fontWeight: '600',
-                                    fontSize: '13px',
-                                    color: '#495057'
-                                  }}>
-                                    Status
-                                  </th>
-                                  <th style={{
-                                    padding: '10px 12px',
-                                    textAlign: 'left',
-                                    fontWeight: '600',
-                                    fontSize: '13px',
-                                    color: '#495057'
-                                  }}>
-                                    Start Time
-                                  </th>
-                                  <th style={{
-                                    padding: '10px 12px',
-                                    textAlign: 'left',
-                                    fontWeight: '600',
-                                    fontSize: '13px',
-                                    color: '#495057'
-                                  }}>
-                                    Last Seen
-                                  </th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {sessionHistory[agent.userId].map((session, index) => (
-                                  <tr
-                                    key={session.sessionId}
-                                    style={{
-                                      borderBottom: index < sessionHistory[agent.userId].length - 1 ? '1px solid #dee2e6' : 'none',
-                                      transition: 'background-color 0.2s'
-                                    }}
-                                    onMouseEnter={(e) => {
-                                      e.currentTarget.style.backgroundColor = '#f8f9fa';
-                                    }}
-                                    onMouseLeave={(e) => {
-                                      e.currentTarget.style.backgroundColor = 'white';
-                                    }}
-                                  >
-                                    <td style={{ padding: '10px 12px', fontSize: '13px', color: '#212529', fontFamily: 'monospace' }}>
-                                      {session.sessionId}
-                                    </td>
-                                    <td style={{ padding: '10px 12px' }}>
-                                      <span style={{
-                                        display: 'inline-block',
-                                        padding: '4px 10px',
-                                        background: session.status === 'active' ? '#d1fae5' : '#fee2e2',
-                                        color: session.status === 'active' ? '#065f46' : '#991b1b',
-                                        borderRadius: '12px',
-                                        fontSize: '11px',
-                                        fontWeight: '500'
-                                      }}>
-                                        {session.status === 'active' ? 'Active' : session.status === 'closed' ? 'Closed' : session.status}
-                                      </span>
-                                    </td>
-                                    <td style={{ padding: '10px 12px', fontSize: '13px', color: '#6c757d' }}>
-                                      {formatDateTime(session.startTime)}
-                                    </td>
-                                    <td style={{ padding: '10px 12px', fontSize: '13px', color: '#6c757d' }}>
-                                      {formatDateTime(session.lastSeen)}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                            <div style={{
-                              marginTop: '12px',
-                              textAlign: 'right',
-                              color: '#6c757d',
-                              fontSize: '13px',
-                              padding: '0 12px 12px'
-                            }}>
-                              Total: {sessionHistory[agent.userId].length} session{sessionHistory[agent.userId].length !== 1 ? 's' : ''}
+                          {loadingSessions[agent.userId] ? (
+                            <div style={{ textAlign: 'center', padding: '20px' }}>
+                              <p style={{ color: '#6c757d' }}>Loading session history...</p>
                             </div>
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
+                          ) : sessionError[agent.userId] ? (
+                            <div style={{
+                              background: '#fee2e2',
+                              border: '1px solid #fecaca',
+                              borderRadius: '8px',
+                              padding: '12px',
+                              color: '#991b1b'
+                            }}>
+                              <p style={{ margin: 0 }}>Error: {sessionError[agent.userId]}</p>
+                            </div>
+                          ) : !sessionHistory[agent.userId] || sessionHistory[agent.userId].length === 0 ? (
+                            <div style={{
+                              background: '#f8f9fa',
+                              border: '1px solid #dee2e6',
+                              borderRadius: '8px',
+                              padding: '20px',
+                              textAlign: 'center',
+                              color: '#6c757d'
+                            }}>
+                              <p style={{ margin: 0 }}>No session history found for this agent.</p>
+                            </div>
+                          ) : (() => {
+                            const SESSIONS_PER_PAGE = 10;
+                            const agentPage = currentPage[agent.userId] || 1;
+                            const totalSessions = sessionHistory[agent.userId].length;
+                            const totalPages = Math.ceil(totalSessions / SESSIONS_PER_PAGE);
+                            const startIndex = (agentPage - 1) * SESSIONS_PER_PAGE;
+                            const endIndex = startIndex + SESSIONS_PER_PAGE;
+                            const paginatedSessions = sessionHistory[agent.userId].slice(startIndex, endIndex);
+
+                            return (
+                              <div style={{
+                                background: 'white',
+                                border: '1px solid #dee2e6',
+                                borderRadius: '8px',
+                                overflow: 'hidden'
+                              }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                  <thead>
+                                    <tr style={{ background: '#f8f9fa', borderBottom: '2px solid #dee2e6' }}>
+                                      <th style={{
+                                        padding: '10px 12px',
+                                        textAlign: 'left',
+                                        fontWeight: '600',
+                                        fontSize: '13px',
+                                        color: '#495057'
+                                      }}>
+                                        Session ID
+                                      </th>
+                                      <th style={{
+                                        padding: '10px 12px',
+                                        textAlign: 'left',
+                                        fontWeight: '600',
+                                        fontSize: '13px',
+                                        color: '#495057'
+                                      }}>
+                                        Status
+                                      </th>
+                                      <th style={{
+                                        padding: '10px 12px',
+                                        textAlign: 'left',
+                                        fontWeight: '600',
+                                        fontSize: '13px',
+                                        color: '#495057'
+                                      }}>
+                                        Start Time
+                                      </th>
+                                      <th style={{
+                                        padding: '10px 12px',
+                                        textAlign: 'left',
+                                        fontWeight: '600',
+                                        fontSize: '13px',
+                                        color: '#495057'
+                                      }}>
+                                        Last Seen
+                                      </th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {paginatedSessions.map((session, index) => (
+                                      <tr
+                                        key={session.sessionId}
+                                        style={{
+                                          borderBottom: index < paginatedSessions.length - 1 ? '1px solid #dee2e6' : 'none',
+                                          transition: 'background-color 0.2s'
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          e.currentTarget.style.backgroundColor = '#f8f9fa';
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.currentTarget.style.backgroundColor = 'white';
+                                        }}
+                                      >
+                                        <td style={{ padding: '10px 12px', fontSize: '13px', color: '#212529', fontFamily: 'monospace' }}>
+                                          {session.sessionId}
+                                        </td>
+                                        <td style={{ padding: '10px 12px' }}>
+                                          <span style={{
+                                            display: 'inline-block',
+                                            padding: '4px 10px',
+                                            background: session.status === 'active' ? '#d1fae5' : '#fee2e2',
+                                            color: session.status === 'active' ? '#065f46' : '#991b1b',
+                                            borderRadius: '12px',
+                                            fontSize: '11px',
+                                            fontWeight: '500'
+                                          }}>
+                                            {session.status === 'active' ? 'Active' : session.status === 'closed' ? 'Closed' : session.status}
+                                          </span>
+                                        </td>
+                                        <td style={{ padding: '10px 12px', fontSize: '13px', color: '#6c757d' }}>
+                                          {formatDateTime(session.startTime)}
+                                        </td>
+                                        <td style={{ padding: '10px 12px', fontSize: '13px', color: '#6c757d' }}>
+                                          {formatDateTime(session.lastSeen)}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+
+                                {/* Pagination Controls */}
+                                <div style={{
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center',
+                                  padding: '12px',
+                                  borderTop: '1px solid #dee2e6',
+                                  background: '#f8f9fa'
+                                }}>
+                                  <div style={{
+                                    color: '#6c757d',
+                                    fontSize: '13px'
+                                  }}>
+                                    Showing {startIndex + 1}-{Math.min(endIndex, totalSessions)} of {totalSessions} session{totalSessions !== 1 ? 's' : ''}
+                                  </div>
+
+                                  {totalPages > 1 && (
+                                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                      <button
+                                        onClick={() => handlePrevPage(agent.userId)}
+                                        disabled={agentPage === 1}
+                                        style={{
+                                          padding: '6px 12px',
+                                          background: agentPage === 1 ? '#e9ecef' : '#667eea',
+                                          color: agentPage === 1 ? '#6c757d' : 'white',
+                                          border: '1px solid #dee2e6',
+                                          borderRadius: '4px',
+                                          cursor: agentPage === 1 ? 'not-allowed' : 'pointer',
+                                          fontSize: '12px',
+                                          fontWeight: '500',
+                                          transition: 'all 0.2s'
+                                        }}
+                                      >
+                                        Previous
+                                      </button>
+
+                                      <span style={{
+                                        color: '#495057',
+                                        fontSize: '13px',
+                                        fontWeight: '500',
+                                        minWidth: '80px',
+                                        textAlign: 'center'
+                                      }}>
+                                        Page {agentPage} of {totalPages}
+                                      </span>
+
+                                      <button
+                                        onClick={() => handleNextPage(agent.userId)}
+                                        disabled={agentPage === totalPages}
+                                        style={{
+                                          padding: '6px 12px',
+                                          background: agentPage === totalPages ? '#e9ecef' : '#667eea',
+                                          color: agentPage === totalPages ? '#6c757d' : 'white',
+                                          border: '1px solid #dee2e6',
+                                          borderRadius: '4px',
+                                          cursor: agentPage === totalPages ? 'not-allowed' : 'pointer',
+                                          fontSize: '12px',
+                                          fontWeight: '500',
+                                          transition: 'all 0.2s'
+                                        }}
+                                      >
+                                        Next
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      </td>
+                    </tr>
                   )}
                 </React.Fragment>
               ))}
@@ -559,11 +645,11 @@ export default function AgentsOnline() {
       )}
 
       {!loading && agents.length > 0 && (
-        <div style={{ 
-          marginTop: '16px', 
-          textAlign: 'right', 
-          color: '#6c757d', 
-          fontSize: '14px' 
+        <div style={{
+          marginTop: '16px',
+          textAlign: 'right',
+          color: '#6c757d',
+          fontSize: '14px'
         }}>
           Total: {agents.length} agent{agents.length !== 1 ? 's' : ''}
         </div>
