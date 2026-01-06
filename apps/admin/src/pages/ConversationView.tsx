@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { io } from 'socket.io-client'
 import { useAuth } from '../hooks/useAuth'
+import ImageAnnotationModal from '../components/ImageAnnotationModal'
+import { useAppwriteUpload } from '../hooks/useAppwriteUpload'
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000'
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_API_BASE || 'http://localhost:4000'
@@ -12,6 +14,8 @@ interface Message {
   text: string
   timestamp: string
   agentId?: string
+  type?: string
+  attachmentUrl?: string
 }
 
 export default function ConversationView() {
@@ -29,24 +33,34 @@ export default function ConversationView() {
   const [onlineAgents, setOnlineAgents] = useState<Array<{ userId: string; name: string; email: string; isOnline?: boolean; status?: string }>>([])
   const [selectedAgentId, setSelectedAgentId] = useState<string>('')
   const [loadingAgents, setLoadingAgents] = useState(false)
-  
+
   // Check if current user can send messages (agent or admin)
   const canSendMessages = hasAnyRole(['agent', 'admin'])
   const isAdmin = hasRole('admin')
   const isAgent = hasRole('agent')
-  
+
   // Debug logging for close button visibility
   useEffect(() => {
     console.log(`🔍 Close button check: assignedAgentId=${assignedAgentId}, canSendMessages=${canSendMessages}, user.roles=${user?.roles?.join(',') || 'none'}`)
   }, [assignedAgentId, canSendMessages, user?.roles])
   const [exporting, setExporting] = useState(false)
   const [showExportMenu, setShowExportMenu] = useState(false)
-  
+
   // Message pagination state
   const [messageLimit, setMessageLimit] = useState(100) // Default: load all
   const [messageOffset, setMessageOffset] = useState(0)
   const [messageTotal, setMessageTotal] = useState(0)
+
+  // Image annotation state
+  const [showAnnotationModal, setShowAnnotationModal] = useState(false)
+  const [imageToAnnotate, setImageToAnnotate] = useState<string | null>(null)
+  const [hoveredImageUrl, setHoveredImageUrl] = useState<string | null>(null)
+  const [annotatedImageBlob, setAnnotatedImageBlob] = useState<Blob | null>(null)
   const [loadingOlder, setLoadingOlder] = useState(false)
+  const [isSending, setIsSending] = useState(false)
+  const [showImageViewer, setShowImageViewer] = useState(false)
+  const [imageToView, setImageToView] = useState<string | null>(null)
+  const { uploadAnnotatedImage } = useAppwriteUpload()
 
   // Close export menu when clicking outside
   useEffect(() => {
@@ -63,17 +77,17 @@ export default function ConversationView() {
   // Load session info and messages when sessionId changes
   useEffect(() => {
     if (!sessionId) return
-    
+
     // Load both session info and messages
     loadSessionInfo()
     loadMessages()
-    
+
     // Connect to socket for real-time updates
     const sock = io(SOCKET_URL, {
       withCredentials: true,
       transports: ['websocket', 'polling']
     })
-    
+
     sock.on('connect', () => {
       console.log('✅ Socket connected')
       // CRITICAL: Join session room to receive real-time updates (user messages, agent messages, bot messages)
@@ -97,7 +111,7 @@ export default function ConversationView() {
         console.log(`👤 Connected as agent: ${agentId}`)
       }
     })
-    
+
     // Listen for user messages forwarded to agent
     sock.on('user_message_for_agent', (data: any) => {
       console.log('📨 Received user_message_for_agent:', data)
@@ -110,26 +124,27 @@ export default function ConversationView() {
             return prev
           }
           console.log('   ✅ Adding user message to UI')
-          return [...prev, { 
-            sender: 'user', 
-            text: data.text, 
-            timestamp: new Date(data.ts || Date.now()).toISOString() 
+          return [...prev, {
+            sender: 'user',
+            text: data.text,
+            timestamp: new Date(data.ts || Date.now()).toISOString()
           }]
         })
       } else {
         console.log(`   ⚠️  Message for different session: ${data.sessionId} (current: ${sessionId})`)
       }
     })
-    
+
     // Listen for agent messages (from any agent, not just current user)
     sock.on('agent_message', (data: any) => {
       console.log('📨 Received agent_message:', data)
       if (data.sessionId === sessionId || !data.sessionId) {
         setMessages(prev => {
           // Check if message already exists to avoid duplicates
-          const exists = prev.some(m => 
-            m.sender === 'agent' && 
-            m.text === data.text && 
+          const exists = prev.some(m =>
+            m.sender === 'agent' &&
+            m.text === data.text &&
+            m.attachmentUrl === data.attachmentUrl &&
             Math.abs(new Date(m.timestamp).getTime() - (data.ts || Date.now())) < 2000
           )
           if (exists) {
@@ -137,26 +152,28 @@ export default function ConversationView() {
             return prev
           }
           console.log('   ✅ Adding agent message to UI')
-          return [...prev, { 
-            sender: 'agent', 
-            text: data.text, 
-            timestamp: new Date(data.ts || Date.now()).toISOString(), 
-            agentId: data.agentId 
+          return [...prev, {
+            sender: 'agent',
+            text: data.text,
+            timestamp: new Date(data.ts || Date.now()).toISOString(),
+            agentId: data.agentId,
+            type: data.type,
+            attachmentUrl: data.attachmentUrl
           }]
         })
       } else {
         console.log(`   ⚠️  Agent message for different session: ${data.sessionId} (current: ${sessionId})`)
       }
     })
-    
+
     // Listen for user messages (from widget) for real-time updates
     sock.on('user_message', (data: any) => {
       console.log('📨 Received user_message (real-time):', data)
       if (data.sessionId === sessionId || !data.sessionId) {
         setMessages(prev => {
-          const exists = prev.some(m => 
-            m.sender === 'user' && 
-            m.text === data.text && 
+          const exists = prev.some(m =>
+            m.sender === 'user' &&
+            m.text === data.text &&
             Math.abs(new Date(m.timestamp).getTime() - (data.ts || Date.now())) < 2000
           )
           if (exists) {
@@ -164,22 +181,22 @@ export default function ConversationView() {
             return prev
           }
           console.log('   ✅ Adding user message to UI (real-time)')
-          return [...prev, { 
-            sender: 'user', 
-            text: data.text, 
-            timestamp: new Date(data.ts || Date.now()).toISOString() 
+          return [...prev, {
+            sender: 'user',
+            text: data.text,
+            timestamp: new Date(data.ts || Date.now()).toISOString()
           }]
         })
       }
     })
-    
+
     // Listen for bot messages for real-time updates
     sock.on('bot_message', (data: any) => {
       console.log('📨 Received bot_message (real-time):', data)
       setMessages(prev => {
-        const exists = prev.some(m => 
-          m.sender === 'bot' && 
-          m.text === data.text && 
+        const exists = prev.some(m =>
+          m.sender === 'bot' &&
+          m.text === data.text &&
           Math.abs(new Date(m.timestamp).getTime() - Date.now()) < 2000
         )
         if (exists) {
@@ -187,29 +204,29 @@ export default function ConversationView() {
           return prev
         }
         console.log('   ✅ Adding bot message to UI (real-time)')
-        return [...prev, { 
-          sender: 'bot', 
-          text: data.text, 
+        return [...prev, {
+          sender: 'bot',
+          text: data.text,
           timestamp: new Date().toISOString(),
           confidence: data.confidence
         }]
       })
     })
-    
+
     // Listen for assignment notifications
     sock.on('assignment', (data: any) => {
       console.log('📨 Assignment notification:', data)
     })
-    
+
     // Listen for internal notes (private agent messages)
     sock.on('internal_note', (data: any) => {
       console.log('📨 Received internal_note:', data)
       if (data.sessionId === sessionId || !data.sessionId) {
         setMessages(prev => {
           // Check if message already exists to avoid duplicates
-          const exists = prev.some(m => 
-            m.sender === 'internal' && 
-            m.text === data.text && 
+          const exists = prev.some(m =>
+            m.sender === 'internal' &&
+            m.text === data.text &&
             Math.abs(new Date(m.timestamp).getTime() - (data.ts || Date.now())) < 2000
           )
           if (exists) {
@@ -217,18 +234,18 @@ export default function ConversationView() {
             return prev
           }
           console.log('   ✅ Adding internal note to UI')
-          return [...prev, { 
-            sender: 'internal', 
-            text: data.text, 
-            timestamp: new Date(data.ts || Date.now()).toISOString(), 
-            agentId: data.agentId 
+          return [...prev, {
+            sender: 'internal',
+            text: data.text,
+            timestamp: new Date(data.ts || Date.now()).toISOString(),
+            agentId: data.agentId
           }]
         })
       } else {
         console.log(`   ⚠️  Internal note for different session: ${data.sessionId} (current: ${sessionId})`)
       }
     })
-    
+
     // Listen for agent online/offline status updates (admin only)
     if (isAdmin) {
       sock.on('agent_connected', (data: any) => {
@@ -236,27 +253,27 @@ export default function ConversationView() {
         // Refresh the online agents list when an agent connects
         loadOnlineAgents()
       })
-      
+
       sock.on('agent_disconnected', (data: any) => {
         console.log('📨 Received agent_disconnected:', data)
         // Refresh the online agents list when an agent disconnects
         loadOnlineAgents()
       })
-      
+
       sock.on('agent_status_changed', (data: any) => {
         console.log('📨 Received agent_status_changed:', data)
         // Refresh the online agents list when agent status changes
         loadOnlineAgents()
       })
     }
-    
+
     setSocket(sock)
-    
+
     return () => {
       sock.disconnect()
     }
   }, [sessionId, assignedAgentId, user])
-  
+
   // Auto-fill agentId when assignedAgentId is set (ensures Send button is enabled)
   // This handles both assignment methods: Initiate Chat and manual assignment
   useEffect(() => {
@@ -270,7 +287,7 @@ export default function ConversationView() {
   // Fetch all agents for admin dropdown (only online agents)
   const loadOnlineAgents = async () => {
     if (!isAdmin) return
-    
+
     setLoadingAgents(true)
     try {
       const res = await fetch(`${API_BASE}/admin/users/agents`, {
@@ -286,7 +303,7 @@ export default function ConversationView() {
 
       const data = await res.json()
       const allAgents = data.agents || []
-      
+
       // Debug: Log all agents and their online status
       console.log(`📊 All agents received:`, allAgents.map((a: any) => ({
         userId: a.userId,
@@ -295,40 +312,40 @@ export default function ConversationView() {
         isOnline: a.isOnline,
         status: a.status
       })))
-      
+
       // Filter: Only show agents who are:
       // 1. Currently online (have active socket connections) AND
       // 2. Have status === 'online' (not 'away' or null)
       const onlineAgentsFiltered = allAgents.filter((agent: any) => {
         const hasSocketConnection = agent.isOnline === true
         const hasOnlineStatus = agent.status === 'online'
-        
+
         // Must have BOTH socket connection AND status === 'online'
         const isOnline = hasSocketConnection && hasOnlineStatus
-        
+
         if (!isOnline) {
           console.log(`   ⚠️  Filtering out agent: ${agent.userId} (${agent.email}) - isOnline=${hasSocketConnection}, status=${agent.status}`)
         }
-        
+
         return isOnline
       })
-      
+
       // Sort by name for easier selection
       const sortedAgents = onlineAgentsFiltered.sort((a: any, b: any) => {
         const nameA = (a.name || a.email || '').toLowerCase()
         const nameB = (b.name || b.email || '').toLowerCase()
         return nameA.localeCompare(nameB)
       })
-      
+
       // CRITICAL: Set state with filtered online agents only
       setOnlineAgents(sortedAgents)
       console.log(`✅ Loaded ${sortedAgents.length} online agent(s) out of ${allAgents.length} total`)
-      console.log(`📋 Setting onlineAgents state with:`, sortedAgents.map(a => ({ 
-        userId: a.userId, 
-        name: a.name, 
-        email: a.email, 
+      console.log(`📋 Setting onlineAgents state with:`, sortedAgents.map(a => ({
+        userId: a.userId,
+        name: a.name,
+        email: a.email,
         isOnline: a.isOnline,
-        status: a.status 
+        status: a.status
       })))
       if (sortedAgents.length === 0 && allAgents.length > 0) {
         console.warn(`⚠️  WARNING: No online agents found, but ${allAgents.length} total agent(s) exist. Check backend logs for agent connection status.`)
@@ -345,24 +362,24 @@ export default function ConversationView() {
     if (isAdmin && sessionId) {
       console.log('🔄 useEffect: Loading online agents...')
       loadOnlineAgents()
-      
+
       // Refresh online agents list periodically (every 30 seconds) to get real-time updates
       const refreshInterval = setInterval(() => {
         console.log('🔄 Periodic refresh: Reloading online agents...')
         loadOnlineAgents()
       }, 30000) // 30 seconds
-      
+
       return () => clearInterval(refreshInterval)
     }
   }, [isAdmin, sessionId])
-  
+
   // Also refresh when dropdown is opened (on focus)
   const handleDropdownFocus = () => {
     if (isAdmin) {
       loadOnlineAgents()
     }
   }
-  
+
   // Separate effect to reconnect when agentId changes
   useEffect(() => {
     if (socket && socket.connected && agentId) {
@@ -370,11 +387,11 @@ export default function ConversationView() {
       console.log(`👤 Reconnected as agent: ${agentId}`)
     }
   }, [agentId, socket])
-  
+
   // Load session info to get assigned agent
   async function loadSessionInfo() {
     if (!sessionId) return
-    
+
     try {
       const res = await fetch(`${API_BASE}/admin/sessions`, {
         headers: {
@@ -385,15 +402,15 @@ export default function ConversationView() {
       const data = await res.json()
       // The API returns items, not sessions
       const session = (data.items || data.sessions || []).find((s: any) => s.sessionId === sessionId)
-      
+
       if (session) {
         setSessionStatus(session.status || '')
-        
+
         // Extract assignedAgent from session
         // The API endpoint already extracts assignedAgent from userMeta and sets it on the session object
         let agent = session.assignedAgent || null
         console.log(`🔍 Session data check: assignedAgent=${session.assignedAgent}, userMeta=${session.userMeta ? 'exists' : 'null'}, status=${session.status}`)
-        
+
         if (!agent && session.userMeta) {
           try {
             const userMeta = typeof session.userMeta === 'string' ? JSON.parse(session.userMeta) : session.userMeta
@@ -406,7 +423,7 @@ export default function ConversationView() {
             console.error(`❌ Error parsing userMeta:`, e)
           }
         }
-        
+
         if (agent) {
           setAssignedAgentId(agent)
           // Always auto-fill agentId when assignedAgent is found (enables Send button)
@@ -430,43 +447,43 @@ export default function ConversationView() {
 
   async function loadMessages(loadOlder: boolean = false) {
     if (!sessionId) return
-    
+
     if (loadOlder) {
       setLoadingOlder(true)
     } else {
       setLoading(true)
       setMessageOffset(0) // Reset to start when loading fresh
     }
-    
+
     try {
       const currentOffset = loadOlder ? messageOffset + messageLimit : 0
       console.log(`📨 Loading messages for session: ${sessionId}, offset: ${currentOffset}, limit: ${messageLimit}`)
-      
+
       const params = new URLSearchParams()
       if (messageLimit < 10000) {
         params.append('limit', messageLimit.toString())
         params.append('offset', currentOffset.toString())
         params.append('order', 'asc') // Oldest first for pagination
       }
-      
+
       const res = await fetch(`${API_BASE}/admin/sessions/${sessionId}/messages?${params}`, {
         headers: {
           'Authorization': `Bearer ${token || ADMIN_SECRET}`
         },
         credentials: 'include' // Include cookies as fallback
       })
-      
+
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}))
         throw new Error(`Failed to load messages: ${res.status} ${errorData.error || res.statusText}`)
       }
-      
+
       const data = await res.json()
       const messages = data.items || data.messages || []
       const total = data.total || messages.length
-      
+
       console.log(`📨 Received ${messages.length} message(s) from backend (total: ${total}, offset: ${currentOffset})`)
-      
+
       // Transform Appwrite messages to UI format - includes user, bot, and agent messages
       const transformedMessages = messages.map((msg: any) => {
         // Parse metadata if it's a string
@@ -480,18 +497,20 @@ export default function ConversationView() {
             metadata = {}
           }
         }
-        
+
         return {
           sender: msg.sender || 'unknown',
           text: msg.text || '',
           timestamp: msg.createdAt || msg.timestamp || msg.$createdAt || new Date().toISOString(),
-          agentId: metadata?.agentId || undefined
+          agentId: metadata?.agentId || undefined,
+          type: msg.type || undefined,
+          attachmentUrl: msg.attachmentUrl || undefined
         }
       })
-      
+
       console.log(`📊 Transformed ${transformedMessages.length} message(s)`)
       console.log(`📊 Message senders:`, [...new Set(transformedMessages.map((m: Message) => m.sender))])
-      
+
       if (loadOlder) {
         // Prepend older messages to existing messages
         setMessages(prev => {
@@ -500,9 +519,9 @@ export default function ConversationView() {
           merged.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
           // Remove duplicates based on text and timestamp
           const unique = merged.filter((msg, idx, arr) => {
-            return idx === 0 || !arr.slice(0, idx).some(m => 
-              m.text === msg.text && 
-              m.sender === msg.sender && 
+            return idx === 0 || !arr.slice(0, idx).some(m =>
+              m.text === msg.text &&
+              m.sender === msg.sender &&
               Math.abs(new Date(m.timestamp).getTime() - new Date(msg.timestamp).getTime()) < 1000
             )
           })
@@ -514,7 +533,7 @@ export default function ConversationView() {
         setMessages(transformedMessages)
         setMessageOffset(0)
       }
-      
+
       setMessageTotal(total)
     } catch (err) {
       console.error('❌ Failed to load messages:', err)
@@ -552,7 +571,7 @@ export default function ConversationView() {
 
     const selectedAgent = onlineAgents.find(a => a.userId === selectedAgentId)
     const agentName = selectedAgent?.name || selectedAgent?.email || selectedAgentId
-    
+
     await assignSession(selectedAgentId, agentName)
   }
 
@@ -562,25 +581,25 @@ export default function ConversationView() {
         alert('Cannot assign: Agent ID not found')
         return
       }
-      
+
       // Ensure socket is connected and registered as agent
       if (!socket) {
         alert('Socket not connected. Please wait...')
         return
       }
-      
+
       if (!socket.connected) {
         alert('Socket not connected. Please refresh the page.')
         return
       }
-      
+
       // Connect as agent FIRST (this registers the socket in agentSockets map)
       console.log(`👤 Connecting as agent: ${agentId}`)
       socket.emit('agent_connect', { agentId })
-      
+
       // Wait a bit for connection to register
       await new Promise(resolve => setTimeout(resolve, 100))
-      
+
       // Assign session via API with agentName
       const res = await fetch(`${API_BASE}/admin/sessions/${sessionId}/assign`, {
         method: 'POST',
@@ -594,19 +613,19 @@ export default function ConversationView() {
       const data = await res.json()
       if (data.success) {
         console.log('✅ Session assigned via API')
-        
+
         // Update assignedAgentId state immediately so close button appears
         setAssignedAgentId(agentId)
         setAgentId(agentId) // Also update agentId for sending messages
         setSelectedAgentId('') // Reset dropdown selection
-        
+
         // Also emit takeover event
         socket.emit('agent_takeover', { sessionId, agentId })
         console.log('✅ Emitted agent_takeover event')
-        
+
         // Reload session info to get latest status and assignment
         await loadSessionInfo()
-        
+
         // Reload messages to get latest (including system message)
         loadMessages()
       } else {
@@ -633,10 +652,10 @@ export default function ConversationView() {
   // Export conversation
   async function exportConversation(format: 'json' | 'csv') {
     if (!sessionId) return
-    
+
     setExporting(true)
     setShowExportMenu(false)
-    
+
     try {
       const res = await fetch(`${API_BASE}/admin/sessions/${sessionId}/export?format=${format}`, {
         headers: {
@@ -652,13 +671,13 @@ export default function ConversationView() {
       }
 
       const contentDisposition = res.headers.get('content-disposition')
-      const filename = contentDisposition 
+      const filename = contentDisposition
         ? contentDisposition.split('filename=')[1]?.replace(/"/g, '') || `export_${sessionId}.${format}`
         : `aichat_session-${sessionId}_${new Date().toISOString().slice(0, 10)}.${format}`
 
       const blob = await res.blob()
       downloadFile(blob, filename)
-      
+
       console.log(`✅ Exported session ${sessionId} as ${format}`)
     } catch (err) {
       console.error('Export error:', err)
@@ -670,11 +689,11 @@ export default function ConversationView() {
 
   async function closeConversation() {
     if (!sessionId) return
-    
+
     if (!confirm('Are you sure you want to close this conversation? This will prevent further messages from being sent.')) {
       return
     }
-    
+
     try {
       const res = await fetch(`${API_BASE}/admin/sessions/${sessionId}/close`, {
         method: 'POST',
@@ -701,46 +720,96 @@ export default function ConversationView() {
     }
   }
 
-  function sendMessage() {
-    if (!sessionId || !messageText.trim()) {
-      alert('Please enter a message')
+  async function sendMessage() {
+    if (!sessionId || isSending) return;
+
+    // Check if we have anything to send (text OR an annotated image)
+    const hasText = !!messageText.trim();
+    const hasImage = !!annotatedImageBlob;
+
+    if (!hasText && !hasImage) {
+      alert('Please enter a message or attach an annotated image')
       return
     }
-    
+
     // Use current user's ID if agentId is not set but user has permission
     const effectiveAgentId = agentId || (canSendMessages && user?.userId ? user.userId : null)
     if (!effectiveAgentId) {
       alert('Agent ID is required')
       return
     }
-    
+
     if (sessionStatus === 'closed') {
       alert('This conversation is closed. Cannot send messages.')
       return
     }
-    
+
     if (socket) {
-      if (isPrivateNote) {
-        // Send as internal note (private, only visible to agents)
-        socket.emit('internal_note', { sessionId, text: messageText.trim(), agentId: effectiveAgentId })
-        setMessages(prev => [...prev, { 
-          sender: 'internal', 
-          text: messageText.trim(), 
-          timestamp: new Date().toISOString(), 
-          agentId: effectiveAgentId 
-        }])
-      } else {
-        // Send as regular agent message (visible to user)
-        socket.emit('agent_message', { sessionId, text: messageText.trim(), agentId: effectiveAgentId })
-        setMessages(prev => [...prev, { 
-          sender: 'agent', 
-          text: messageText.trim(), 
-          timestamp: new Date().toISOString(), 
-          agentId: effectiveAgentId 
-        }])
+      setIsSending(true);
+      try {
+        let attachmentUrl = undefined;
+        let messageType = 'text';
+
+        // If there's an annotated image, upload it first
+        if (annotatedImageBlob) {
+          try {
+            attachmentUrl = await uploadAnnotatedImage(annotatedImageBlob);
+            messageType = 'image';
+          } catch (uploadErr) {
+            alert('Failed to upload annotated image: ' + (uploadErr instanceof Error ? uploadErr.message : 'Unknown error'));
+            setIsSending(false);
+            return;
+          }
+        }
+
+        if (isPrivateNote) {
+          // Send as internal note (private, only visible to agents)
+          const payload = {
+            sessionId,
+            text: messageText.trim() || 'Annotated Image',
+            agentId: effectiveAgentId,
+            type: messageType,
+            attachmentUrl
+          };
+          socket.emit('internal_note', payload)
+          setMessages(prev => [...prev, {
+            sender: 'internal',
+            text: payload.text,
+            timestamp: new Date().toISOString(),
+            agentId: effectiveAgentId,
+            type: messageType,
+            attachmentUrl
+          }])
+        } else {
+          // Send as regular agent message (visible to user)
+          const payload = {
+            sessionId,
+            text: messageText.trim() || 'Image',
+            agentId: effectiveAgentId,
+            type: messageType,
+            attachmentUrl
+          };
+          socket.emit('agent_message', payload)
+          setMessages(prev => [...prev, {
+            sender: 'agent',
+            text: payload.text,
+            timestamp: new Date().toISOString(),
+            agentId: effectiveAgentId,
+            type: messageType,
+            attachmentUrl
+          }])
+        }
+
+        // Success: Clear state
+        setMessageText('')
+        setAnnotatedImageBlob(null)
+        setIsPrivateNote(false) // Reset toggle after sending
+      } catch (err) {
+        console.error('Error sending message:', err);
+        alert('Failed to send message: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      } finally {
+        setIsSending(false);
       }
-      setMessageText('')
-      setIsPrivateNote(false) // Reset toggle after sending
     }
   }
 
@@ -868,11 +937,11 @@ export default function ConversationView() {
                   selectedAgentId,
                   hasAgents: onlineAgents.length > 0
                 })
-                
+
                 // Only disable if actively loading AND no agents available yet
                 // If agents are available, enable the dropdown even if loading (for real-time updates)
                 const shouldDisable = loadingAgents && onlineAgents.length === 0
-                
+
                 return (
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginLeft: '10px' }}>
                     <select
@@ -901,12 +970,12 @@ export default function ConversationView() {
                         // Display ONLY online agents (already filtered in loadOnlineAgents)
                         onlineAgents.map((agent) => {
                           const displayName = agent.name || agent.email || 'Unknown'
-                          
+
                           // Double-check: log if somehow a non-online agent got through
                           if (agent.isOnline !== true || agent.status !== 'online') {
                             console.warn(`⚠️  WARNING: Rendering non-online agent in dropdown: ${agent.userId} (isOnline=${agent.isOnline}, status=${agent.status})`)
                           }
-                          
+
                           return (
                             <option key={agent.userId} value={agent.userId}>
                               🟢 {displayName}
@@ -915,22 +984,22 @@ export default function ConversationView() {
                         })
                       )}
                     </select>
-                  <button
-                    onClick={assignToSelectedAgent}
-                    disabled={!selectedAgentId || loadingAgents}
-                    style={{
-                      padding: '8px 16px',
-                      background: selectedAgentId && !loadingAgents ? '#28a745' : '#ccc',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: selectedAgentId && !loadingAgents ? 'pointer' : 'not-allowed',
-                      fontSize: '14px'
-                    }}
-                  >
-                    Assign
-                  </button>
-                </div>
+                    <button
+                      onClick={assignToSelectedAgent}
+                      disabled={!selectedAgentId || loadingAgents}
+                      style={{
+                        padding: '8px 16px',
+                        background: selectedAgentId && !loadingAgents ? '#28a745' : '#ccc',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: selectedAgentId && !loadingAgents ? 'pointer' : 'not-allowed',
+                        fontSize: '14px'
+                      }}
+                    >
+                      Assign
+                    </button>
+                  </div>
                 )
               })()}
               {assignedAgentId && canSendMessages && sessionStatus === 'agent_assigned' ? (
@@ -999,28 +1068,145 @@ export default function ConversationView() {
                 style={{
                   padding: '10px 14px',
                   borderRadius: '8px',
-                  background: msg.sender === 'user' ? '#667eea' : 
-                              msg.sender === 'agent' ? '#28a745' : 
-                              msg.sender === 'bot' ? '#6c757d' : 
-                              msg.sender === 'internal' ? '#fff3cd' : 
-                              msg.sender === 'system' ? '#e7f3ff' : '#f8f9fa',
-                  color: msg.sender === 'user' ? 'white' : 
-                         msg.sender === 'bot' ? 'white' : 
-                         msg.sender === 'internal' ? '#856404' : 
-                         msg.sender === 'system' ? '#004085' : '#333',
+                  background: msg.sender === 'user' ? '#667eea' :
+                    msg.sender === 'agent' ? '#28a745' :
+                      msg.sender === 'bot' ? '#6c757d' :
+                        msg.sender === 'internal' ? '#fff3cd' :
+                          msg.sender === 'system' ? '#e7f3ff' : '#f8f9fa',
+                  color: msg.sender === 'user' ? 'white' :
+                    msg.sender === 'bot' ? 'white' :
+                      msg.sender === 'internal' ? '#856404' :
+                        msg.sender === 'system' ? '#004085' : '#333',
                   alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start',
                   maxWidth: '70%',
                   border: msg.sender === 'internal' ? '2px dashed #ffc107' : 'none'
                 }}
               >
                 <div style={{ fontSize: '12px', opacity: 0.8, marginBottom: '4px', fontWeight: '500' }}>
-                  {msg.sender === 'bot' ? '🤖 Bot' : 
-                   msg.sender === 'agent' ? `👤 Agent${msg.agentId ? ` (${msg.agentId})` : ''}` : 
-                   msg.sender === 'internal' ? '🔒 Private Note' : 
-                   msg.sender === 'system' ? 'ℹ️ System' :
-                   '👤 User'}
+                  {msg.sender === 'bot' ? '🤖 Bot' :
+                    msg.sender === 'agent' ? `👤 Agent${msg.agentId ? ` (${msg.agentId})` : ''}` :
+                      msg.sender === 'internal' ? '🔒 Private Note' :
+                        msg.sender === 'system' ? 'ℹ️ System' :
+                          '👤 User'}
                 </div>
-                <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{msg.text}</div>
+                {/* Image Attachment Rendering */}
+                {msg.type === 'image' && msg.attachmentUrl ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div
+                      style={{
+                        position: 'relative',
+                        maxWidth: '250px',
+                        display: 'inline-block'
+                      }}
+                      onMouseEnter={() => msg.sender === 'user' && setHoveredImageUrl(msg.attachmentUrl!)}
+                      onMouseLeave={() => setHoveredImageUrl(null)}
+                    >
+                      <div
+                        onClick={() => {
+                          setImageToView(msg.attachmentUrl!);
+                          setShowImageViewer(true);
+                        }}
+                        style={{
+                          display: 'block',
+                          cursor: 'pointer',
+                          textDecoration: 'none',
+                          position: 'relative'
+                        }}
+                      >
+                        <img
+                          src={msg.attachmentUrl}
+                          alt="User attachment"
+                          style={{
+                            width: '100%',
+                            maxWidth: '250px',
+                            height: 'auto',
+                            borderRadius: '8px',
+                            border: '1px solid rgba(0, 0, 0, 0.1)',
+                            boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
+                          }}
+                        />
+                      </div>
+                      {/* Hover Overlay for User Images */}
+                      {msg.sender === 'user' && hoveredImageUrl === msg.attachmentUrl && canSendMessages && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            backgroundColor: 'rgba(0, 0, 0, 0.6)',
+                            borderRadius: '8px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            zIndex: 10
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                          }}
+                        >
+                          <div style={{ display: 'flex', gap: '10px' }}>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setImageToView(msg.attachmentUrl!);
+                                setShowImageViewer(true);
+                              }}
+                              style={{
+                                padding: '10px 15px',
+                                backgroundColor: '#2196F3',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '6px',
+                                fontSize: '14px',
+                                fontWeight: 'bold',
+                                cursor: 'pointer',
+                                boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '5px'
+                              }}
+                            >
+                              👁️ View
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setImageToAnnotate(msg.attachmentUrl!);
+                                setShowAnnotationModal(true);
+                              }}
+                              style={{
+                                padding: '10px 15px',
+                                backgroundColor: '#4CAF50',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '6px',
+                                fontSize: '14px',
+                                fontWeight: 'bold',
+                                cursor: 'pointer',
+                                boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '5px'
+                              }}
+                            >
+                              ✏️ Reply
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    {msg.text && msg.text !== 'Image' && (
+                      <div style={{ fontSize: '13px', lineHeight: '1.4', wordBreak: 'break-word' }}>
+                        {msg.text}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{msg.text}</div>
+                )}
                 <div style={{ fontSize: '11px', opacity: 0.7, marginTop: '4px' }}>
                   {new Date(msg.timestamp).toLocaleString()}
                 </div>
@@ -1050,24 +1236,182 @@ export default function ConversationView() {
             value={messageText}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMessageText(e.target.value)}
             onKeyPress={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === 'Enter' && sendMessage()}
-            style={{ flex: 1, padding: '10px', border: '1px solid #ddd', borderRadius: '4px' }}
+            disabled={!canSendMessages || isSending}
+            style={{
+              flex: 1,
+              padding: '10px',
+              border: '1px solid #ddd',
+              borderRadius: '4px',
+              backgroundColor: isSending ? '#f5f5f5' : 'white',
+              cursor: isSending ? 'not-allowed' : 'text'
+            }}
           />
-        <button
-          onClick={sendMessage}
-          disabled={!canSendMessages || !messageText.trim()}
-          style={{
-            padding: '10px 20px',
-            background: canSendMessages && messageText.trim() ? '#28a745' : '#ccc',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: canSendMessages && messageText.trim() ? 'pointer' : 'not-allowed'
-          }}
-        >
-          Send
-        </button>
+          <button
+            onClick={sendMessage}
+            disabled={!canSendMessages || (isSending) || (!messageText.trim() && !annotatedImageBlob)}
+            style={{
+              padding: '10px 20px',
+              background: canSendMessages && (messageText.trim() || annotatedImageBlob) && !isSending ? '#28a745' : '#ccc',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: canSendMessages && (messageText.trim() || annotatedImageBlob) && !isSending ? 'pointer' : 'not-allowed'
+            }}
+          >
+            {isSending ? 'Sending...' : 'Send'}
+          </button>
         </div>
       </div>
+
+      {/* Image Viewer Modal */}
+      {showImageViewer && imageToView && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.85)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 2000,
+            cursor: 'zoom-out',
+            padding: '20px'
+          }}
+          onClick={() => setShowImageViewer(false)}
+        >
+          <div
+            style={{
+              position: 'relative',
+              maxWidth: '90vw',
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              cursor: 'default'
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setShowImageViewer(false)}
+              style={{
+                position: 'absolute',
+                top: '-40px',
+                right: '-40px',
+                backgroundColor: 'white',
+                border: 'none',
+                borderRadius: '50%',
+                width: '32px',
+                height: '32px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
+                fontSize: '20px',
+                zIndex: 2001
+              }}
+            >
+              ×
+            </button>
+            <img
+              src={imageToView}
+              alt="Full view"
+              style={{
+                maxWidth: '100%',
+                maxHeight: '85vh',
+                borderRadius: '8px',
+                boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+                objectFit: 'contain'
+              }}
+            />
+            <div style={{
+              marginTop: '15px',
+              display: 'flex',
+              gap: '15px'
+            }}>
+              <a
+                href={imageToView}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  color: 'white',
+                  textDecoration: 'none',
+                  fontSize: '14px',
+                  backgroundColor: 'rgba(255,255,255,0.1)',
+                  padding: '5px 12px',
+                  borderRadius: '4px'
+                }}
+              >
+                Open in new tab ↗
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Image Annotation Modal */}
+      {showAnnotationModal && imageToAnnotate && (
+        <ImageAnnotationModal
+          imageUrl={imageToAnnotate}
+          onClose={() => {
+            setShowAnnotationModal(false);
+            setImageToAnnotate(null);
+          }}
+          onSave={async (blob) => {
+            setAnnotatedImageBlob(blob);
+            console.log('✅ Annotated image ready to send');
+          }}
+        />
+      )}
+
+      {/* Annotated Image Preview (above input field) */}
+      {annotatedImageBlob && (
+        <div style={{
+          position: 'absolute',
+          bottom: '70px',
+          left: '20px',
+          backgroundColor: 'white',
+          padding: '10px',
+          borderRadius: '8px',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          zIndex: 100
+        }}>
+          <img
+            src={URL.createObjectURL(annotatedImageBlob)}
+            alt="Annotated preview"
+            style={{
+              width: '60px',
+              height: '60px',
+              objectFit: 'cover',
+              borderRadius: '4px',
+              border: '1px solid #ddd'
+            }}
+          />
+          <span style={{ fontSize: '13px', color: '#666' }}>
+            Annotated image attached
+          </span>
+          <button
+            onClick={() => setAnnotatedImageBlob(null)}
+            style={{
+              padding: '4px 8px',
+              backgroundColor: '#f44336',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '12px'
+            }}
+          >
+            ✕ Remove
+          </button>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,5 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { Paperclip, X } from 'lucide-react';
+import { useAttachmentUpload } from '../hooks/useAttachmentUpload';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_API_BASE || 'http://localhost:4000';
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
@@ -45,7 +47,7 @@ export default function EmbedWidget({
   };
 
   const [sessionId, setSessionId] = useState<string | null>(getStoredSessionId());
-  const [messages, setMessages] = useState<Array<{ sender: string; text: string; ts?: number; type?: string; options?: Array<{ text: string; value: string }> }>>([]);
+  const [messages, setMessages] = useState<Array<{ sender: string; text: string; ts?: number; type?: string; attachmentUrl?: string; options?: Array<{ text: string; value: string }> }>>([]);
   const [text, setText] = useState('');
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
@@ -58,9 +60,15 @@ export default function EmbedWidget({
   const [offlineFormData, setOfflineFormData] = useState({ name: '', email: '', mobile: '', query: '' });
   const [formSubmitted, setFormSubmitted] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [showAgentButton, setShowAgentButton] = useState(false); // Show "Connect to Agent" button
   const [agentRequestSent, setAgentRequestSent] = useState(false); // Track if agent request was sent
+  const [showAgentButton, setShowAgentButton] = useState(false); // Show "Connect to Agent" button
+  const [showImageViewer, setShowImageViewer] = useState(false);
+  const [imageToView, setImageToView] = useState<string | null>(null);
   const [agentWaitTimer, setAgentWaitTimer] = useState<number | null>(null); // Countdown timer in seconds (180 = 3 minutes)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+  const [uploadingFile, setUploadingFile] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<number | null>(null);
   const messagesLoadedRef = useRef(false); // Track if messages have been loaded
@@ -68,6 +76,10 @@ export default function EmbedWidget({
   const chatTimeoutRef = useRef<number | null>(null); // 3-minute timer
   const agentButtonShownRef = useRef(false); // Track if button has been shown for current showAgentButton state
   const agentWaitTimerIntervalRef = useRef<number | null>(null); // Interval for countdown timer
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const attachButtonRef = useRef<HTMLButtonElement>(null); // Ref for paperclip button position
+
+  const { uploadFile } = useAttachmentUpload();
 
   // Business hours check (Mon-Fri, 09:00 - 17:00)
   // TEST MODE: Add ?testBusinessHours=false to URL to force offline form
@@ -558,8 +570,14 @@ export default function EmbedWidget({
         setShowAgentButton(false);
         agentButtonShownRef.current = false;
 
-        setOfflineFormData(prev => ({ ...prev, query: prev.query || m.text || '' }));
+        // Set showOfflineForm to disable input controls
+        setShowOfflineForm(true);
+
         setMessages(prev => {
+          // Get the last user message for the query field from current messages
+          const lastUserMessage = prev.filter(msg => msg.sender === 'user').pop()?.text || '';
+          setOfflineFormData(formPrev => ({ ...formPrev, query: formPrev.query || lastUserMessage }));
+
           // Check if offline form message already exists
           const hasOfflineFormMessage = prev.some(msg =>
             msg.type === 'offline_form'
@@ -588,7 +606,15 @@ export default function EmbedWidget({
       // Handle offline form message separately (before adding to messages)
       if (m.type === 'offline_form') {
         console.log('📋 Received offline form trigger from backend');
+
+        // Set showOfflineForm to disable input controls
+        setShowOfflineForm(true);
+
         setMessages(prev => {
+          // Get the last user message for the query field from current messages
+          const lastUserMessage = prev.filter(msg => msg.sender === 'user').pop()?.text || '';
+          setOfflineFormData(formPrev => ({ ...formPrev, query: formPrev.query || lastUserMessage }));
+
           // Check if offline form message already exists
           const hasOfflineFormMessage = prev.some(msg =>
             msg.type === 'offline_form'
@@ -604,7 +630,6 @@ export default function EmbedWidget({
           }
           return prev; // Don't add duplicate
         });
-        setOfflineFormData(prev => ({ ...prev, query: prev.query || '' }));
         return; // Don't process as regular bot message
       }
 
@@ -669,6 +694,7 @@ export default function EmbedWidget({
           text: m.text,
           ts: Date.now(),
           type: m.type,
+          attachmentUrl: m.attachmentUrl,
           options: m.options
         }];
       });
@@ -698,13 +724,26 @@ export default function EmbedWidget({
       setShowOfflineForm(false); // Hide offline form when agent responds
 
       setMessages(prev => {
-        const exists = prev.some(msg => msg.sender === 'agent' && msg.text === m.text);
+        // Check for duplicates - text AND attachmentUrl should be unique for recent messages
+        const exists = prev.some(msg =>
+          msg.sender === 'agent' &&
+          msg.text === m.text &&
+          msg.attachmentUrl === m.attachmentUrl &&
+          (msg.ts && Date.now() - msg.ts < 5000)
+        );
+
         if (exists) {
           console.log('   ⚠️  Duplicate agent message, skipping');
           return prev;
         }
-        console.log('   ✅ Adding agent message to widget');
-        return [...prev, { sender: 'agent', text: m.text, ts: Date.now() }];
+        console.log('   ✅ Adding agent message to widget:', m.type === 'image' ? 'Image Attachment' : 'Text');
+        return [...prev, {
+          sender: 'agent',
+          text: m.text,
+          type: m.type,
+          attachmentUrl: m.attachmentUrl,
+          ts: Date.now()
+        }];
       });
 
       // Play notification sound for agent messages
@@ -952,9 +991,9 @@ export default function EmbedWidget({
     }
   }
 
-  function send() {
+  async function send() {
     const socket = socketRef.current;
-    if (!socket || !text.trim()) return;
+    if (!socket || (!text.trim() && !selectedFile)) return;
 
     // Switch to chat mode when user sends a message
     if (!isChatMode) {
@@ -967,15 +1006,38 @@ export default function EmbedWidget({
       setText(''); // Clear input immediately
       start();
       // Store message to send after session starts
-      // The session_started event handler will send it
-      const pendingMessage = messageToSend;
-      // Use a ref or state to store pending message, or use the session_started event
-      // For now, we'll queue it in localStorage temporarily
-      localStorage.setItem('ai-support-pending-message', pendingMessage);
+      localStorage.setItem('ai-support-pending-message', messageToSend);
       return;
     }
 
-    // Normal flow: session exists
+    // Handle file attachment
+    if (selectedFile) {
+      setUploadingFile(true);
+      try {
+        const url = await uploadFile(selectedFile);
+        const userMessage = text.trim() || 'Image';
+        setMessages(prev => [...prev, { sender: 'user', text: userMessage, ts: Date.now(), type: 'image', attachmentUrl: url } as any]);
+        socket.emit('user_message', {
+          sessionId,
+          text: userMessage,
+          type: 'image',
+          attachmentUrl: url
+        });
+        setText('');
+        setSelectedFile(null);
+        setPreviewUrl(null);
+        setStreamingText(null);
+        startTypingIndicator();
+      } catch (error) {
+        console.error('Failed to upload file:', error);
+        alert('Failed to upload image. Please try again.');
+      } finally {
+        setUploadingFile(false);
+      }
+      return;
+    }
+
+    // Normal text message flow
     const userMessage = text.trim();
     setMessages(prev => [...prev, { sender: 'user', text: userMessage, ts: Date.now() }]);
     socket.emit('user_message', { sessionId, text: userMessage });
@@ -984,23 +1046,20 @@ export default function EmbedWidget({
     startTypingIndicator();
 
     // Keyword detection: Check if user mentions "agent"
-    // Only show button if it hasn't been clicked in this session AND during business hours
     if (userMessage.toLowerCase().includes('agent')) {
-      // Check if agent request was already sent in this session
       const agentRequestSentInSession = sessionId ?
         localStorage.getItem(`ai-support-agent-request-sent-${sessionId}`) === 'true' : false;
-
-      // Check business hours
       const inBusinessHours = isBusinessHours();
 
       if (!agentRequestSentInSession && inBusinessHours) {
         console.log('🔍 Keyword "agent" detected in message (business hours):', userMessage);
         setShowAgentButton(true);
-        agentButtonShownRef.current = false; // Reset flag so button can show on next bot message
+        agentButtonShownRef.current = false;
         console.log('✅ showAgentButton set to true, agentButtonShownRef reset');
       } else if (!agentRequestSentInSession && !inBusinessHours) {
         // Outside business hours - show message and offline form instead of button
         console.log('🌙 Keyword "agent" detected outside business hours - showing offline form');
+        setShowOfflineForm(true);
         setMessages(prev => {
           // Check if business hours message already exists
           const hasBusinessHoursMessage = prev.some(msg =>
@@ -1724,7 +1783,63 @@ export default function EmbedWidget({
                 overflow: 'hidden',
                 margin: 0
               }}>
-                {m.text}
+                {/* Image Attachment Rendering */}
+                {m.type === 'image' && (m as any).attachmentUrl ? (
+                  <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px'
+                  }}>
+                    <div
+                      onClick={() => {
+                        setImageToView((m as any).attachmentUrl);
+                        setShowImageViewer(true);
+                      }}
+                      style={{
+                        display: 'block',
+                        maxWidth: '100%',
+                        cursor: 'pointer',
+                        textDecoration: 'none'
+                      }}
+                    >
+                      <img
+                        src={(m as any).attachmentUrl}
+                        alt="Attachment"
+                        style={{
+                          width: '100%',
+                          maxWidth: '100%',
+                          height: 'auto',
+                          borderRadius: '8px',
+                          border: '1px solid rgba(0, 0, 0, 0.1)',
+                          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+                          transition: 'transform 0.2s, box-shadow 0.2s'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.transform = 'scale(1.02)';
+                          e.currentTarget.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.15)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = 'scale(1)';
+                          e.currentTarget.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.1)';
+                        }}
+                      />
+                    </div>
+                    {m.text && m.text !== 'Image' && (
+                      <div style={{
+                        fontSize: '13px',
+                        color: m.sender === 'system' ? '#ffffff' : '#000000',
+                        lineHeight: '1.4',
+                        wordWrap: 'break-word',
+                        overflowWrap: 'break-word'
+                      }}>
+                        {m.text}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  /* Text-only message */
+                  m.text
+                )}
               </div>
             )}
             {/* Connect to Agent Button - Show after bot messages when user mentions "agent" */}
@@ -2028,6 +2143,60 @@ export default function EmbedWidget({
         <div ref={messagesEndRef} />
       </div>
 
+      {/* File Preview Area */}
+      {selectedFile && previewUrl && (
+        <div style={{
+          padding: '12px 16px',
+          background: '#f8f9fa',
+          borderTop: '1px solid rgba(255, 255, 255, 0.2)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px'
+        }}>
+          <img
+            src={previewUrl}
+            alt="Preview"
+            style={{
+              width: '60px',
+              height: '60px',
+              objectFit: 'cover',
+              borderRadius: '8px',
+              border: '1px solid #dee2e6'
+            }}
+          />
+          <div style={{ flex: 1, fontSize: '14px', color: '#495057' }}>
+            <div style={{ fontWeight: 500 }}>{selectedFile.name}</div>
+            <div style={{ fontSize: '12px', color: '#6c757d' }}>
+              {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              setSelectedFile(null);
+              setPreviewUrl(null);
+              if (fileInputRef.current) {
+                fileInputRef.current.value = '';
+              }
+            }}
+            style={{
+              padding: '8px',
+              background: '#dc3545',
+              color: 'white',
+              border: 'none',
+              borderRadius: '50%',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '32px',
+              height: '32px'
+            }}
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
       {/* Input Area */}
       {isChatMode && !showOfflineForm && (
         <div style={{
@@ -2040,14 +2209,136 @@ export default function EmbedWidget({
           width: '100%',
           maxWidth: '100%',
           boxSizing: 'border-box',
-          overflow: 'hidden',
-          margin: 0
+          overflow: 'visible',
+          margin: 0,
+          position: 'relative',
+          zIndex: 10
         }}>
+          {/* Hidden File Input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+
+              // Size validation (50MB)
+              if (file.size > 50 * 1024 * 1024) {
+                alert('File too large. Maximum size is 50MB.');
+                e.target.value = '';
+                return;
+              }
+
+              // Type validation
+              if (!['image/png', 'image/jpeg'].includes(file.type)) {
+                alert('Only PNG and JPEG images are allowed.');
+                e.target.value = '';
+                return;
+              }
+
+              // Set file and preview
+              setSelectedFile(file);
+              setPreviewUrl(URL.createObjectURL(file));
+              setShowAttachmentMenu(false);
+            }}
+          />
+
+          {/* Paperclip Icon Button */}
+          <div style={{ position: 'relative' }}>
+            <button
+              ref={attachButtonRef}
+              onClick={() => setShowAttachmentMenu(!showAttachmentMenu)}
+              disabled={!sessionId || conversationConcluded || uploadingFile || showOfflineForm}
+              style={{
+                padding: '10px',
+                background: '#f8f9fa',
+                border: '1px solid #e0e0e0',
+                borderRadius: '8px',
+                cursor: (sessionId && !conversationConcluded && !uploadingFile && !showOfflineForm) ? 'pointer' : 'not-allowed',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                opacity: (sessionId && !conversationConcluded && !uploadingFile && !showOfflineForm) ? 1 : 0.5
+              }}
+            >
+              <Paperclip size={20} color="#495057" />
+            </button>
+
+            {/* Attachment Menu Popup */}
+            {showAttachmentMenu && (() => {
+              const buttonRect = attachButtonRef.current?.getBoundingClientRect();
+              const menuBottom = buttonRect ? window.innerHeight - buttonRect.top + 8 : 100;
+              const menuLeft = buttonRect ? buttonRect.left : 50;
+
+              return (
+                <div style={{
+                  position: 'fixed',
+                  bottom: `${menuBottom}px`,
+                  left: `${menuLeft}px`,
+                  background: 'white',
+                  border: '1px solid #dee2e6',
+                  borderRadius: '8px',
+                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+                  minWidth: '180px',
+                  zIndex: 99999
+                }}>
+                  <button
+                    onClick={() => {
+                      fileInputRef.current?.click();
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      background: 'transparent',
+                      border: 'none',
+                      borderBottom: '1px solid #dee2e6',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      color: '#212529',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = '#f8f9fa'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                  >
+                    📁 Computer
+                  </button>
+                  <button
+                    onClick={() => {
+                      console.log('Google Drive integration coming soon...');
+                      setShowAttachmentMenu(false);
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      background: 'transparent',
+                      border: 'none',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      color: '#212529',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = '#f8f9fa'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                  >
+                    ☁️ Google Drive
+                  </button>
+                </div>
+              );
+            })()}
+          </div>
           <input
             value={text}
             onChange={e => setText(e.target.value)}
             onKeyPress={handleKeyPress}
-            disabled={!sessionId || conversationConcluded}
+            disabled={!sessionId || conversationConcluded || agentRequestSent || (agentWaitTimer !== null && agentWaitTimer > 0)}
             style={{
               flex: 1,
               padding: '10px 14px',
@@ -2055,34 +2346,37 @@ export default function EmbedWidget({
               borderRadius: '8px',
               fontSize: '14px',
               outline: 'none',
-              background: (sessionId && !conversationConcluded) ? 'white' : '#f5f5f5',
+              background: (sessionId && !conversationConcluded && !agentRequestSent && !(agentWaitTimer !== null && agentWaitTimer > 0)) ? 'white' : '#f5f5f5',
               minWidth: 0,
               maxWidth: '100%',
               boxSizing: 'border-box',
               width: '100%',
-              margin: 0
+              margin: 0,
+              cursor: (agentRequestSent || (agentWaitTimer !== null && agentWaitTimer > 0)) ? 'not-allowed' : 'text'
             }}
             placeholder={
-              conversationConcluded
-                ? "Conversation ended. Click 'Start Chat' for a new session"
-                : sessionId
-                  ? "Type your message..."
-                  : "Click 'Start Chat' to begin"
+              agentRequestSent || (agentWaitTimer !== null && agentWaitTimer > 0)
+                ? "Waiting for agent to join..."
+                : conversationConcluded
+                  ? "Conversation ended. Click 'Start Chat' for a new session"
+                  : sessionId
+                    ? "Type your message..."
+                    : "Click 'Start Chat' to begin"
             }
           />
           <button
             onClick={send}
-            disabled={!sessionId || !text.trim() || conversationConcluded}
+            disabled={!sessionId || (!text.trim() && !selectedFile) || conversationConcluded || agentRequestSent || (agentWaitTimer !== null && agentWaitTimer > 0) || uploadingFile}
             style={{
               padding: '10px 16px',
-              background: (sessionId && text.trim() && !conversationConcluded)
+              background: (sessionId && text.trim() && !conversationConcluded && !agentRequestSent && !(agentWaitTimer !== null && agentWaitTimer > 0))
                 ? 'linear-gradient(135deg, #000000 0%, #ffffff 100%)'
                 : '#ccc',
-              color: (sessionId && text.trim() && !conversationConcluded) ? '#ffffff' : '#666',
-              textShadow: (sessionId && text.trim() && !conversationConcluded) ? '0 1px 2px rgba(0, 0, 0, 0.5)' : 'none',
+              color: (sessionId && text.trim() && !conversationConcluded && !agentRequestSent && !(agentWaitTimer !== null && agentWaitTimer > 0)) ? '#ffffff' : '#666',
+              textShadow: (sessionId && text.trim() && !conversationConcluded && !agentRequestSent && !(agentWaitTimer !== null && agentWaitTimer > 0)) ? '0 1px 2px rgba(0, 0, 0, 0.5)' : 'none',
               border: 'none',
               borderRadius: '8px',
-              cursor: (sessionId && text.trim() && !conversationConcluded) ? 'pointer' : 'not-allowed',
+              cursor: (sessionId && text.trim() && !conversationConcluded && !agentRequestSent && !(agentWaitTimer !== null && agentWaitTimer > 0)) ? 'pointer' : 'not-allowed',
               fontWeight: 500,
               fontSize: '14px',
               transition: 'all 0.2s ease',
@@ -2092,7 +2386,7 @@ export default function EmbedWidget({
               margin: 0
             }}
           >
-            Send
+            {uploadingFile ? 'Uploading...' : 'Send'}
           </button>
         </div>
       )}
@@ -2112,6 +2406,95 @@ export default function EmbedWidget({
           margin: 0
         }}>
           Select an option above
+        </div>
+      )}
+      {/* Image Viewer Modal */}
+      {showImageViewer && imageToView && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.9)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10000,
+            cursor: 'zoom-out',
+            padding: '10px',
+            borderRadius: '16px'
+          }}
+          onClick={() => setShowImageViewer(false)}
+        >
+          <div
+            style={{
+              position: 'relative',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              width: '100%',
+              height: '100%',
+              justifyContent: 'center'
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setShowImageViewer(false)}
+              style={{
+                position: 'absolute',
+                top: '10px',
+                right: '10px',
+                backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                border: 'none',
+                borderRadius: '50%',
+                width: '30px',
+                height: '30px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                boxShadow: '0 2px 5px rgba(0,0,0,0.3)',
+                fontSize: '18px',
+                zIndex: 10001
+              }}
+            >
+              ×
+            </button>
+            <img
+              src={imageToView}
+              alt="Full view"
+              style={{
+                maxWidth: '100%',
+                maxHeight: '90%',
+                borderRadius: '8px',
+                boxShadow: '0 4px 15px rgba(0,0,0,0.5)',
+                objectFit: 'contain'
+              }}
+            />
+            <div style={{
+              marginTop: '10px',
+              display: 'flex',
+              gap: '10px'
+            }}>
+              <a
+                href={imageToView}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  color: 'white',
+                  textDecoration: 'none',
+                  fontSize: '12px',
+                  backgroundColor: 'rgba(255,255,255,0.2)',
+                  padding: '4px 10px',
+                  borderRadius: '4px'
+                }}
+              >
+                Open Original ↗
+              </a>
+            </div>
+          </div>
         </div>
       )}
     </div>
