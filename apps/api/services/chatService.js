@@ -376,6 +376,14 @@ function createChatService(dependencies) {
       messageDoc.text = text;
       messageDoc.metadata = metadataStr; // Ensure metadata is always a string <= 255 chars
 
+      // Add type and attachmentUrl if present (for image attachments)
+      if (metadata.type) {
+        messageDoc.type = metadata.type;
+      }
+      if (metadata.attachmentUrl) {
+        messageDoc.attachmentUrl = metadata.attachmentUrl;
+      }
+
       // Add visibility flag for internal notes (only visible to agents)
       if (visibility === 'internal') {
         messageDoc.visibility = 'internal';

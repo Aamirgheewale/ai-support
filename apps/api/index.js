@@ -4397,10 +4397,10 @@ app.patch('/me/status', requireAuth, async (req, res) => {
 
     console.log(`✅ User ${userId} status updated to: ${status}`);
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       status: status,
-      message: `Status updated to ${status}` 
+      message: `Status updated to ${status}`
     });
   } catch (err) {
     console.error('Error updating user status:', err);
@@ -4483,8 +4483,8 @@ app.patch('/me/prefs', requireAuth, async (req, res) => {
 
     console.log(`✅ User ${userId} prefs updated`);
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       prefs: mergedPrefs
     });
   } catch (err) {
@@ -4623,7 +4623,7 @@ app.get('/admin/users/agents', requireAuth, requireRole(['admin', 'agent']), asy
         // agentSockets maps agentId -> socketId, where agentId can be userId or custom agentId
         // First check if userId exists as a key in agentSockets
         let isOnline = agentSockets.has(userId);
-        
+
         // Debug: Log the check
         console.log(`🔍 Checking agent ${userId} (${doc.email}): agentSockets.has(${userId}) = ${isOnline}`);
 
@@ -4654,7 +4654,7 @@ app.get('/admin/users/agents', requireAuth, requireRole(['admin', 'agent']), asy
               const socketAgentId = socket.data?.agentId;
               const isAuthenticated = socket.data?.authenticated;
               const socketConnected = socket.connected;
-              
+
               // Check if this socket is in agentSockets Map (means it's a valid agent connection)
               const isInAgentSockets = Array.from(agentSockets.values()).includes(socketId);
 
@@ -4667,7 +4667,7 @@ app.get('/admin/users/agents', requireAuth, requireRole(['admin', 'agent']), asy
                 isOnline = true;
                 break;
               }
-              
+
               // Debug: log socket data for troubleshooting (only for matching userId/agentId)
               if ((socketUserId === userId || socketAgentId === userId)) {
                 console.log(`🔍 Socket ${socketId}: userId=${socketUserId}, agentId=${socketAgentId}, authenticated=${isAuthenticated}, connected=${socketConnected}, inAgentSockets=${isInAgentSockets} (MATCHING USER)`);
