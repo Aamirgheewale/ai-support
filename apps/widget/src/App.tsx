@@ -16,7 +16,8 @@ function ChatWidgetWithButton({ initialSessionId }: { initialSessionId?: string 
     }
   }, [chatWidgetOpen]);
 
-  return (
+  return
+  (
     <div style={{
       width: '100vw',
       height: '100vh',
@@ -85,7 +86,7 @@ function ChatWidgetWithButton({ initialSessionId }: { initialSessionId?: string 
           overflow: 'hidden'
         }}>
           {/* Chat widget */}
-          <EmbedWidget 
+          <EmbedWidget
             initialSessionId={initialSessionId}
             onAgentInitiatedChat={() => setChatWidgetOpen(true)}
             onClose={() => setChatWidgetOpen(false)}
