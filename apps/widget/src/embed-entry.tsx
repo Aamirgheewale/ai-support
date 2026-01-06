@@ -6,16 +6,6 @@ import EmbedWidget from './components/EmbedWidget'
 // Wrapper component with circular button
 function ChatWidgetWithButton({ initialSessionId }: { initialSessionId?: string }) {
   const [chatWidgetOpen, setChatWidgetOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth <= 768);
-
-  useEffect(() => {
-    const handleResize = () => {
-      setIsMobile(window.innerWidth <= 768);
-    };
-    
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
 
   // Send postMessage when chat opens/closes
   useEffect(() => {
@@ -92,7 +82,7 @@ function ChatWidgetWithButton({ initialSessionId }: { initialSessionId?: string 
           pointerEvents: 'auto'
         }}>
           {/* Chat widget */}
-          <EmbedWidget 
+          <EmbedWidget
             initialSessionId={initialSessionId}
             onAgentInitiatedChat={() => setChatWidgetOpen(true)}
             onClose={() => setChatWidgetOpen(false)}
@@ -128,19 +118,19 @@ declare global {
   }
 }
 
-window.AiSupportWidgetInit = function(opts: {
+window.AiSupportWidgetInit = function (opts: {
   targetId: string
   apiBase?: string
   initialSessionId?: string
 }) {
   const { targetId, apiBase, initialSessionId } = opts
-  
+
   const targetElement = document.getElementById(targetId)
   if (!targetElement) {
     console.error(`Target element with id "${targetId}" not found`)
     return
   }
-  
+
   // Set API base URL if provided (for widget socket connection)
   if (apiBase) {
     // This would need to be passed to EmbedWidget via props or context
@@ -148,7 +138,7 @@ window.AiSupportWidgetInit = function(opts: {
     // In production, you'd configure this via environment or props
     console.log('API Base:', apiBase)
   }
-  
+
   const root = createRoot(targetElement)
   root.render(
     <React.StrictMode>
@@ -163,7 +153,7 @@ if (document.currentScript) {
   const targetId = script.getAttribute('data-target-id') || 'ai-support-widget'
   const apiBase = script.getAttribute('data-api-base')
   const sessionId = script.getAttribute('data-session-id')
-  
+
   if (targetId) {
     window.AiSupportWidgetInit({
       targetId,
