@@ -415,7 +415,8 @@ function initializeSocket(dependencies) {
   // Track pending disconnects with grace period (for handling page refreshes)
   // Key: agentId, Value: { timeout: NodeJS.Timeout, userId: string }
   const pendingDisconnects = new Map();
-  const DISCONNECT_GRACE_PERIOD_MS = 5000; // 5 seconds grace period for reconnection
+  const DISCONNECT_GRACE_PERIOD_MS = 2000; // 2 seconds grace period (fast enough for "direct" feel, handles refresh)
+
 
   // Socket.IO connection handler
   io.on('connection', (socket) => {
@@ -1808,6 +1809,8 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
           return;
         }
 
+
+
         // Check if agent is already registered (any socket = reconnection scenario)
         const wasAlreadyRegistered = agentSockets.has(finalAgentId);
 
@@ -1864,6 +1867,8 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
         socket.emit('agent_connected', { agentId: finalAgentId });
         return;
       }
+
+
 
       // Check if agent is already registered (any socket = reconnection scenario)
       const wasAlreadyRegistered = agentSockets.has(finalAgentId);

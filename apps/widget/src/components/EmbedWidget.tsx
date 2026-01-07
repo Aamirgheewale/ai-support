@@ -158,11 +158,29 @@ export default function EmbedWidget({
 
       if (storedMessages) {
         const loadedMessages = JSON.parse(storedMessages);
+
+        // MIGRATION: Fix old offline form messages missing the type
+        // This ensures users with cached messages see the form, not just text
+        loadedMessages.forEach((msg: any) => {
+          if (msg.sender === 'system' && msg.text &&
+            (msg.text.includes('Sorry, agent is busy') || msg.text.includes('Sorry, our agents are currently busy')) &&
+            !msg.type) {
+            msg.type = 'offline_form';
+            console.log('🔧 Migrated legacy offline form message to include type');
+          }
+        });
+
         setMessages(loadedMessages);
         messagesLoadedRef.current = true;
         // Switch to chat mode only if sessionId exists (real session, not just FAQ Q&A)
         if (loadedMessages.length > 0 && sid) {
           setIsChatMode(true);
+        }
+        // Restore showOfflineForm state if offline form message exists in messages
+        const hasOfflineFormMessage = loadedMessages.some((msg: any) => msg.type === 'offline_form');
+        if (hasOfflineFormMessage) {
+          setShowOfflineForm(true);
+          console.log('📋 Restored showOfflineForm state from messages');
         }
         console.log(`📥 Loaded ${loadedMessages.length} message(s) from localStorage for session ${sid}`);
       }
@@ -246,9 +264,10 @@ export default function EmbedWidget({
                     );
 
                     if (!hasOfflineFormMessage) {
+                      setShowOfflineForm(true); // Ensure inputs are disabled
                       return [...prev, {
                         sender: 'system',
-                        text: 'Sorry, agent is busy. Please fill this form and we will get back to you.',
+                        text: 'Sorry, our agents are currently busy. Please fill this form and we will get back to you.',
                         type: 'offline_form',
                         ts: Date.now()
                       }];
@@ -842,7 +861,24 @@ export default function EmbedWidget({
         setStreamingText(null);
         messagesLoadedRef.current = false;
         // Show notification message to user
-        setMessages([{ sender: 'system', text: 'Conversation closed by agent. Please start a new chat.', ts: Date.now() }]);
+        setMessages([{ sender: 'system', text: 'This chat has been resolved, Thankyou.', ts: Date.now() }]);
+
+        // Auto-reset widget after 3 seconds
+        setTimeout(() => {
+          console.log('🔄 Auto-resetting widget to initial state');
+          setConversationConcluded(false);
+          setSessionId(null);
+          setMessages([]);
+          setIsChatMode(false);
+          setShowOfflineForm(false);
+          setConnectionError(null);
+          // Ensure localStorage is clean (redundant but safe)
+          if (sessionId) {
+            localStorage.removeItem('ai-support-session-id');
+            localStorage.removeItem(`ai-support-messages-${sessionId}`);
+            localStorage.removeItem(`ai-support-concluded-${sessionId}`);
+          }
+        }, 3000);
       }
     });
     return () => {
@@ -1192,9 +1228,10 @@ export default function EmbedWidget({
               );
 
               if (!hasOfflineFormMessage) {
+                setShowOfflineForm(true); // Ensure inputs are disabled
                 return [...prev, {
                   sender: 'system',
-                  text: 'Sorry, agent is busy. Please fill this form and we will get back to you.',
+                  text: 'Sorry, our agents are currently busy. Please fill this form and we will get back to you.',
                   type: 'offline_form',
                   ts: Date.now()
                 }];
@@ -1401,8 +1438,8 @@ export default function EmbedWidget({
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {/* Only show "Start Chat" button in chat mode when session doesn't exist */}
-          {isChatMode && (!sessionId || conversationConcluded) && (
+          {/* Only show "Start Chat" button in chat mode when session doesn't exist AND conversation is not concluded */}
+          {isChatMode && !sessionId && !conversationConcluded && (
             <button
               onClick={start}
               className={isButtonBlinking ? 'start-button-blink' : ''}
@@ -1477,134 +1514,8 @@ export default function EmbedWidget({
           boxSizing: 'border-box',
           margin: 0
         }}>
-        {/* Offline Form */}
-        {showOfflineForm && (
-          <div style={{
-            background: 'white',
-            padding: '20px',
-            borderRadius: '12px',
-            margin: '12px 0',
-            color: '#000000'
-          }}>
-            {formSubmitted ? (
-              <div style={{ textAlign: 'center', color: '#4CAF50' }}>
-                <p style={{ fontSize: '16px', fontWeight: 500, margin: 0 }}>✓ Query noted. Check your mail.</p>
-              </div>
-            ) : (
-              <form onSubmit={handleFormSubmit}>
-                <h3 style={{ marginTop: 0, marginBottom: '16px', fontSize: '18px', fontWeight: 600 }}>Contact Form</h3>
-                {formError && (
-                  <div style={{
-                    background: '#ffebee',
-                    color: '#c62828',
-                    padding: '10px',
-                    borderRadius: '6px',
-                    marginBottom: '16px',
-                    fontSize: '14px'
-                  }}>
-                    {formError}
-                  </div>
-                )}
-                <div style={{ marginBottom: '16px' }}>
-                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: 500 }}>
-                    Name <span style={{ color: 'red' }}>*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={offlineFormData.name}
-                    onChange={(e) => setOfflineFormData(prev => ({ ...prev, name: e.target.value }))}
-                    required
-                    style={{
-                      width: '100%',
-                      padding: '10px',
-                      border: '1px solid #ddd',
-                      borderRadius: '6px',
-                      fontSize: '14px',
-                      boxSizing: 'border-box'
-                    }}
-                  />
-                </div>
-                <div style={{ marginBottom: '16px' }}>
-                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: 500 }}>
-                    Email <span style={{ color: 'red' }}>*</span>
-                  </label>
-                  <input
-                    type="email"
-                    value={offlineFormData.email}
-                    onChange={(e) => setOfflineFormData(prev => ({ ...prev, email: e.target.value }))}
-                    required
-                    style={{
-                      width: '100%',
-                      padding: '10px',
-                      border: '1px solid #ddd',
-                      borderRadius: '6px',
-                      fontSize: '14px',
-                      boxSizing: 'border-box'
-                    }}
-                  />
-                </div>
-                <div style={{ marginBottom: '16px' }}>
-                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: 500 }}>
-                    Mobile
-                  </label>
-                  <input
-                    type="tel"
-                    value={offlineFormData.mobile}
-                    onChange={(e) => setOfflineFormData(prev => ({ ...prev, mobile: e.target.value }))}
-                    style={{
-                      width: '100%',
-                      padding: '10px',
-                      border: '1px solid #ddd',
-                      borderRadius: '6px',
-                      fontSize: '14px',
-                      boxSizing: 'border-box'
-                    }}
-                  />
-                </div>
-                <div style={{ marginBottom: '16px' }}>
-                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: 500 }}>
-                    Query <span style={{ color: 'red' }}>*</span>
-                  </label>
-                  <textarea
-                    value={offlineFormData.query}
-                    onChange={(e) => setOfflineFormData(prev => ({ ...prev, query: e.target.value }))}
-                    required
-                    rows={4}
-                    style={{
-                      width: '100%',
-                      padding: '10px',
-                      border: '1px solid #ddd',
-                      borderRadius: '6px',
-                      fontSize: '14px',
-                      resize: 'vertical',
-                      fontFamily: 'inherit',
-                      boxSizing: 'border-box'
-                    }}
-                  />
-                </div>
-                <button
-                  type="submit"
-                  style={{
-                    width: '100%',
-                    padding: '12px',
-                    background: 'linear-gradient(135deg, #000000 0%, #ffffff 100%)',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '6px',
-                    fontSize: '16px',
-                    fontWeight: 500,
-                    cursor: 'pointer',
-                    transition: 'opacity 0.2s'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
-                  onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
-                >
-                  Submit Query
-                </button>
-              </form>
-            )}
-          </div>
-        )}
+        {/* Offline Form - REMOVED (now rendered as a chat message) */}
+
         {connectionError && (
           <div style={{
             textAlign: 'center',
@@ -2338,7 +2249,7 @@ export default function EmbedWidget({
             value={text}
             onChange={e => setText(e.target.value)}
             onKeyPress={handleKeyPress}
-            disabled={!sessionId || conversationConcluded || agentRequestSent || (agentWaitTimer !== null && agentWaitTimer > 0)}
+            disabled={!sessionId || conversationConcluded || agentRequestSent || (agentWaitTimer !== null && agentWaitTimer > 0) || showOfflineForm}
             style={{
               flex: 1,
               padding: '10px 14px',
@@ -2346,37 +2257,39 @@ export default function EmbedWidget({
               borderRadius: '8px',
               fontSize: '14px',
               outline: 'none',
-              background: (sessionId && !conversationConcluded && !agentRequestSent && !(agentWaitTimer !== null && agentWaitTimer > 0)) ? 'white' : '#f5f5f5',
+              background: (sessionId && !conversationConcluded && !agentRequestSent && !(agentWaitTimer !== null && agentWaitTimer > 0) && !showOfflineForm) ? 'white' : '#f5f5f5',
               minWidth: 0,
               maxWidth: '100%',
               boxSizing: 'border-box',
               width: '100%',
               margin: 0,
-              cursor: (agentRequestSent || (agentWaitTimer !== null && agentWaitTimer > 0)) ? 'not-allowed' : 'text'
+              cursor: (agentRequestSent || (agentWaitTimer !== null && agentWaitTimer > 0) || showOfflineForm) ? 'not-allowed' : 'text'
             }}
             placeholder={
-              agentRequestSent || (agentWaitTimer !== null && agentWaitTimer > 0)
-                ? "Waiting for agent to join..."
-                : conversationConcluded
-                  ? "Conversation ended. Click 'Start Chat' for a new session"
-                  : sessionId
-                    ? "Type your message..."
-                    : "Click 'Start Chat' to begin"
+              showOfflineForm
+                ? "Please fill the form above"
+                : agentRequestSent || (agentWaitTimer !== null && agentWaitTimer > 0)
+                  ? "Waiting for agent to join..."
+                  : conversationConcluded
+                    ? "Conversation ended. Click 'Start Chat' for a new session"
+                    : sessionId
+                      ? "Type your message..."
+                      : "Click 'Start Chat' to begin"
             }
           />
           <button
             onClick={send}
-            disabled={!sessionId || (!text.trim() && !selectedFile) || conversationConcluded || agentRequestSent || (agentWaitTimer !== null && agentWaitTimer > 0) || uploadingFile}
+            disabled={!sessionId || (!text.trim() && !selectedFile) || conversationConcluded || agentRequestSent || (agentWaitTimer !== null && agentWaitTimer > 0) || uploadingFile || showOfflineForm}
             style={{
               padding: '10px 16px',
-              background: (sessionId && text.trim() && !conversationConcluded && !agentRequestSent && !(agentWaitTimer !== null && agentWaitTimer > 0))
+              background: (sessionId && text.trim() && !conversationConcluded && !agentRequestSent && !(agentWaitTimer !== null && agentWaitTimer > 0) && !showOfflineForm)
                 ? 'linear-gradient(135deg, #000000 0%, #ffffff 100%)'
                 : '#ccc',
-              color: (sessionId && text.trim() && !conversationConcluded && !agentRequestSent && !(agentWaitTimer !== null && agentWaitTimer > 0)) ? '#ffffff' : '#666',
-              textShadow: (sessionId && text.trim() && !conversationConcluded && !agentRequestSent && !(agentWaitTimer !== null && agentWaitTimer > 0)) ? '0 1px 2px rgba(0, 0, 0, 0.5)' : 'none',
+              color: (sessionId && text.trim() && !conversationConcluded && !agentRequestSent && !(agentWaitTimer !== null && agentWaitTimer > 0) && !showOfflineForm) ? '#ffffff' : '#666',
+              textShadow: (sessionId && text.trim() && !conversationConcluded && !agentRequestSent && !(agentWaitTimer !== null && agentWaitTimer > 0) && !showOfflineForm) ? '0 1px 2px rgba(0, 0, 0, 0.5)' : 'none',
               border: 'none',
               borderRadius: '8px',
-              cursor: (sessionId && text.trim() && !conversationConcluded && !agentRequestSent && !(agentWaitTimer !== null && agentWaitTimer > 0)) ? 'pointer' : 'not-allowed',
+              cursor: (sessionId && text.trim() && !conversationConcluded && !agentRequestSent && !(agentWaitTimer !== null && agentWaitTimer > 0) && !showOfflineForm) ? 'pointer' : 'not-allowed',
               fontWeight: 500,
               fontSize: '14px',
               transition: 'all 0.2s ease',

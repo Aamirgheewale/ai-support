@@ -198,7 +198,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_API_BASE || 'http://localhost:4000';
             const socket = io(SOCKET_URL, {
               withCredentials: true,
-              transports: ['websocket', 'polling']
+              transports: ['websocket', 'polling'],
+              reconnectionDelay: 500,
+              reconnectionDelayMax: 1000
             });
 
             // Track if we've already authenticated to prevent duplicate emissions
@@ -290,7 +292,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_API_BASE || 'http://localhost:4000';
         const socket = io(SOCKET_URL, {
           withCredentials: true,
-          transports: ['websocket', 'polling']
+          transports: ['websocket', 'polling'],
+          reconnectionDelay: 500,
+          reconnectionDelayMax: 1000
         });
 
         // Track if we've already authenticated to prevent duplicate emissions
