@@ -40,11 +40,35 @@ export default function ImageAnnotationModal({ imageUrl, onClose, onSave }: Imag
         // Load image using Blob to avoid CORS issues and "dirty canvas"
         const loadImage = async () => {
             try {
-                const response = await fetch(imageUrl);
-                const blob = await response.blob();
-                const blobUrl = URL.createObjectURL(blob);
+                // Check if this is an Appwrite storage URL - if so, proxy through our API
+                let fetchUrl = imageUrl;
+                const isAppwriteUrl = imageUrl.includes('appwrite.io') || imageUrl.includes('fra.cloud.appwrite.io');
 
-                const img = await FabricImage.fromURL(blobUrl);
+                if (isAppwriteUrl) {
+                    const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
+                    const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+
+                    // Use proxy endpoint
+                    const proxyUrl = `${API_BASE}/api/proxy/image?url=${encodeURIComponent(imageUrl)}`;
+                    const response = await fetch(proxyUrl, {
+                        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+                        credentials: 'include'
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`Proxy fetch failed: ${response.status}`);
+                    }
+
+                    const blob = await response.blob();
+                    fetchUrl = URL.createObjectURL(blob);
+                } else {
+                    // Non-Appwrite URL, try direct fetch
+                    const response = await fetch(imageUrl);
+                    const blob = await response.blob();
+                    fetchUrl = URL.createObjectURL(blob);
+                }
+
+                const img = await FabricImage.fromURL(fetchUrl);
 
                 // Calculate scale to fit image within canvas while maintaining aspect ratio
                 const padding = 40;
@@ -70,13 +94,10 @@ export default function ImageAnnotationModal({ imageUrl, onClose, onSave }: Imag
 
                 // Save initial state
                 saveState(fabricCanvas);
-
-                // Cleanup blob URL
-                // URL.revokeObjectURL(blobUrl); // Keep it or revoke after load? revoking now is safe as img is loaded
             } catch (err) {
-                console.error('Error loading image via blob:', err);
+                console.error('Error loading image via blob/proxy:', err);
 
-                // Fallback to direct load if fetch fails (though fetch is more likely to succeed if CORS is set up on bucket)
+                // Fallback to direct load if fetch fails
                 FabricImage.fromURL(imageUrl, { crossOrigin: 'anonymous' }).then((img) => {
                     const scale = Math.min(
                         fabricCanvas.width! / img.width!,

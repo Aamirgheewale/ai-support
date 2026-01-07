@@ -1704,8 +1704,12 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
           return; // Skip emitting to admin_feed since agent never truly went offline
         }
 
-        // Check if agent is already registered (to prevent duplicate event emissions)
-        const isAlreadyRegistered = agentSockets.has(finalAgentId) && agentSockets.get(finalAgentId) === socket.id;
+        // Check if agent is already registered:
+        // - Same socket ID: Duplicate call in same connection
+        // - Different socket ID: Reconnection (socket.io automatic reconnect)
+        // In both cases, we should skip emitting admin_feed events
+        const wasAlreadyRegistered = agentSockets.has(finalAgentId);
+        const hadSameSocket = wasAlreadyRegistered && agentSockets.get(finalAgentId) === socket.id;
 
         agentSockets.set(finalAgentId, socket.id);
         socket.join(`agents:${finalAgentId}`);
@@ -1713,12 +1717,17 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
         socket.data.userId = userId;
         socket.data.agentId = finalAgentId;
 
-        console.log(`✅ Agent authenticated and connected: ${finalAgentId} (user: ${userId}, socket: ${socket.id})${isAlreadyRegistered ? ' [already registered, skipping events]' : ''}`);
+        if (wasAlreadyRegistered) {
+          console.log(`🔄 Agent ${finalAgentId} reconnected (was already in agentSockets map)${hadSameSocket ? ' [same socket]' : ' [new socket]'}`);
+        } else {
+          console.log(`✅ Agent authenticated and connected: ${finalAgentId} (user: ${userId}, socket: ${socket.id})`);
+        }
         console.log(`📊 agentSockets Map now has ${agentSockets.size} entries:`, Array.from(agentSockets.keys()));
         socket.emit('agent_connected', { agentId: finalAgentId, userId });
 
-        // Only emit to admin_feed and update database if agent was NOT already registered (prevents duplicates)
-        if (!isAlreadyRegistered) {
+        // Only emit to admin_feed and update database if agent was NOT already registered
+        // This prevents duplicate notifications when socket.io auto-reconnects
+        if (!wasAlreadyRegistered) {
           // Update user status in database to 'online'
           if (databases && databaseId && usersCollectionId && userId) {
             (async () => {
@@ -1799,19 +1808,24 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
           return;
         }
 
-        // Check if agent is already registered (to prevent duplicate event emissions)
-        const isAlreadyRegistered = agentSockets.has(finalAgentId) && agentSockets.get(finalAgentId) === socket.id;
+        // Check if agent is already registered (any socket = reconnection scenario)
+        const wasAlreadyRegistered = agentSockets.has(finalAgentId);
 
         agentSockets.set(finalAgentId, socket.id);
         socket.join(`agents:${finalAgentId}`);
         socket.data.authenticated = true;
         socket.data.userId = finalAgentId;
         socket.data.agentId = finalAgentId;
-        console.log(`👤 Agent connected (DEV MODE): ${finalAgentId} (socket: ${socket.id})${isAlreadyRegistered ? ' [already registered, skipping events]' : ''}`);
+
+        if (wasAlreadyRegistered) {
+          console.log(`🔄 Agent ${finalAgentId} reconnected (DEV MODE, was already in agentSockets map)`);
+        } else {
+          console.log(`👤 Agent connected (DEV MODE): ${finalAgentId} (socket: ${socket.id})`);
+        }
         socket.emit('agent_connected', { agentId: finalAgentId });
 
         // Only emit to admin_feed if agent was NOT already registered (prevents duplicate notifications)
-        if (!isAlreadyRegistered) {
+        if (!wasAlreadyRegistered) {
           io.to('admin_feed').emit('agent_connected', {
             agentId: finalAgentId,
             userId: finalAgentId,
@@ -1851,16 +1865,21 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
         return;
       }
 
-      // Check if agent is already registered (to prevent duplicate event emissions)
-      const isAlreadyRegistered = agentSockets.has(finalAgentId) && agentSockets.get(finalAgentId) === socket.id;
+      // Check if agent is already registered (any socket = reconnection scenario)
+      const wasAlreadyRegistered = agentSockets.has(finalAgentId);
 
       agentSockets.set(finalAgentId, socket.id);
       socket.join(`agents:${finalAgentId}`);
-      console.log(`👤 Agent connected: ${finalAgentId} (socket: ${socket.id})${isAlreadyRegistered ? ' [already registered, skipping events]' : ''}`);
+
+      if (wasAlreadyRegistered) {
+        console.log(`🔄 Agent ${finalAgentId} reconnected (was already in agentSockets map)`);
+      } else {
+        console.log(`👤 Agent connected: ${finalAgentId} (socket: ${socket.id})`);
+      }
       socket.emit('agent_connected', { agentId: finalAgentId });
 
       // Only emit to admin_feed if agent was NOT already registered (prevents duplicate notifications)
-      if (!isAlreadyRegistered) {
+      if (!wasAlreadyRegistered) {
         io.to('admin_feed').emit('agent_connected', {
           agentId: finalAgentId,
           userId: socket.data.userId || finalAgentId,

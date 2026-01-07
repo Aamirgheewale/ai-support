@@ -3199,6 +3199,64 @@ app.delete('/api/notifications/:id', requireAuth, requireRole(['admin', 'agent']
 });
 
 // ============================================================================
+// IMAGE PROXY ENDPOINT (to bypass CORS for Appwrite storage)
+// ============================================================================
+
+// GET /api/proxy/image - Proxy image from external URL to bypass CORS
+// Query param ?url=<encoded-url>
+app.get('/api/proxy/image', requireAuth, async (req, res) => {
+  try {
+    const { url } = req.query;
+
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ error: 'URL parameter is required' });
+    }
+
+    // Decode the URL
+    const decodedUrl = decodeURIComponent(url);
+
+    // Security: Only allow Appwrite storage URLs
+    const allowedHosts = [
+      'fra.cloud.appwrite.io',
+      'cloud.appwrite.io',
+      'appwrite.io'
+    ];
+
+    try {
+      const urlObj = new URL(decodedUrl);
+      if (!allowedHosts.some(host => urlObj.hostname.endsWith(host))) {
+        console.warn(`⚠️  Blocked proxy request to non-Appwrite URL: ${urlObj.hostname}`);
+        return res.status(403).json({ error: 'Only Appwrite storage URLs are allowed' });
+      }
+    } catch (e) {
+      return res.status(400).json({ error: 'Invalid URL format' });
+    }
+
+    // Fetch the image from Appwrite
+    const response = await fetch(decodedUrl);
+
+    if (!response.ok) {
+      console.error(`❌ Image proxy failed: ${response.status} ${response.statusText}`);
+      return res.status(response.status).json({ error: `Failed to fetch image: ${response.statusText}` });
+    }
+
+    // Get content type and forward it
+    const contentType = response.headers.get('content-type') || 'image/png';
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
+
+    // Stream the response
+    const buffer = await response.arrayBuffer();
+    res.send(Buffer.from(buffer));
+
+    console.log(`📷 Proxied image: ${decodedUrl.substring(0, 80)}...`);
+  } catch (err) {
+    console.error('Error proxying image:', err);
+    res.status(500).json({ error: err?.message || 'Failed to proxy image' });
+  }
+});
+
+// ============================================================================
 // ANALYTICS & METRICS ENDPOINTS
 // ============================================================================
 
@@ -4601,9 +4659,6 @@ app.get('/admin/users/agents', requireAuth, requireRole(['admin', 'agent']), asy
     }
 
     console.log('📋 Fetching all agents...');
-    console.log(`📊 Current agentSockets Map size: ${agentSockets.size}`);
-    console.log(`📊 Current agentSockets keys:`, Array.from(agentSockets.keys()));
-    console.log(`📊 Current agentSockets entries:`, Array.from(agentSockets.entries()).map(([k, v]) => `${k} -> ${v}`));
 
     // Fetch all users and filter for agents
     // Note: Appwrite doesn't support array contains queries directly, so we fetch all and filter
@@ -4624,20 +4679,13 @@ app.get('/admin/users/agents', requireAuth, requireRole(['admin', 'agent']), asy
         const userId = doc.userId;
         // Check if agent is online by checking agentSockets Map
         // agentSockets maps agentId -> socketId, where agentId can be userId or custom agentId
-        // First check if userId exists as a key in agentSockets
         let isOnline = agentSockets.has(userId);
 
-        // Debug: Log the check
-        console.log(`🔍 Checking agent ${userId} (${doc.email}): agentSockets.has(${userId}) = ${isOnline}`);
-
         // If not found by userId, check all connected sockets for matching userId or agentId
-        // Also check agentSockets Map for any key that matches (in case agentId != userId)
         if (!isOnline) {
           // Check agentSockets Map for any entry where the key might match userId
-          // This handles cases where agentId === userId but stored differently
           for (const [agentIdKey, socketId] of agentSockets.entries()) {
             if (agentIdKey === userId) {
-              console.log(`✅ Found agent in agentSockets with key matching userId: ${agentIdKey} -> ${socketId}`);
               isOnline = true;
               break;
             }
@@ -4647,58 +4695,21 @@ app.get('/admin/users/agents', requireAuth, requireRole(['admin', 'agent']), asy
         // If still not found, check all connected sockets for matching userId or agentId
         if (!isOnline && io && io.sockets) {
           try {
-            // Get all connected sockets from the Socket.IO server
-            const sockets = io.sockets.sockets; // This is a Map of socketId -> socket
-            console.log(`📊 Checking ${sockets.size} connected sockets for userId: ${userId}`);
-
-            // Iterate through all sockets and check for matching userId
+            const sockets = io.sockets.sockets;
             for (const [socketId, socket] of sockets.entries()) {
               const socketUserId = socket.data?.userId;
               const socketAgentId = socket.data?.agentId;
               const isAuthenticated = socket.data?.authenticated;
               const socketConnected = socket.connected;
-
-              // Check if this socket is in agentSockets Map (means it's a valid agent connection)
               const isInAgentSockets = Array.from(agentSockets.values()).includes(socketId);
 
-              // Match if:
-              // 1. Socket is connected AND
-              // 2. (Socket is authenticated OR socket is in agentSockets Map) AND
-              // 3. (socketUserId matches userId OR socketAgentId matches userId)
               if (socketConnected && (isAuthenticated || isInAgentSockets) && (socketUserId === userId || socketAgentId === userId)) {
-                console.log(`✅ Found matching socket for userId ${userId}: socketId=${socketId}, userId=${socketUserId}, agentId=${socketAgentId}, authenticated=${isAuthenticated}, connected=${socketConnected}, inAgentSockets=${isInAgentSockets}`);
                 isOnline = true;
                 break;
               }
-
-              // Debug: log socket data for troubleshooting (only for matching userId/agentId)
-              if ((socketUserId === userId || socketAgentId === userId)) {
-                console.log(`🔍 Socket ${socketId}: userId=${socketUserId}, agentId=${socketAgentId}, authenticated=${isAuthenticated}, connected=${socketConnected}, inAgentSockets=${isInAgentSockets} (MATCHING USER)`);
-              }
             }
           } catch (err) {
-            console.warn('Error checking socket connections:', err);
-            // Fallback to Map check only
-          }
-        }
-
-        if (isOnline) {
-          console.log(`✅ Agent ${userId} (${doc.email}) is ONLINE`);
-        } else {
-          console.log(`❌ Agent ${userId} (${doc.email}) is OFFLINE`);
-          // Additional debug: Check if any socket has this userId
-          if (io && io.sockets) {
-            const sockets = io.sockets.sockets;
-            let foundInSockets = false;
-            for (const [socketId, socket] of sockets.entries()) {
-              if (socket.data?.userId === userId || socket.data?.agentId === userId) {
-                console.log(`   ⚠️  Found socket ${socketId} with userId=${socket.data?.userId}, agentId=${socket.data?.agentId}, authenticated=${socket.data?.authenticated}`);
-                foundInSockets = true;
-              }
-            }
-            if (!foundInSockets) {
-              console.log(`   ℹ️  No socket found with userId or agentId matching ${userId}`);
-            }
+            // Fallback to Map check only - silently continue
           }
         }
 
@@ -4721,7 +4732,9 @@ app.get('/admin/users/agents', requireAuth, requireRole(['admin', 'agent']), asy
         return dateB - dateA;
       });
 
-    console.log(`✅ Found ${agents.length} agent(s)`);
+    // Only log summary (not every agent individually)
+    const onlineCount = agents.filter(a => a.isOnline).length;
+    console.log(`📋 Agents query: ${agents.length} total, ${onlineCount} online`);
 
     res.json({
       agents,

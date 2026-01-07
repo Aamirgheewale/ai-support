@@ -358,18 +358,11 @@ export default function ConversationView() {
   }
 
   // Load online agents when component mounts (for admins)
+  // Note: Socket events (agent_connected, agent_disconnected, agent_status_changed) handle real-time updates
   useEffect(() => {
     if (isAdmin && sessionId) {
-      console.log('🔄 useEffect: Loading online agents...')
       loadOnlineAgents()
-
-      // Refresh online agents list periodically (every 30 seconds) to get real-time updates
-      const refreshInterval = setInterval(() => {
-        console.log('🔄 Periodic refresh: Reloading online agents...')
-        loadOnlineAgents()
-      }, 30000) // 30 seconds
-
-      return () => clearInterval(refreshInterval)
+      // No periodic polling needed - socket events handle agent status changes
     }
   }, [isAdmin, sessionId])
 
