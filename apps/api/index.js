@@ -1420,6 +1420,7 @@ initializeSocket({
   sessionsCollectionId: APPWRITE_SESSIONS_COLLECTION_ID,
   messagesCollectionId: APPWRITE_MESSAGES_COLLECTION_ID,
   aiAccuracyCollectionId: APPWRITE_AI_ACCURACY_COLLECTION_ID,
+  usersCollectionId: APPWRITE_USERS_COLLECTION_ID,
   Query,
   geminiClientRef: { client: geminiClient, model: geminiModel, modelName: geminiModelName },
   chatService,
@@ -3099,8 +3100,10 @@ app.post('/api/notifications/create', requireAuth, requireRole(['admin', 'agent'
 
     console.log(`✅ Created notification: ${notification.$id} (type: ${type})`);
 
-    // Emit to admin feed
-    io.to('admin_feed').emit('new_notification', notification);
+    // Emit to admin feed (skip for agent_connected/agent_disconnected as these are handled via direct socket events)
+    if (type !== 'agent_connected' && type !== 'agent_disconnected') {
+      io.to('admin_feed').emit('new_notification', notification);
+    }
 
     res.json({
       success: true,
@@ -4370,7 +4373,7 @@ app.patch('/me/status', requireAuth, async (req, res) => {
     const { status } = req.body;
 
     // Validate status
-    const validStatuses = ['online', 'away'];
+    const validStatuses = ['online', 'away', 'offline'];
     if (!status || !validStatuses.includes(status)) {
       return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` });
     }

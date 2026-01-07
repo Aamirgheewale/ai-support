@@ -35,10 +35,10 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     const [socket, setSocket] = useState<Socket | null>(null);
     const [token, setToken] = useState<string | null>(null);
     const { playRing } = useSoundContext();
-    
+
     // CRITICAL: Deduplication tracking - tracks all processed notification IDs
     const processedIds = useRef<Set<string>>(new Set());
-    
+
     // Debouncing refs for agent status changes (Channel C)
     const lastAgentStatusRef = useRef<Map<string, { type: 'connected' | 'disconnected', timestamp: number }>>(new Map());
     const playRingRef = useRef(playRing);
@@ -117,14 +117,14 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
                 const data = await response.json();
                 const fetchedNotifications = data.notifications || [];
                 console.log('📥 Fetched notifications:', fetchedNotifications.length);
-                
+
                 // Add fetched notification IDs to processedIds to prevent duplicates
                 fetchedNotifications.forEach((notif: Notification) => {
                     if (notif.$id) {
                         processedIds.current.add(notif.$id);
                     }
                 });
-                
+
                 setNotifications(fetchedNotifications);
             }
         } catch (error) {
@@ -189,7 +189,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
                         'Content-Type': 'application/json'
                     }
                 });
-                
+
                 if (!response.ok) {
                     const errorData = await response.json().catch(() => ({ error: 'Failed to delete notification' }));
                     console.error('❌ Failed to delete notification from database:', errorData);
@@ -197,7 +197,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
                     await fetchNotifications();
                     throw new Error(errorData.error || 'Failed to delete notification');
                 }
-                
+
                 console.log(`✅ Successfully deleted notification ${id} from database`);
             } else {
                 console.warn('⚠️  No auth token found, notification deleted from UI only');
@@ -240,7 +240,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         // Channel B: Inbox + Toast (Persistent)
         if (channel === 'B') {
             console.log(`📬 [CHANNEL B] Processing notification: ${notificationId} (${notification.type})`);
-            
+
             // Add to notifications state (inbox)
             setNotifications(prev => {
                 const exists = prev.some(n => n.$id === notificationId);
@@ -267,10 +267,10 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         // Channel C: Silent History (Inbox Only)
         else if (channel === 'C') {
             console.log(`📋 [CHANNEL C] Processing silent notification: ${notificationId} (${notification.type})`);
-            
+
             // CRITICAL: Channel C NEVER plays sounds, regardless of options
             // This ensures agent_connected/disconnected are always silent
-            
+
             // Add to notifications state (inbox) - NO toast/sound/browser notification
             setNotifications(prev => {
                 const exists = prev.some(n => n.$id === notificationId);
@@ -280,7 +280,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
                 }
                 return [notification, ...prev];
             });
-            
+
             // Explicitly do NOT play sounds, show toasts, or browser notifications
             // (Even if options.playSound === true, Channel C ignores it)
         }
@@ -331,7 +331,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         const handleTicketCreated = async (data: any) => {
             const { ticketId, name, email, sessionId } = data || {};
             console.log('🎫 [CHANNEL B] ticket_created:', data);
-            
+
             if (ticketId) {
                 const notification = await createNotification({
                     type: 'ticket_created',
@@ -353,7 +353,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         const handleRequestAgent = async (data: any) => {
             const { sessionId } = data || {};
             console.log('🔔 [CHANNEL B] request_agent:', data);
-            
+
             if (sessionId) {
                 const notification = await createNotification({
                     type: 'request_agent',
@@ -375,7 +375,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         const handleSessionTimeoutWarning = async (data: any) => {
             const { sessionId, message } = data || {};
             console.log('⏰ [CHANNEL B] session_timeout_warning:', data);
-            
+
             if (sessionId) {
                 const notification = await createNotification({
                     type: 'session_timeout_warning',
@@ -401,14 +401,15 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         const handleAgentConnected = async (data: any) => {
             const { agentId, userId, timestamp } = data || {};
             console.log('🟢 [CHANNEL C] agent_connected:', data);
-            
+
             if (agentId) {
                 const now = Date.now();
                 const lastStatus = lastAgentStatusRef.current.get(agentId);
-                
-                // Debounce: Ignore if last status change was < 60s ago
-                if (lastStatus && (now - lastStatus.timestamp) < 60000) {
-                    console.log(`⏭️  Debounced agent_connected for ${agentId} (last change was ${Math.round((now - lastStatus.timestamp) / 1000)}s ago)`);
+
+                // Debounce: Ignore if SAME status change was < 60s ago
+                // (Allow different status changes - e.g., connect after disconnect is OK)
+                if (lastStatus && lastStatus.type === 'connected' && (now - lastStatus.timestamp) < 60000) {
+                    console.log(`⏭️  Debounced duplicate agent_connected for ${agentId} (last connected ${Math.round((now - lastStatus.timestamp) / 1000)}s ago)`);
                     return;
                 }
 
@@ -434,14 +435,15 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         const handleAgentDisconnected = async (data: any) => {
             const { agentId, userId, timestamp } = data || {};
             console.log('🔴 [CHANNEL C] agent_disconnected:', data);
-            
+
             if (agentId) {
                 const now = Date.now();
                 const lastStatus = lastAgentStatusRef.current.get(agentId);
-                
-                // Debounce: Ignore if last status change was < 60s ago
-                if (lastStatus && (now - lastStatus.timestamp) < 60000) {
-                    console.log(`⏭️  Debounced agent_disconnected for ${agentId} (last change was ${Math.round((now - lastStatus.timestamp) / 1000)}s ago)`);
+
+                // Debounce: Ignore if SAME status change was < 60s ago
+                // (Allow different status changes - e.g., disconnect after connect is OK)
+                if (lastStatus && lastStatus.type === 'disconnected' && (now - lastStatus.timestamp) < 60000) {
+                    console.log(`⏭️  Debounced duplicate agent_disconnected for ${agentId} (last disconnected ${Math.round((now - lastStatus.timestamp) / 1000)}s ago)`);
                     return;
                 }
 

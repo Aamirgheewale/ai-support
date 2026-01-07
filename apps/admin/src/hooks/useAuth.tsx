@@ -122,7 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (res.ok) {
         const userData = await res.json();
-        
+
         // Fetch user preferences separately
         try {
           const prefsRes = await fetch(`${API_BASE}/me/prefs`, {
@@ -140,7 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } catch {
           userData.prefs = DEFAULT_USER_PREFS;
         }
-        
+
         setUser(userData);
         return userData;
       } else {
@@ -190,7 +190,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // don't auto-authenticate with dev-admin on initial load.
       if (storedToken) {
         const userData = await fetchUser(storedToken);
-        
+
         // Auto-connect agent to Socket.IO if they have agent role and are already logged in
         if (userData && userData.roles && userData.roles.includes('agent') && typeof window !== 'undefined') {
           try {
@@ -200,37 +200,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               withCredentials: true,
               transports: ['websocket', 'polling']
             });
-            
-            socket.on('connect', () => {
+
+            // Track if we've already authenticated to prevent duplicate emissions
+            let hasAuthenticated = false;
+
+            const authenticateAgent = () => {
+              if (hasAuthenticated) {
+                console.log('🔌 Agent already authenticated, skipping duplicate auth');
+                return;
+              }
+              hasAuthenticated = true;
               console.log('🔌 Agent auto-connected to Socket.IO for online status (on page load)');
-              // Authenticate as agent using userId
               socket.emit('agent_auth', {
                 token: storedToken,
                 agentId: userData.userId
               });
-            });
-            
+            };
+
+            socket.on('connect', authenticateAgent);
+
             socket.on('agent_connected', (data: any) => {
               console.log('✅ Agent authenticated successfully:', data);
             });
-            
+
             socket.on('auth_error', (error: any) => {
               console.error('❌ Agent authentication failed:', error);
             });
-            
+
             socket.on('disconnect', () => {
               console.log('🔌 Agent Socket disconnected');
+              // Reset flag so we can re-authenticate on reconnect
+              hasAuthenticated = false;
             });
-            
+
             // If socket is already connected, authenticate immediately
             if (socket.connected) {
-              console.log('🔌 Socket already connected, authenticating immediately');
-              socket.emit('agent_auth', {
-                token: storedToken,
-                agentId: userData.userId
-              });
+              authenticateAgent();
             }
-            
+
             // Store socket reference
             (window as any).__agentSocket = socket;
           } catch (err) {
@@ -261,7 +268,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const data = await res.json();
-    
+
     // Store token in memory as fallback (backend sets HttpOnly cookie)
     // In production, prefer cookies, but keep memory storage as fallback
     if (data.token) {
@@ -275,7 +282,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!userData) {
       throw new Error('Failed to load user profile');
     }
-    
+
     // Automatically connect agent to Socket.IO if they have agent role
     if (userData.roles && userData.roles.includes('agent') && typeof window !== 'undefined') {
       try {
@@ -285,37 +292,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           withCredentials: true,
           transports: ['websocket', 'polling']
         });
-        
-        socket.on('connect', () => {
+
+        // Track if we've already authenticated to prevent duplicate emissions
+        let hasAuthenticated = false;
+
+        const authenticateAgent = () => {
+          if (hasAuthenticated) {
+            console.log('🔌 Agent already authenticated, skipping duplicate auth');
+            return;
+          }
+          hasAuthenticated = true;
           console.log('🔌 Agent auto-connected to Socket.IO for online status');
-          // Authenticate as agent using userId
           socket.emit('agent_auth', {
             token: data.token,
             agentId: userData.userId
           });
-        });
-        
+        };
+
+        socket.on('connect', authenticateAgent);
+
         socket.on('agent_connected', (authData: any) => {
           console.log('✅ Agent authenticated successfully after login:', authData);
         });
-        
+
         socket.on('auth_error', (error: any) => {
           console.error('❌ Agent authentication failed after login:', error);
         });
-        
+
         socket.on('disconnect', () => {
           console.log('🔌 Agent Socket disconnected after login');
+          // Reset flag so we can re-authenticate on reconnect
+          hasAuthenticated = false;
         });
-        
+
         // If socket is already connected, authenticate immediately
         if (socket.connected) {
-          console.log('🔌 Socket already connected, authenticating immediately after login');
-          socket.emit('agent_auth', {
-            token: data.token,
-            agentId: userData.userId
-          });
+          authenticateAgent();
         }
-        
+
         // Store socket reference (will be cleaned up on logout)
         (window as any).__agentSocket = socket;
       } catch (err) {
@@ -364,7 +378,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.warn('Error disconnecting agent socket:', err);
       }
     }
-    
+
     // Clear token from memory
     setToken(null);
     setUser(null);
@@ -430,7 +444,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Optimistic update - merge new settings with existing prefs
     const mergedPrefs = { ...DEFAULT_USER_PREFS, ...user.prefs, ...newSettings };
     setUser(prev => prev ? { ...prev, prefs: mergedPrefs } : null);
-    
+
     // Dispatch event for other components (like useSound) to pick up immediately
     window.dispatchEvent(new CustomEvent('user-prefs-updated', { detail: mergedPrefs }));
 
@@ -481,16 +495,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ 
-      user, 
-      token, 
-      loading, 
-      hasRole, 
-      hasAnyRole, 
+    <AuthContext.Provider value={{
+      user,
+      token,
+      loading,
+      hasRole,
+      hasAnyRole,
       isAdmin,
-      signin, 
-      signup, 
-      signout, 
+      signin,
+      signup,
+      signout,
       refreshMe,
       updateUserStatus,
       updateUserSettings

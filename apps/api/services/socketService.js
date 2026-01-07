@@ -400,6 +400,7 @@ function initializeSocket(dependencies) {
     sessionsCollectionId,
     messagesCollectionId,
     aiAccuracyCollectionId,
+    usersCollectionId,
     Query,
     geminiClientRef, // Mutable reference: { client, model, modelName }
     chatService,
@@ -410,6 +411,11 @@ function initializeSocket(dependencies) {
     ADMIN_SHARED_SECRET,
     REDACT_PII
   } = dependencies;
+
+  // Track pending disconnects with grace period (for handling page refreshes)
+  // Key: agentId, Value: { timeout: NodeJS.Timeout, userId: string }
+  const pendingDisconnects = new Map();
+  const DISCONNECT_GRACE_PERIOD_MS = 5000; // 5 seconds grace period for reconnection
 
   // Socket.IO connection handler
   io.on('connection', (socket) => {
@@ -1681,30 +1687,82 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
         }
 
         const finalAgentId = agentId || userId;
+
+        // Check if there's a pending disconnect for this agent (page refresh scenario)
+        const pendingDisconnect = pendingDisconnects.get(finalAgentId);
+        if (pendingDisconnect) {
+          clearTimeout(pendingDisconnect.timeout);
+          pendingDisconnects.delete(finalAgentId);
+          console.log(`🔄 Agent ${finalAgentId} reconnected within grace period (page refresh) - cancelling disconnect`);
+          // This is a reconnection, so don't emit new events - just update the socket
+          agentSockets.set(finalAgentId, socket.id);
+          socket.join(`agents:${finalAgentId}`);
+          socket.data.authenticated = true;
+          socket.data.userId = userId;
+          socket.data.agentId = finalAgentId;
+          socket.emit('agent_connected', { agentId: finalAgentId, userId });
+          return; // Skip emitting to admin_feed since agent never truly went offline
+        }
+
+        // Check if agent is already registered (to prevent duplicate event emissions)
+        const isAlreadyRegistered = agentSockets.has(finalAgentId) && agentSockets.get(finalAgentId) === socket.id;
+
         agentSockets.set(finalAgentId, socket.id);
         socket.join(`agents:${finalAgentId}`);
         socket.data.authenticated = true;
         socket.data.userId = userId;
         socket.data.agentId = finalAgentId;
 
-        console.log(`✅ Agent authenticated and connected: ${finalAgentId} (user: ${userId}, socket: ${socket.id})`);
+        console.log(`✅ Agent authenticated and connected: ${finalAgentId} (user: ${userId}, socket: ${socket.id})${isAlreadyRegistered ? ' [already registered, skipping events]' : ''}`);
         console.log(`📊 agentSockets Map now has ${agentSockets.size} entries:`, Array.from(agentSockets.keys()));
         socket.emit('agent_connected', { agentId: finalAgentId, userId });
 
-        // Emit agent_connected event to admin feed for real-time updates
-        io.to('admin_feed').emit('agent_connected', {
-          agentId: finalAgentId,
-          userId,
-          timestamp: new Date().toISOString()
-        });
+        // Only emit to admin_feed and update database if agent was NOT already registered (prevents duplicates)
+        if (!isAlreadyRegistered) {
+          // Update user status in database to 'online'
+          if (databases && databaseId && usersCollectionId && userId) {
+            (async () => {
+              try {
+                let userDoc = null;
+                if (Query) {
+                  const result = await databases.listDocuments(
+                    databaseId,
+                    usersCollectionId,
+                    [Query.equal('userId', userId)],
+                    1
+                  );
+                  if (result.documents.length > 0) {
+                    userDoc = result.documents[0];
+                  }
+                }
+                if (userDoc) {
+                  await databases.updateDocument(
+                    databaseId,
+                    usersCollectionId,
+                    userDoc.$id,
+                    { status: 'online' }
+                  );
+                  console.log(`✅ Database status set to 'online' for agent ${userId}`);
+                }
+              } catch (dbErr) {
+                console.warn(`⚠️  Failed to update database status for agent ${userId}:`, dbErr?.message || dbErr);
+              }
+            })();
+          }
 
-        // Also emit unified agent_status_changed event
-        io.to('admin_feed').emit('agent_status_changed', {
-          agentId: finalAgentId,
-          userId: userId,
-          status: 'online',
-          action: 'connected'
-        });
+          io.to('admin_feed').emit('agent_connected', {
+            agentId: finalAgentId,
+            userId,
+            timestamp: new Date().toISOString()
+          });
+
+          io.to('admin_feed').emit('agent_status_changed', {
+            agentId: finalAgentId,
+            userId: userId,
+            status: 'online',
+            action: 'connected'
+          });
+        }
       } catch (err) {
         console.error('❌ Error authenticating agent:', err);
         socket.emit('auth_error', { error: 'Authentication failed' });
@@ -1725,28 +1783,48 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
       if (!socket.data.authenticated && ADMIN_SHARED_SECRET) {
         console.log(`⚠️  DEV MODE: Allowing agent_connect without full auth for agentId: ${agentId}`);
         const finalAgentId = agentId || 'dev-agent';
+
+        // Check if there's a pending disconnect for this agent (page refresh scenario)
+        const pendingDisconnect = pendingDisconnects.get(finalAgentId);
+        if (pendingDisconnect) {
+          clearTimeout(pendingDisconnect.timeout);
+          pendingDisconnects.delete(finalAgentId);
+          console.log(`🔄 Agent ${finalAgentId} reconnected within grace period (page refresh) - cancelling disconnect`);
+          agentSockets.set(finalAgentId, socket.id);
+          socket.join(`agents:${finalAgentId}`);
+          socket.data.authenticated = true;
+          socket.data.userId = finalAgentId;
+          socket.data.agentId = finalAgentId;
+          socket.emit('agent_connected', { agentId: finalAgentId });
+          return;
+        }
+
+        // Check if agent is already registered (to prevent duplicate event emissions)
+        const isAlreadyRegistered = agentSockets.has(finalAgentId) && agentSockets.get(finalAgentId) === socket.id;
+
         agentSockets.set(finalAgentId, socket.id);
         socket.join(`agents:${finalAgentId}`);
         socket.data.authenticated = true;
         socket.data.userId = finalAgentId;
         socket.data.agentId = finalAgentId;
-        console.log(`👤 Agent connected (DEV MODE): ${finalAgentId} (socket: ${socket.id})`);
+        console.log(`👤 Agent connected (DEV MODE): ${finalAgentId} (socket: ${socket.id})${isAlreadyRegistered ? ' [already registered, skipping events]' : ''}`);
         socket.emit('agent_connected', { agentId: finalAgentId });
 
-        // Emit agent_connected event to admin feed for real-time updates
-        io.to('admin_feed').emit('agent_connected', {
-          agentId: finalAgentId,
-          userId: finalAgentId,
-          timestamp: new Date().toISOString()
-        });
+        // Only emit to admin_feed if agent was NOT already registered (prevents duplicate notifications)
+        if (!isAlreadyRegistered) {
+          io.to('admin_feed').emit('agent_connected', {
+            agentId: finalAgentId,
+            userId: finalAgentId,
+            timestamp: new Date().toISOString()
+          });
 
-        // Also emit unified agent_status_changed event
-        io.to('admin_feed').emit('agent_status_changed', {
-          agentId: finalAgentId,
-          userId: finalAgentId,
-          status: 'online',
-          action: 'connected'
-        });
+          io.to('admin_feed').emit('agent_status_changed', {
+            agentId: finalAgentId,
+            userId: finalAgentId,
+            status: 'online',
+            action: 'connected'
+          });
+        }
         return;
       }
 
@@ -1761,39 +1839,41 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
         return;
       }
 
+      // Check if there's a pending disconnect for this agent (page refresh scenario)
+      const pendingDisconnect = pendingDisconnects.get(finalAgentId);
+      if (pendingDisconnect) {
+        clearTimeout(pendingDisconnect.timeout);
+        pendingDisconnects.delete(finalAgentId);
+        console.log(`🔄 Agent ${finalAgentId} reconnected within grace period (page refresh) - cancelling disconnect`);
+        agentSockets.set(finalAgentId, socket.id);
+        socket.join(`agents:${finalAgentId}`);
+        socket.emit('agent_connected', { agentId: finalAgentId });
+        return;
+      }
+
+      // Check if agent is already registered (to prevent duplicate event emissions)
+      const isAlreadyRegistered = agentSockets.has(finalAgentId) && agentSockets.get(finalAgentId) === socket.id;
+
       agentSockets.set(finalAgentId, socket.id);
       socket.join(`agents:${finalAgentId}`);
-      console.log(`👤 Agent connected: ${finalAgentId} (socket: ${socket.id})`);
+      console.log(`👤 Agent connected: ${finalAgentId} (socket: ${socket.id})${isAlreadyRegistered ? ' [already registered, skipping events]' : ''}`);
       socket.emit('agent_connected', { agentId: finalAgentId });
 
-      // Emit to admin feed for real-time updates
-      io.to('admin_feed').emit('agent_connected', {
-        agentId: finalAgentId,
-        userId: socket.data.userId || finalAgentId,
-        timestamp: new Date().toISOString()
-      });
+      // Only emit to admin_feed if agent was NOT already registered (prevents duplicate notifications)
+      if (!isAlreadyRegistered) {
+        io.to('admin_feed').emit('agent_connected', {
+          agentId: finalAgentId,
+          userId: socket.data.userId || finalAgentId,
+          timestamp: new Date().toISOString()
+        });
 
-      io.to('admin_feed').emit('agent_status_changed', {
-        agentId: finalAgentId,
-        userId: socket.data.userId || finalAgentId,
-        status: 'online',
-        action: 'connected'
-      });
-
-      // Notify admin feed about agent status change (online)
-      io.to('admin_feed').emit('agent_status_changed', {
-        agentId: finalAgentId,
-        userId: socket.data.userId || finalAgentId,
-        status: 'online',
-        action: 'connected'
-      });
-
-      // Emit agent_connected event to admin feed
-      io.to('admin_feed').emit('agent_connected', {
-        agentId: finalAgentId,
-        userId: socket.data.userId || finalAgentId,
-        timestamp: new Date().toISOString()
-      });
+        io.to('admin_feed').emit('agent_status_changed', {
+          agentId: finalAgentId,
+          userId: socket.data.userId || finalAgentId,
+          status: 'online',
+          action: 'connected'
+        });
+      }
     });
 
     // Agent takeover handler (requires agent role)
@@ -2008,29 +2088,77 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
           disconnectedUserId = socket.data?.userId || agentId;
           agentSockets.delete(agentId);
 
-          // Notify admin feed about agent status change (offline)
-          io.to('admin_feed').emit('agent_status_changed', {
-            agentId: agentId,
-            userId: disconnectedUserId,
-            status: 'offline',
-            action: 'disconnected'
-          });
-          console.log(`👤 Agent ${agentId} disconnected`);
+          // Use grace period to allow for page refresh reconnection
+          console.log(`⏳ Agent ${agentId} socket disconnected - starting ${DISCONNECT_GRACE_PERIOD_MS / 1000}s grace period...`);
 
-          // Emit agent_disconnected event to admin feed for real-time updates
-          io.to('admin_feed').emit('agent_disconnected', {
-            agentId,
-            userId: socket.data.userId || agentId,
-            timestamp: new Date().toISOString()
+          const disconnectTimeout = setTimeout(async () => {
+            // Grace period expired - agent did not reconnect, truly offline now
+            pendingDisconnects.delete(agentId);
+            console.log(`👤 Agent ${agentId} did not reconnect - processing as truly disconnected`);
+
+            // Update user status in database to 'offline'
+            if (databases && databaseId && usersCollectionId && disconnectedUserId) {
+              try {
+                // Find user document by userId
+                let userDoc = null;
+                if (Query) {
+                  const result = await databases.listDocuments(
+                    databaseId,
+                    usersCollectionId,
+                    [Query.equal('userId', disconnectedUserId)],
+                    1
+                  );
+                  if (result.documents.length > 0) {
+                    userDoc = result.documents[0];
+                  }
+                } else {
+                  // Fallback: list all and find manually
+                  const allUsers = await databases.listDocuments(
+                    databaseId,
+                    usersCollectionId,
+                    [],
+                    1000
+                  );
+                  userDoc = allUsers.documents.find(doc => doc.userId === disconnectedUserId);
+                }
+
+                if (userDoc) {
+                  // Set status to 'offline' when agent disconnects
+                  await databases.updateDocument(
+                    databaseId,
+                    usersCollectionId,
+                    userDoc.$id,
+                    { status: 'offline' }
+                  );
+                  console.log(`✅ Database status set to 'offline' for agent ${disconnectedUserId}`);
+                }
+              } catch (dbErr) {
+                console.warn(`⚠️  Failed to update database status for agent ${disconnectedUserId}:`, dbErr?.message || dbErr);
+              }
+            }
+
+            // Notify admin feed about agent status change (offline) - single emission only
+            io.to('admin_feed').emit('agent_status_changed', {
+              agentId: agentId,
+              userId: disconnectedUserId,
+              status: 'offline',
+              action: 'disconnected'
+            });
+
+            // Emit agent_disconnected event to admin feed for real-time updates
+            io.to('admin_feed').emit('agent_disconnected', {
+              agentId,
+              userId: disconnectedUserId,
+              timestamp: new Date().toISOString()
+            });
+          }, DISCONNECT_GRACE_PERIOD_MS);
+
+          // Store the pending disconnect so it can be cancelled if agent reconnects
+          pendingDisconnects.set(agentId, {
+            timeout: disconnectTimeout,
+            userId: disconnectedUserId
           });
 
-          // Also emit unified agent_status_changed event
-          io.to('admin_feed').emit('agent_status_changed', {
-            agentId: agentId,
-            userId: socket.data?.userId || agentId,
-            status: 'offline',
-            action: 'disconnected'
-          });
           break;
         }
       }

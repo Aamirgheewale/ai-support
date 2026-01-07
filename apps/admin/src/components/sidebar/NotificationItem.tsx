@@ -11,12 +11,13 @@ interface NotificationItemProps {
     $createdAt?: string
   }
   onMarkAsRead: (id: string) => void
+  onDelete?: (id: string) => void
 }
 
 /**
  * NotificationItem - Individual notification item in inbox
  */
-export default function NotificationItem({ notification, onMarkAsRead }: NotificationItemProps) {
+export default function NotificationItem({ notification, onMarkAsRead, onDelete }: NotificationItemProps) {
   const navigate = useNavigate()
 
   // Format relative time
@@ -142,12 +143,19 @@ export default function NotificationItem({ notification, onMarkAsRead }: Notific
     }
   }
 
+  // Handle delete
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation() // Prevent triggering handleClick
+    if (onDelete) {
+      onDelete(notification.$id)
+    }
+  }
+
   return (
-    <button
+    <div
       onClick={handleClick}
-      className={`w-full p-3 flex items-start gap-3 hover:bg-gray-50 transition-colors text-left border-b border-gray-100 last:border-b-0 ${
-        !notification.isRead ? config.bgColor : ''
-      }`}
+      className={`group relative w-full p-3 flex items-start gap-3 hover:bg-gray-50 transition-colors text-left border-b border-gray-100 last:border-b-0 cursor-pointer ${!notification.isRead ? config.bgColor : ''
+        }`}
     >
       {/* Icon */}
       {config.icon}
@@ -166,12 +174,26 @@ export default function NotificationItem({ notification, onMarkAsRead }: Notific
               {notification.content}
             </p>
           </div>
-          <span className="text-xs text-gray-400 shrink-0 whitespace-nowrap">
-            {timeAgo}
-          </span>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-xs text-gray-400 whitespace-nowrap">
+              {timeAgo}
+            </span>
+            {/* Delete button - shows on hover */}
+            {onDelete && (
+              <button
+                onClick={handleDelete}
+                className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-gray-200 transition-all"
+                title="Remove notification"
+              >
+                <svg className="w-4 h-4 text-gray-400 hover:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
         </div>
       </div>
-    </button>
+    </div>
   )
 }
 
