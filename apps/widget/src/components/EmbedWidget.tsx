@@ -1347,11 +1347,16 @@ export default function EmbedWidget({
   };
 
   // Check business hours on mount - show offline form if outside business hours and no active session
+  // Check business hours on mount - show offline form if outside business hours and no active session
+  // Check business hours on mount - REMOVED to allow FAQ flow first
+  // Users will see offline form only when they try to talk to an agent
+  /*
   useEffect(() => {
     if (!isBusinessHours() && !sessionId && !showOfflineForm && !isChatMode) {
       setShowOfflineForm(true);
     }
-  }, []); // Only run on mount
+  }, []);
+  */
 
   // Cleanup timer on unmount
   useEffect(() => {
