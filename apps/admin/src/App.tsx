@@ -271,8 +271,8 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
                   } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
                 title={!isSidebarCollapsed ? (pendingCount > 0 ? `${pendingCount} Pending Queries` : 'Pending Queries') : undefined}
               >
-                <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center relative' : ''}`}>
-                  <div className="relative">
+                <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center relative' : 'flex-1 min-w-0'}`}>
+                  <div className="relative flex-shrink-0">
                     <svg className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
@@ -284,20 +284,20 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
                     )}
                   </div>
                   {!isSidebarCollapsed && (
-                    <>
-                      <span>Pending Queries</span>
+                    <div className="flex items-center flex-1 min-w-0">
+                      <span className="whitespace-nowrap">Pending Queries</span>
                       {/* Pending count badge */}
                       {pendingCount > 0 && (
-                        <span className="ml-2 bg-red-500 text-white text-xs font-semibold rounded-full px-2 py-0.5 min-w-[20px] text-center">
+                        <span className="ml-2 bg-red-500 text-white text-xs font-semibold rounded-full px-2 py-0.5 min-w-[20px] text-center flex-shrink-0">
                           {pendingCount}
                         </span>
                       )}
-                    </>
+                    </div>
                   )}
                 </div>
                 {!isSidebarCollapsed && (
                   <svg
-                    className={`w-4 h-4 transition-transform duration-200 ${isPendingQueriesOpen ? 'transform rotate-90' : ''}`}
+                    className={`w-4 h-4 transition-transform duration-200 flex-shrink-0 ${isPendingQueriesOpen ? 'transform rotate-90' : ''}`}
                     fill="none"
                     viewBox="0 0 24 24"
                     stroke="currentColor"
