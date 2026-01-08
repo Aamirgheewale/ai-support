@@ -71,6 +71,58 @@ app.get('/', (req, res) => {
   res.send('API is running live!');
 });
 
+// Database health check route
+app.get('/health/db', async (req, res) => {
+  try {
+    if (!awDatabases || !APPWRITE_DATABASE_ID) {
+      return res.status(503).json({
+        status: 'unavailable',
+        message: 'Appwrite not configured',
+        details: {
+          endpoint: APPWRITE_ENDPOINT || 'Not set',
+          projectId: APPWRITE_PROJECT_ID ? 'Set' : 'Not set',
+          apiKey: APPWRITE_API_KEY ? 'Set' : 'Not set',
+          databaseId: APPWRITE_DATABASE_ID || 'Not set'
+        }
+      });
+    }
+
+    // Try to connect to Appwrite by listing a collection
+    try {
+      await awDatabases.listDocuments(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_USERS_COLLECTION_ID,
+        [],
+        1
+      );
+      return res.json({
+        status: 'healthy',
+        message: 'Database connection successful',
+        endpoint: APPWRITE_ENDPOINT
+      });
+    } catch (dbError) {
+      return res.status(503).json({
+        status: 'unavailable',
+        message: 'Database connection failed',
+        error: dbError.message,
+        endpoint: APPWRITE_ENDPOINT,
+        troubleshooting: [
+          'Check if APPWRITE_ENDPOINT is correct and reachable',
+          'Verify APPWRITE_PROJECT_ID and APPWRITE_API_KEY are correct',
+          'Ensure your network can reach the Appwrite endpoint',
+          'Check if Appwrite service is running and accessible'
+        ]
+      });
+    }
+  } catch (err) {
+    return res.status(500).json({
+      status: 'error',
+      message: 'Health check failed',
+      error: err.message
+    });
+  }
+});
+
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
@@ -316,10 +368,12 @@ async function getUserById(userId) {
 
 async function getUserByEmail(email) {
   if (!awDatabases || !APPWRITE_DATABASE_ID) {
+    console.warn('⚠️  Appwrite not initialized - cannot fetch user by email');
     return null;
   }
   try {
     if (!Query) {
+      console.warn('⚠️  Appwrite Query not available');
       return null;
     }
     const result = await awDatabases.listDocuments(
@@ -333,6 +387,16 @@ async function getUserByEmail(email) {
     // If collection doesn't exist or attribute not found, return null
     if (err.code === 404 || err.type === 'general_query_invalid' || err.message?.includes('not found')) {
       return null;
+    }
+    // Network/connection errors
+    if (err.message?.includes('fetch failed') || err.message?.includes('ECONNREFUSED') || err.message?.includes('ENOTFOUND')) {
+      console.error('❌ Appwrite connection failed - cannot reach database:', err.message);
+      console.error('   Check your APPWRITE_ENDPOINT:', APPWRITE_ENDPOINT);
+      console.error('   This usually means:');
+      console.error('   1. Appwrite endpoint is unreachable (network issue)');
+      console.error('   2. Appwrite endpoint URL is incorrect');
+      console.error('   3. Firewall/proxy is blocking the connection');
+      throw new Error('Database connection failed. Please check your Appwrite configuration and network connection.');
     }
     console.error('Error fetching user by email:', err.message || err);
     return null;
@@ -4528,7 +4592,22 @@ app.post('/auth/login', async (req, res) => {
     }
 
     // Find user by email
-    const user = await getUserByEmail(email);
+    let user;
+    try {
+      user = await getUserByEmail(email);
+    } catch (dbError) {
+      // If it's a connection error, return 503 (Service Unavailable) instead of 401
+      if (dbError.message?.includes('Database connection failed')) {
+        console.error('Database connection error during login:', dbError.message);
+        return res.status(503).json({ 
+          error: 'Database connection failed. Please check your Appwrite configuration and ensure the database is accessible.',
+          details: 'The server cannot connect to the Appwrite database. This may be due to network issues or incorrect configuration.'
+        });
+      }
+      // Re-throw other errors
+      throw dbError;
+    }
+    
     if (!user) {
       return res.status(401).json({ error: 'User not found with this email' });
     }

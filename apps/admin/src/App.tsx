@@ -20,7 +20,12 @@ import SidebarHeader from './components/sidebar/SidebarHeader'
 import StopRingButton from './components/sidebar/StopRingButton'
 import { useState, useEffect, useRef } from 'react'
 
-function Navigation() {
+interface NavigationProps {
+  isSidebarCollapsed: boolean
+  toggleSidebar: () => void
+}
+
+function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
   const { hasRole, user, isAdmin, loading, signout } = useAuth()
   const { unreadCount } = useNotifications()
   const location = useLocation()
@@ -137,51 +142,89 @@ function Navigation() {
   return (
     <>
       {/* Sidebar */}
-      <aside className="fixed left-0 top-0 h-screen w-64 bg-white border-r border-gray-200 flex flex-col z-50 hidden lg:flex">
+      <aside className={`fixed left-0 top-0 h-screen bg-white border-r border-gray-200 flex flex-col z-50 hidden lg:flex transition-all duration-300 ${isSidebarCollapsed ? 'w-20 overflow-visible' : 'w-64'} group`}>
+        {/* Toggle Button - Centered vertically */}
+        <button
+          onClick={toggleSidebar}
+          className="absolute -right-3 top-1/2 -translate-y-1/2 z-10 w-6 h-6 bg-white border border-gray-300 rounded-full flex items-center justify-center shadow-md hover:bg-gray-50 hover:shadow-lg transition-all duration-200"
+          aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {isSidebarCollapsed ? (
+            <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          ) : (
+            <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          )}
+        </button>
+        
         {/* New Sidebar Header with User Profile & Notifications */}
-        <SidebarHeader />
+        <SidebarHeader isCollapsed={isSidebarCollapsed} />
 
         {/* Navigation Links */}
-        <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto">
+        <nav className={`flex-1 py-4 space-y-1 ${isSidebarCollapsed ? 'px-2 overflow-visible' : 'px-4 overflow-y-auto'}`}>
           <Link
             to="/sessions"
-            className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${isActive('/sessions')
+            className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/sessions')
               ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-700'
               : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
-              }`}
+              } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
+            title={isSidebarCollapsed ? 'Sessions' : ''}
           >
-            <svg className="w-5 h-5 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
             </svg>
-            Sessions
+            {!isSidebarCollapsed && <span>Sessions</span>}
+            {/* Tooltip when collapsed */}
+            {isSidebarCollapsed && (
+              <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+                Sessions
+              </span>
+            )}
           </Link>
 
           <Link
             to="/live"
-            className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${isActive('/live')
+            className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/live')
               ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-700'
               : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
-              }`}
+              } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
+            title={isSidebarCollapsed ? 'Live View' : ''}
           >
-            <svg className="w-5 h-5 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
             </svg>
-            Live View
+            {!isSidebarCollapsed && <span>Live View</span>}
+            {/* Tooltip when collapsed */}
+            {isSidebarCollapsed && (
+              <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+                Live View
+              </span>
+            )}
           </Link>
 
           {/* Users link - visible to admin only (hidden for agent) */}
           {hasRole('admin') && (
             <Link
               to="/users"
-              className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${isActive('/users')
+              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/users')
                 ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-700'
                 : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
-                }`}
+                } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
+              title={isSidebarCollapsed ? 'Users' : ''}
             >
-              <svg className="w-5 h-5 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
               </svg>
-              Users
+              {!isSidebarCollapsed && <span>Users</span>}
+              {/* Tooltip when collapsed */}
+              {isSidebarCollapsed && (
+                <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+                  Users
+                </span>
+              )}
             </Link>
           )}
 
@@ -189,15 +232,22 @@ function Navigation() {
           {(hasRole('admin') || hasRole('agent')) && (
             <Link
               to="/agents-online"
-              className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${isActive('/agents-online')
+              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/agents-online')
                 ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-700'
                 : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
-                }`}
+                } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
+              title={isSidebarCollapsed ? 'Agents Online' : ''}
             >
-              <svg className="w-5 h-5 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
               </svg>
-              Agents Online
+              {!isSidebarCollapsed && <span>Agents Online</span>}
+              {/* Tooltip when collapsed */}
+              {isSidebarCollapsed && (
+                <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+                  Agents Online
+                </span>
+              )}
             </Link>
           )}
 
@@ -215,33 +265,57 @@ function Navigation() {
                     navigate('/pending-queries?status=pending');
                   }
                 }}
-                className={`w-full flex items-center justify-between px-4 py-3 text-sm font-medium rounded-lg transition-colors ${isPendingQueriesActive
+                className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'justify-between px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isPendingQueriesActive
                   ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-700'
                   : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
-                  }`}
+                  } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
+                title={!isSidebarCollapsed ? (pendingCount > 0 ? `${pendingCount} Pending Queries` : 'Pending Queries') : undefined}
               >
-                <div className="flex items-center">
-                  <svg className="w-5 h-5 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  <span>Pending Queries</span>
-                  {/* Pending count badge */}
-                  {pendingCount > 0 && (
-                    <span className="ml-2 bg-red-500 text-white text-xs font-semibold rounded-full px-2 py-0.5 min-w-[20px] text-center">
-                      {pendingCount}
-                    </span>
+                <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center relative' : ''}`}>
+                  <div className="relative">
+                    <svg className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    {/* Slack-style badge at top-right corner when collapsed */}
+                    {isSidebarCollapsed && pendingCount > 0 && (
+                      <span className="absolute top-0 right-0 -translate-y-1/2 translate-x-1/2 bg-red-500 text-white rounded-full flex items-center justify-center shadow-md border-2 border-white min-w-[16px] h-4 px-1 text-[10px] font-bold leading-tight">
+                        {pendingCount > 9 ? '9+' : pendingCount}
+                      </span>
+                    )}
+                  </div>
+                  {!isSidebarCollapsed && (
+                    <>
+                      <span>Pending Queries</span>
+                      {/* Pending count badge */}
+                      {pendingCount > 0 && (
+                        <span className="ml-2 bg-red-500 text-white text-xs font-semibold rounded-full px-2 py-0.5 min-w-[20px] text-center">
+                          {pendingCount}
+                        </span>
+                      )}
+                    </>
                   )}
                 </div>
-                <svg
-                  className={`w-4 h-4 transition-transform duration-200 ${isPendingQueriesOpen ? 'transform rotate-90' : ''}`}
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
+                {!isSidebarCollapsed && (
+                  <svg
+                    className={`w-4 h-4 transition-transform duration-200 ${isPendingQueriesOpen ? 'transform rotate-90' : ''}`}
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                )}
+                {/* Enhanced tooltip when collapsed - exact same styling as profile tooltip */}
+                {isSidebarCollapsed && (
+                  <span className="absolute left-full ml-3 px-3 py-1.5 text-xs font-medium text-white bg-gray-900 rounded-lg shadow-lg whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-all duration-200 pointer-events-none z-50 border border-gray-700">
+                    <span className="font-semibold text-white">Pending Queries</span>
+                    {pendingCount > 0 && (
+                      <span className="ml-1.5 text-red-400 font-bold">{pendingCount} unread</span>
+                    )}
+                  </span>
+                )}
               </button>
-              {isPendingQueriesOpen && (
+              {isPendingQueriesOpen && !isSidebarCollapsed && (
                 <div className="ml-4 mt-1 space-y-1">
                   <Link
                     to="/pending-queries?status=pending"
@@ -270,21 +344,39 @@ function Navigation() {
           {(hasRole('admin') || hasRole('agent')) && (
             <Link
               to="/notifications"
-              className={`flex items-center justify-between px-4 py-3 text-sm font-medium rounded-lg transition-colors ${isActive('/notifications')
+              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'justify-between px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/notifications')
                 ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-700'
                 : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
-                }`}
+                } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
+              title={!isSidebarCollapsed ? (unreadCount > 0 ? `${unreadCount} Unread Notifications` : 'Notifications') : undefined}
             >
-              <div className="flex items-center">
-                <svg className="w-5 h-5 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                </svg>
-                <span>Notifications</span>
+              <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center relative' : ''}`}>
+                <div className="relative">
+                  <svg className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                  </svg>
+                  {/* Slack-style badge at top-right corner when collapsed */}
+                  {isSidebarCollapsed && unreadCount > 0 && (
+                    <span className="absolute top-0 right-0 -translate-y-1/2 translate-x-1/2 bg-blue-500 text-white rounded-full flex items-center justify-center shadow-md border-2 border-white min-w-[16px] h-4 px-1 text-[10px] font-bold leading-tight">
+                      {unreadCount > 9 ? '9+' : unreadCount}
+                    </span>
+                  )}
+                </div>
+                {!isSidebarCollapsed && <span>Notifications</span>}
               </div>
-              {/* Notification Badge - shows count when > 0 */}
-              {unreadCount > 0 && (
+              {/* Notification Badge - shows count when > 0 (expanded state) */}
+              {!isSidebarCollapsed && unreadCount > 0 && (
                 <span className="ml-auto bg-blue-500 text-white text-xs font-semibold rounded-full px-2 py-0.5 min-w-[20px] text-center">
                   {unreadCount}
+                </span>
+              )}
+              {/* Enhanced tooltip when collapsed - exact same styling as profile tooltip */}
+              {isSidebarCollapsed && (
+                <span className="absolute left-full ml-3 px-3 py-1.5 text-xs font-medium text-white bg-gray-900 rounded-lg shadow-lg whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-all duration-200 pointer-events-none z-50 border border-gray-700">
+                  <span className="font-semibold text-white">Notifications</span>
+                  {unreadCount > 0 && (
+                    <span className="ml-1.5 text-blue-400 font-bold">{unreadCount} unread</span>
+                  )}
                 </span>
               )}
             </Link>
@@ -294,15 +386,22 @@ function Navigation() {
           {hasRole('admin') && (
             <Link
               to="/analytics"
-              className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${isActive('/analytics')
+              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/analytics')
                 ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-700'
                 : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
-                }`}
+                } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
+              title={isSidebarCollapsed ? 'Analytics' : ''}
             >
-              <svg className="w-5 h-5 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
               </svg>
-              Analytics
+              {!isSidebarCollapsed && <span>Analytics</span>}
+              {/* Tooltip when collapsed */}
+              {isSidebarCollapsed && (
+                <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+                  Analytics
+                </span>
+              )}
             </Link>
           )}
 
@@ -310,15 +409,22 @@ function Navigation() {
           {hasRole('admin') && (
             <Link
               to="/accuracy"
-              className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${isActive('/accuracy')
+              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/accuracy')
                 ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-700'
                 : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
-                }`}
+                } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
+              title={isSidebarCollapsed ? 'Accuracy' : ''}
             >
-              <svg className="w-5 h-5 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              Accuracy
+              {!isSidebarCollapsed && <span>Accuracy</span>}
+              {/* Tooltip when collapsed */}
+              {isSidebarCollapsed && (
+                <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+                  Accuracy
+                </span>
+              )}
             </Link>
           )}
 
@@ -326,15 +432,22 @@ function Navigation() {
           {hasRole('admin') && (
             <Link
               to="/encryption"
-              className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${isActive('/encryption')
+              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/encryption')
                 ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-700'
                 : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
-                }`}
+                } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
+              title={isSidebarCollapsed ? 'Encryption' : ''}
             >
-              <svg className="w-5 h-5 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
               </svg>
-              Encryption
+              {!isSidebarCollapsed && <span>Encryption</span>}
+              {/* Tooltip when collapsed */}
+              {isSidebarCollapsed && (
+                <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+                  Encryption
+                </span>
+              )}
             </Link>
           )}
         </nav>
@@ -343,12 +456,19 @@ function Navigation() {
         <div className="border-t border-gray-200 p-4">
           <button
             onClick={handleLogout}
-            className="w-full flex items-center px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900 rounded-lg transition-colors"
+            className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900 rounded-lg transition-all duration-200 ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
+            title={isSidebarCollapsed ? 'Logout' : ''}
           >
-            <svg className="w-5 h-5 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
             </svg>
-            Logout
+            {!isSidebarCollapsed && <span>Logout</span>}
+            {/* Tooltip when collapsed */}
+            {isSidebarCollapsed && (
+              <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+                Logout
+              </span>
+            )}
           </button>
         </div>
       </aside>
@@ -474,18 +594,30 @@ function UsersRoute() {
 }
 
 function App() {
+  // Sidebar collapse state with localStorage persistence (lifted to App level)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    const saved = localStorage.getItem('sidebarCollapsed')
+    return saved === 'true'
+  })
+  
+  const toggleSidebar = () => {
+    const newState = !isSidebarCollapsed
+    setIsSidebarCollapsed(newState)
+    localStorage.setItem('sidebarCollapsed', String(newState))
+  }
+
   return (
     <AuthProvider>
       <SoundProvider>
         <NotificationProvider>
           <BrowserRouter>
             <div className="min-h-screen bg-gray-50">
-              <Navigation />
+              <Navigation isSidebarCollapsed={isSidebarCollapsed} toggleSidebar={toggleSidebar} />
               <AudioNotifications />
               <StopRingButton />
 
               {/* Main Content Area */}
-              <main className="lg:ml-64 min-h-screen">
+              <main className={`min-h-screen transition-all duration-300 ${isSidebarCollapsed ? 'lg:ml-20' : 'lg:ml-64'}`}>
                 <Routes>
                   <Route path="/" element={<Navigate to="/auth" replace />} />
                   <Route path="/auth" element={<AuthPage />} />

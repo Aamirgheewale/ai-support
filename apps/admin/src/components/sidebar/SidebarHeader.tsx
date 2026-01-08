@@ -1,16 +1,23 @@
 import { useState, useRef, useEffect } from 'react'
 import { useAuth } from '../../hooks/useAuth'
+import { useNotifications } from '../../context/NotificationContext'
 import NotificationBell from './NotificationBell'
 import UserProfileMenu from './UserProfileMenu'
 
 type UserStatus = 'online' | 'away'
 
+interface SidebarHeaderProps {
+  isCollapsed?: boolean
+  unreadCount?: number
+}
+
 /**
  * SidebarHeader - Slack/Linear-style header with user profile and notifications
  * Positioned at the top of the sidebar
  */
-export default function SidebarHeader() {
+export default function SidebarHeader({ isCollapsed = false }: SidebarHeaderProps) {
   const { user } = useAuth()
+  const { unreadCount } = useNotifications()
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false)
   const [hasOpenModal, setHasOpenModal] = useState(false)
   const [userStatus, setUserStatus] = useState<UserStatus>('online')
@@ -103,15 +110,16 @@ export default function SidebarHeader() {
   return (
     <div className="relative" ref={profileMenuRef}>
       {/* Header Container */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200/80">
-        {/* User Profile Button - Left */}
+      <div className={`flex items-center ${isCollapsed ? 'justify-center px-2' : 'justify-between px-4'} py-3 border-b border-gray-200/80 mt-4`}>
+        {/* User Profile Button */}
         <button
           onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
-          className="flex items-center gap-2.5 px-2 py-1.5 -ml-2 rounded-lg hover:bg-gray-100 transition-all duration-150 group"
+          className={`flex items-center ${isCollapsed ? 'justify-center group/item hover:scale-110' : 'gap-2.5'} px-2 py-1.5 -ml-2 rounded-lg hover:bg-gray-100 transition-all duration-200 relative`}
+          title={!isCollapsed ? (unreadCount > 0 ? `${unreadCount} Unread Notifications` : `${firstName} (${userStatus})`) : undefined}
         >
           {/* Square Avatar with Status Indicator */}
           <div className="relative">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-sm font-semibold shadow-sm">
+            <div className={`w-16 h-14 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-sm font-semibold shadow-sm transition-transform duration-200 ${isCollapsed ? 'group-hover/item:scale-125' : ''} ml-2`}>
               {initials}
             </div>
             {/* Status Indicator Dot - Floating half outside avatar */}
@@ -122,23 +130,45 @@ export default function SidebarHeader() {
               aria-label={userStatus === 'away' ? 'Away' : 'Online'}
             />
           </div>
-          {/* First Name */}
-          <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900">
-            {firstName}
-          </span>
-          {/* Chevron */}
-          <svg 
-            className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${isProfileMenuOpen ? 'rotate-180' : ''}`}
-            fill="none" 
-            viewBox="0 0 24 24" 
-            stroke="currentColor"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
+          {/* First Name - Hidden when collapsed */}
+          {!isCollapsed && (
+            <>
+              <span className="text-medium font-medium text-gray-700 group-hover:text-gray-900">
+                {firstName}
+              </span>
+              {/* Chevron */}
+              <svg 
+                className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${isProfileMenuOpen ? 'rotate-180' : ''}`}
+                fill="none" 
+                viewBox="0 0 24 24" 
+                stroke="currentColor"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </>
+          )}
+          {/* Enhanced tooltip when collapsed */}
+          {isCollapsed && (
+            <span className="absolute left-full ml-3 px-3 py-1.5 text-xs font-medium text-white bg-gray-900 rounded-lg shadow-lg whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-all duration-200 pointer-events-none z-50 border border-gray-700">
+              <span className="font-semibold text-white">{firstName}</span>
+              {unreadCount > 0 && (
+                <span className="ml-1.5 text-blue-400 font-bold">{unreadCount} unread</span>
+              )}
+            </span>
+          )}
         </button>
 
-        {/* Notification Bell - Right */}
-        <NotificationBell />
+        {/* Notification Bell - Right (Hidden when collapsed) */}
+        {!isCollapsed && <NotificationBell />}
+        
+        {/* Notification Badge when collapsed - Show on avatar (Slack-style at top-right corner) */}
+        {isCollapsed && unreadCount > 0 && (
+          <div className="absolute top-1 right-1">
+            <span className="bg-blue-500 text-white rounded-full flex items-center justify-center shadow-md border-2 border-white min-w-[16px] h-4 px-1 text-[10px] font-bold leading-tight mt-4">
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Backdrop with blur effect - only show when profile menu is open */}
