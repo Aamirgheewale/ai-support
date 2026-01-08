@@ -168,16 +168,16 @@ export default function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsM
 
   return (
     <div 
-      className="fixed inset-0 z-[100] overflow-y-auto" 
+      className="fixed inset-0 z-[10000] overflow-y-auto" 
       onClick={handleCancel}
       role="dialog"
       aria-modal="true"
     >
-      {/* Backdrop */}
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" />
+      {/* Backdrop - below profile menu, no blur (profile menu backdrop already provides blur) */}
+      <div className="fixed inset-0 bg-black/50 z-[10000]" />
 
-      {/* Modal Container */}
-      <div className="flex items-center justify-center min-h-screen p-4">
+      {/* Modal Container - above profile menu */}
+      <div className="flex items-center justify-center min-h-screen p-4 relative z-[10002]">
         <div
           ref={modalRef}
           className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden"

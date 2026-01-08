@@ -2,9 +2,11 @@ import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../../hooks/useAuth'
 import EditProfileModal from '../modals/EditProfileModal'
 import GlobalSettingsModal from '../modals/GlobalSettingsModal'
+import CannedResponsesModal from '../modals/CannedResponsesModal'
 
 interface UserProfileMenuProps {
   onClose: () => void
+  onModalStateChange?: (hasOpenModal: boolean) => void
 }
 
 type UserStatus = 'online' | 'away'
@@ -12,15 +14,25 @@ type UserStatus = 'online' | 'away'
 /**
  * UserProfileMenu - Floating menu with identity, status, and settings
  */
-export default function UserProfileMenu({ onClose }: UserProfileMenuProps) {
-  const { user, updateUserStatus } = useAuth()
+export default function UserProfileMenu({ onClose, onModalStateChange }: UserProfileMenuProps) {
+  const { user, updateUserStatus, hasRole } = useAuth()
   const [status, setStatus] = useState<UserStatus>('online')
   const [isStatusMenuOpen, setIsStatusMenuOpen] = useState(false)
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [isCannedResponsesOpen, setIsCannedResponsesOpen] = useState(false)
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
   const statusButtonRef = useRef<HTMLButtonElement>(null)
   const [statusMenuPosition, setStatusMenuPosition] = useState({ top: 0, left: 0 })
+
+  // Track if any modal is open and notify parent
+  const hasOpenModal = isEditProfileOpen || isSettingsOpen || isCannedResponsesOpen
+  
+  useEffect(() => {
+    if (onModalStateChange) {
+      onModalStateChange(hasOpenModal)
+    }
+  }, [hasOpenModal, onModalStateChange])
 
   // Load current status from user data or localStorage
   useEffect(() => {
@@ -108,7 +120,8 @@ export default function UserProfileMenu({ onClose }: UserProfileMenuProps) {
   return (
     <>
       {/* Menu Container - Fixed positioning with breathing room */}
-      <div className="fixed left-3 top-[70px] w-64 bg-white rounded-xl shadow-2xl border border-gray-100 z-[9999]">
+      {/* Higher z-index to stay above modal backdrops but below modal content */}
+      <div className="fixed left-3 top-[70px] w-64 bg-white rounded-xl shadow-2xl border border-gray-100 z-[10001]">
         {/* Row 1: Identity - Spacious layout */}
         <div className="p-5 border-b border-gray-100">
           <div className="flex items-start gap-4">
@@ -127,7 +140,12 @@ export default function UserProfileMenu({ onClose }: UserProfileMenuProps) {
                 {displayName}
               </h4>
               <button
-                onClick={() => setIsEditProfileOpen(true)}
+                onClick={() => {
+                  // Close other modals first
+                  setIsSettingsOpen(false)
+                  setIsCannedResponsesOpen(false)
+                  setIsEditProfileOpen(true)
+                }}
                 className="self-start px-3 py-1 text-xs font-medium text-gray-600 border border-gray-300 hover:bg-gray-50 hover:border-gray-400 rounded transition-colors"
               >
                 Edit Profile
@@ -166,9 +184,14 @@ export default function UserProfileMenu({ onClose }: UserProfileMenuProps) {
         </div>
 
         {/* Row 3: Settings */}
-        <div className="px-2 py-2">
+        <div className="px-2 py-2 space-y-1">
           <button
-            onClick={() => setIsSettingsOpen(true)}
+            onClick={() => {
+              // Close other modals first
+              setIsEditProfileOpen(false)
+              setIsCannedResponsesOpen(false)
+              setIsSettingsOpen(true)
+            }}
             className="w-full px-3 py-2.5 flex items-center gap-3 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
           >
             <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -176,6 +199,24 @@ export default function UserProfileMenu({ onClose }: UserProfileMenuProps) {
             </svg>
             <span>Sounds & Notifications</span>
           </button>
+
+          {/* Canned Responses - visible to admin/agent */}
+          {(hasRole('admin') || hasRole('agent')) && (
+            <button
+              onClick={() => {
+                // Close other modals first
+                setIsEditProfileOpen(false)
+                setIsSettingsOpen(false)
+                setIsCannedResponsesOpen(true)
+              }}
+              className="w-full px-3 py-2.5 flex items-center gap-3 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
+            >
+              <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+              </svg>
+              <span>Canned Responses</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -224,6 +265,13 @@ export default function UserProfileMenu({ onClose }: UserProfileMenuProps) {
         <GlobalSettingsModal 
           isOpen={isSettingsOpen} 
           onClose={() => setIsSettingsOpen(false)} 
+        />
+      )}
+
+      {isCannedResponsesOpen && (
+        <CannedResponsesModal 
+          isOpen={isCannedResponsesOpen} 
+          onClose={() => setIsCannedResponsesOpen(false)} 
         />
       )}
     </>

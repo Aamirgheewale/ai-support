@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { io } from 'socket.io-client'
 import { useAuth } from '../hooks/useAuth'
@@ -62,6 +62,20 @@ export default function ConversationView() {
   const [imageToView, setImageToView] = useState<string | null>(null)
   const { uploadAnnotatedImage } = useAppwriteUpload()
 
+  // Slash commands (Canned Responses) state
+  interface CannedResponse {
+    $id: string
+    shortcut: string
+    category?: string
+    content: string
+  }
+  const [cannedResponses, setCannedResponses] = useState<CannedResponse[]>([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [suggestions, setSuggestions] = useState<CannedResponse[]>([])
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0)
+  const [slashTrigger, setSlashTrigger] = useState<{ start: number; end: number; searchTerm: string } | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
   // Close export menu when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -73,6 +87,136 @@ export default function ConversationView() {
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [showExportMenu])
+
+  // Fetch canned responses on mount
+  useEffect(() => {
+    async function fetchCannedResponses() {
+      try {
+        const authToken = token || localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token')
+        const response = await fetch(`${API_BASE}/api/canned-responses`, {
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json'
+          }
+        })
+        if (response.ok) {
+          const data = await response.json()
+          // API returns { responses: [...], total: number } or { documents: [...] } or array
+          const documents = data.responses || data.documents || data.items || (Array.isArray(data) ? data : [])
+          setCannedResponses(Array.isArray(documents) ? documents : [])
+        } else {
+          // On error, ensure we have an empty array
+          setCannedResponses([])
+        }
+      } catch (err) {
+        console.error('Failed to fetch canned responses:', err)
+        // On error, ensure we have an empty array
+        setCannedResponses([])
+      }
+    }
+    fetchCannedResponses()
+  }, [token])
+
+  // Detect slash commands in messageText
+  useEffect(() => {
+    const cursorPos = textareaRef.current?.selectionStart ?? messageText.length
+    const textBeforeCursor = messageText.substring(0, cursorPos)
+    
+    // Check for slash at start or after space
+    const slashAtStart = textBeforeCursor.match(/^\/\w*$/)
+    const slashAfterSpace = textBeforeCursor.match(/\s\/\w*$/)
+    
+    if (slashAtStart || slashAfterSpace) {
+      const match = slashAtStart || slashAfterSpace
+      if (match) {
+        const searchTerm = match[0].replace(/^\s*\//, '').toLowerCase()
+        const startPos = cursorPos - match[0].length
+        const endPos = cursorPos
+        
+        setSlashTrigger({ start: startPos, end: endPos, searchTerm })
+        
+        // Filter suggestions - with safety check
+        if (Array.isArray(cannedResponses) && cannedResponses.length > 0) {
+          const filtered = cannedResponses.filter(resp => 
+            resp && resp.shortcut && resp.shortcut.toLowerCase().startsWith(searchTerm)
+          )
+          setSuggestions(filtered)
+          setShowSuggestions(filtered.length > 0)
+          setSelectedSuggestionIndex(0)
+        } else {
+          setSuggestions([])
+          setShowSuggestions(false)
+        }
+      }
+    } else {
+      setShowSuggestions(false)
+      setSlashTrigger(null)
+    }
+  }, [messageText, cannedResponses])
+
+  // Handle keyboard navigation for suggestions
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    // If suggestions are showing, handle navigation
+    if (showSuggestions && suggestions.length > 0) {
+      switch (e.key) {
+        case 'ArrowDown':
+          e.preventDefault()
+          setSelectedSuggestionIndex(prev => 
+            prev < suggestions.length - 1 ? prev + 1 : prev
+          )
+          return
+        case 'ArrowUp':
+          e.preventDefault()
+          setSelectedSuggestionIndex(prev => prev > 0 ? prev - 1 : 0)
+          return
+        case 'Enter':
+          e.preventDefault()
+          if (suggestions[selectedSuggestionIndex]) {
+            selectCannedResponse(suggestions[selectedSuggestionIndex])
+          }
+          return
+        case 'Tab':
+          e.preventDefault()
+          if (suggestions[selectedSuggestionIndex]) {
+            selectCannedResponse(suggestions[selectedSuggestionIndex])
+          }
+          return
+        case 'Escape':
+          e.preventDefault()
+          setShowSuggestions(false)
+          setSlashTrigger(null)
+          return
+      }
+    }
+    
+    // If no suggestions, handle Enter for sending (Shift+Enter for new line)
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      sendMessage()
+    }
+  }
+
+  // Select a canned response and replace trigger text
+  function selectCannedResponse(response: CannedResponse) {
+    if (!slashTrigger) return
+    
+    const beforeTrigger = messageText.substring(0, slashTrigger.start)
+    const afterTrigger = messageText.substring(slashTrigger.end)
+    const newText = beforeTrigger + response.content + afterTrigger
+    
+    setMessageText(newText)
+    setShowSuggestions(false)
+    setSlashTrigger(null)
+    
+    // Focus textarea and move cursor to end of inserted content
+    setTimeout(() => {
+      if (textareaRef.current) {
+        const newCursorPos = beforeTrigger.length + response.content.length
+        textareaRef.current.focus()
+        textareaRef.current.setSelectionRange(newCursorPos, newCursorPos)
+      }
+    }, 0)
+  }
 
   // Load session info and messages when sessionId changes
   useEffect(() => {
@@ -1222,23 +1366,104 @@ export default function ConversationView() {
             <span>🔒 Private Note (only visible to agents)</span>
           </label>
         </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <input
-            type="text"
-            placeholder="Type your message..."
-            value={messageText}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMessageText(e.target.value)}
-            onKeyPress={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === 'Enter' && sendMessage()}
-            disabled={!canSendMessages || isSending}
-            style={{
-              flex: 1,
-              padding: '10px',
-              border: '1px solid #ddd',
-              borderRadius: '4px',
-              backgroundColor: isSending ? '#f5f5f5' : 'white',
-              cursor: isSending ? 'not-allowed' : 'text'
-            }}
-          />
+        <div style={{ position: 'relative', display: 'flex', gap: '10px' }}>
+          <div style={{ position: 'relative', flex: 1 }}>
+            {/* Suggestions Menu */}
+            {showSuggestions && suggestions.length > 0 && (
+              <div
+                style={{
+                  position: 'absolute',
+                  bottom: '100%',
+                  left: 0,
+                  marginBottom: '8px',
+                  backgroundColor: 'white',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '6px',
+                  boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+                  maxHeight: '200px',
+                  overflowY: 'auto',
+                  zIndex: 1000,
+                  minWidth: '300px'
+                }}
+              >
+                {suggestions.map((resp, index) => (
+                  <div
+                    key={resp.$id}
+                    onClick={() => selectCannedResponse(resp)}
+                    style={{
+                      padding: '10px 12px',
+                      cursor: 'pointer',
+                      backgroundColor: index === selectedSuggestionIndex ? '#3b82f6' : 'transparent',
+                      color: index === selectedSuggestionIndex ? 'white' : '#111827',
+                      borderBottom: index < suggestions.length - 1 ? '1px solid #e5e7eb' : 'none'
+                    }}
+                    onMouseEnter={() => setSelectedSuggestionIndex(index)}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                      <span style={{ fontWeight: 'bold', fontSize: '14px' }}>
+                        /{resp.shortcut}
+                      </span>
+                      {resp.category && (
+                        <span
+                          style={{
+                            fontSize: '11px',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            backgroundColor: index === selectedSuggestionIndex ? 'rgba(255, 255, 255, 0.2)' : '#f3f4f6',
+                            color: index === selectedSuggestionIndex ? 'white' : '#6b7280'
+                          }}
+                        >
+                          {resp.category}
+                        </span>
+                      )}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: '12px',
+                        color: index === selectedSuggestionIndex ? 'rgba(255, 255, 255, 0.9)' : '#6b7280',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      {resp.content.length > 50 ? resp.content.substring(0, 50) + '...' : resp.content}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            <textarea
+              ref={textareaRef}
+              placeholder="Type your message... (Use / for canned responses)"
+              value={messageText}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setMessageText(e.target.value)}
+              onKeyDown={handleKeyDown}
+              disabled={!canSendMessages || isSending}
+              spellCheck={true}
+              rows={1}
+              style={{
+                width: '100%',
+                padding: '10px',
+                border: '1px solid #ddd',
+                borderRadius: '4px',
+                backgroundColor: isSending ? '#f5f5f5' : 'white',
+                cursor: isSending ? 'not-allowed' : 'text',
+                resize: 'vertical',
+                minHeight: '40px',
+                maxHeight: '200px',
+                fontFamily: 'inherit',
+                fontSize: '14px',
+                lineHeight: '1.5'
+              }}
+              onInput={(e) => {
+                // Auto-resize textarea
+                const target = e.target as HTMLTextAreaElement
+                target.style.height = 'auto'
+                target.style.height = `${Math.min(target.scrollHeight, 200)}px`
+              }}
+            />
+          </div>
           <button
             onClick={sendMessage}
             disabled={!canSendMessages || (isSending) || (!messageText.trim() && !annotatedImageBlob)}

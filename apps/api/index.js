@@ -2646,6 +2646,7 @@ app.get('/session/:sessionId/theme', async (req, res) => {
 // ============================================================================
 
 const APPWRITE_TICKETS_COLLECTION_ID = 'tickets'; // Collection name
+const APPWRITE_CANNED_RESPONSES_COLLECTION_ID = 'canned_responses'; // Collection name
 
 // POST /api/tickets - Create new ticket
 app.post('/api/tickets', async (req, res) => {
@@ -3022,6 +3023,216 @@ app.post('/api/tickets/reply', requireAuth, requireRole(['admin', 'agent']), asy
   } catch (err) {
     console.error('Error replying to ticket:', err);
     res.status(500).json({ error: err?.message || 'Failed to send reply' });
+  }
+});
+
+// ============================================================================
+// CANNED RESPONSES ENDPOINTS
+// ============================================================================
+
+// GET /api/canned-responses - List all canned responses (Admin/Agent only)
+app.get('/api/canned-responses', requireAuth, requireRole(['admin', 'agent']), async (req, res) => {
+  try {
+    if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_CANNED_RESPONSES_COLLECTION_ID) {
+      return res.status(503).json({ error: 'Appwrite not configured' });
+    }
+
+    let result;
+    try {
+      if (Query) {
+        result = await awDatabases.listDocuments(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_CANNED_RESPONSES_COLLECTION_ID,
+          [Query.orderDesc('$createdAt')],
+          1000 // Max 1000 responses
+        );
+      } else {
+        result = await awDatabases.listDocuments(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_CANNED_RESPONSES_COLLECTION_ID,
+          undefined,
+          1000
+        );
+        // Sort client-side if Query ordering failed
+        result.documents.sort((a, b) => {
+          const dateA = new Date(a.$createdAt || a.createdAt || 0).getTime();
+          const dateB = new Date(b.$createdAt || b.createdAt || 0).getTime();
+          return dateB - dateA;
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching canned responses:', err);
+      return res.status(500).json({ error: 'Failed to fetch canned responses' });
+    }
+
+    res.json({
+      responses: result.documents,
+      total: result.total || result.documents.length
+    });
+  } catch (err) {
+    console.error('Error fetching canned responses:', err);
+    res.status(500).json({ error: 'Failed to fetch canned responses' });
+  }
+});
+
+// POST /api/canned-responses - Create new canned response (Admin/Agent only)
+app.post('/api/canned-responses', requireAuth, requireRole(['admin', 'agent']), async (req, res) => {
+  try {
+    if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_CANNED_RESPONSES_COLLECTION_ID) {
+      return res.status(503).json({ error: 'Appwrite not configured' });
+    }
+
+    const { shortcut, category, content } = req.body;
+
+    // Validation
+    if (!shortcut || !content) {
+      return res.status(400).json({ error: 'Shortcut and content are required' });
+    }
+
+    // Normalize shortcut: lowercase, no spaces
+    const normalizedShortcut = shortcut.toLowerCase().replace(/\s+/g, '');
+
+    if (!normalizedShortcut) {
+      return res.status(400).json({ error: 'Shortcut cannot be empty' });
+    }
+
+    if (content.length > 5000) {
+      return res.status(400).json({ error: 'Content cannot exceed 5000 characters' });
+    }
+
+    const { ID } = require('node-appwrite');
+    const responseId = ID.unique();
+
+    const responseData = {
+      shortcut: normalizedShortcut,
+      category: category || null,
+      content: content.trim()
+    };
+
+    try {
+      const result = await awDatabases.createDocument(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_CANNED_RESPONSES_COLLECTION_ID,
+        responseId,
+        responseData
+      );
+
+      console.log(`✅ Canned response created: ${normalizedShortcut}`);
+      res.json({
+        success: true,
+        response: result
+      });
+    } catch (createErr) {
+      // Handle duplicate shortcut error (409 conflict)
+      if (createErr.code === 409 || createErr.message?.includes('already exists') || createErr.message?.includes('duplicate')) {
+        return res.status(409).json({ error: 'Shortcut already exists' });
+      }
+      throw createErr;
+    }
+  } catch (err) {
+    console.error('Error creating canned response:', err);
+    res.status(500).json({ error: err?.message || 'Failed to create canned response' });
+  }
+});
+
+// PUT /api/canned-responses/:id - Update canned response (Admin/Agent only)
+app.put('/api/canned-responses/:id', requireAuth, requireRole(['admin', 'agent']), async (req, res) => {
+  try {
+    if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_CANNED_RESPONSES_COLLECTION_ID) {
+      return res.status(503).json({ error: 'Appwrite not configured' });
+    }
+
+    const { id } = req.params;
+    const { shortcut, category, content } = req.body;
+
+    // Validation
+    if (!shortcut || !content) {
+      return res.status(400).json({ error: 'Shortcut and content are required' });
+    }
+
+    // Normalize shortcut: lowercase, no spaces
+    const normalizedShortcut = shortcut.toLowerCase().replace(/\s+/g, '');
+
+    if (!normalizedShortcut) {
+      return res.status(400).json({ error: 'Shortcut cannot be empty' });
+    }
+
+    if (content.length > 5000) {
+      return res.status(400).json({ error: 'Content cannot exceed 5000 characters' });
+    }
+
+    // Check if shortcut already exists (excluding current document)
+    try {
+      if (Query) {
+        const existing = await awDatabases.listDocuments(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_CANNED_RESPONSES_COLLECTION_ID,
+          [Query.equal('shortcut', normalizedShortcut)],
+          1
+        );
+
+        if (existing.documents.length > 0 && existing.documents[0].$id !== id) {
+          return res.status(409).json({ error: 'Shortcut already exists' });
+        }
+      }
+    } catch (checkErr) {
+      // If check fails, continue with update (might be a query issue)
+      console.warn('Could not check for duplicate shortcut:', checkErr.message);
+    }
+
+    const updateData = {
+      shortcut: normalizedShortcut,
+      category: category || null,
+      content: content.trim()
+    };
+
+    const result = await awDatabases.updateDocument(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_CANNED_RESPONSES_COLLECTION_ID,
+      id,
+      updateData
+    );
+
+    console.log(`✅ Canned response updated: ${normalizedShortcut}`);
+    res.json({
+      success: true,
+      response: result
+    });
+  } catch (err) {
+    console.error('Error updating canned response:', err);
+    if (err.code === 404) {
+      return res.status(404).json({ error: 'Canned response not found' });
+    }
+    res.status(500).json({ error: err?.message || 'Failed to update canned response' });
+  }
+});
+
+// DELETE /api/canned-responses/:id - Delete canned response (Admin/Agent only)
+app.delete('/api/canned-responses/:id', requireAuth, requireRole(['admin', 'agent']), async (req, res) => {
+  try {
+    if (!awDatabases || !APPWRITE_DATABASE_ID || !APPWRITE_CANNED_RESPONSES_COLLECTION_ID) {
+      return res.status(503).json({ error: 'Appwrite not configured' });
+    }
+
+    const { id } = req.params;
+
+    await awDatabases.deleteDocument(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_CANNED_RESPONSES_COLLECTION_ID,
+      id
+    );
+
+    console.log(`✅ Canned response deleted: ${id}`);
+    res.json({
+      success: true,
+      message: 'Canned response deleted successfully'
+    });
+  } catch (err) {
+    console.error('Error deleting canned response:', err);
+    if (err.code === 404) {
+      return res.status(404).json({ error: 'Canned response not found' });
+    }
+    res.status(500).json({ error: err?.message || 'Failed to delete canned response' });
   }
 });
 

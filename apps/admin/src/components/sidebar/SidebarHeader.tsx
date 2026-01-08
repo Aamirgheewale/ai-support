@@ -12,6 +12,7 @@ type UserStatus = 'online' | 'away'
 export default function SidebarHeader() {
   const { user } = useAuth()
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false)
+  const [hasOpenModal, setHasOpenModal] = useState(false)
   const [userStatus, setUserStatus] = useState<UserStatus>('online')
   const profileMenuRef = useRef<HTMLDivElement>(null)
 
@@ -140,9 +141,22 @@ export default function SidebarHeader() {
         <NotificationBell />
       </div>
 
+      {/* Backdrop with blur effect - only show when profile menu is open */}
+      {/* Note: Profile menu stays visible even when modals are open */}
+      {isProfileMenuOpen && (
+        <div 
+          className="fixed inset-0 bg-black/20 backdrop-blur-sm z-[9998]"
+          onClick={() => setIsProfileMenuOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
       {/* User Profile Menu Popover */}
       {isProfileMenuOpen && (
-        <UserProfileMenu onClose={() => setIsProfileMenuOpen(false)} />
+        <UserProfileMenu 
+          onClose={() => setIsProfileMenuOpen(false)} 
+          onModalStateChange={setHasOpenModal}
+        />
       )}
     </div>
   )
