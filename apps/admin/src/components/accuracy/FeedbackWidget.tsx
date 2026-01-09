@@ -47,12 +47,12 @@ const FeedbackWidget: React.FC<FeedbackWidgetProps> = ({ onClose, onSubmit }) =>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Note (optional)</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Note (optional)</label>
               <textarea
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 rows={3}
-                className="w-full border border-gray-300 rounded-md px-3 py-2"
+                className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-indigo-500 dark:focus:border-indigo-400"
                 placeholder="Add a note..."
               />
             </div>

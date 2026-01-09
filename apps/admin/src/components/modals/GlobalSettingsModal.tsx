@@ -181,44 +181,44 @@ export default function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsM
       <div className="flex items-center justify-center min-h-screen p-4 relative z-[10002]">
         <div
           ref={modalRef}
-          className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden"
+          className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-700">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center">
-                <Volume2 className="w-5 h-5 text-indigo-600" />
+              <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center">
+                <Volume2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
               </div>
               <div>
-                <h2 className="text-lg font-semibold text-gray-900">Sounds & Notifications</h2>
-                <p className="text-xs text-gray-500">Settings are saved to your account</p>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Sounds & Notifications</h2>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Settings are saved to your account</p>
               </div>
             </div>
             <button
               onClick={handleCancel}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
               aria-label="Close"
             >
-              <X className="w-5 h-5 text-gray-500" />
+              <X className="w-5 h-5 text-gray-500 dark:text-gray-400 dark:hover:text-gray-200" />
             </button>
           </div>
 
           {/* Content */}
           <div className="px-6 py-6 space-y-6 max-h-[60vh] overflow-y-auto">
             {/* Master Sound Toggle */}
-            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+            <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-xl">
               <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${settings.masterEnabled ? 'bg-green-100' : 'bg-gray-200'}`}>
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${settings.masterEnabled ? 'bg-green-100 dark:bg-green-900/30' : 'bg-gray-200 dark:bg-gray-700'}`}>
                   {settings.masterEnabled ? (
-                    <Volume2 className="w-5 h-5 text-green-600" />
+                    <Volume2 className="w-5 h-5 text-green-600 dark:text-green-400" />
                   ) : (
-                    <VolumeX className="w-5 h-5 text-gray-500" />
+                    <VolumeX className="w-5 h-5 text-gray-500 dark:text-gray-400" />
                   )}
                 </div>
                 <div>
-                  <h3 className="text-sm font-semibold text-gray-900">Master Sound</h3>
-                  <p className="text-xs text-gray-500">Enable or disable all sounds</p>
+                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Master Sound</h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Enable or disable all sounds</p>
                 </div>
               </div>
               <button
@@ -234,12 +234,12 @@ export default function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsM
             {/* Desktop Notifications */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
-                  <Bell className="w-5 h-5 text-blue-600" />
+                <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                  <Bell className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-semibold text-gray-900">Desktop Notifications</h3>
-                  <p className="text-xs text-gray-500">Show browser notifications</p>
+                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Desktop Notifications</h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Show browser notifications</p>
                 </div>
               </div>
               <button
@@ -259,21 +259,21 @@ export default function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsM
             </div>
 
             {/* Divider */}
-            <div className="border-t border-gray-100 pt-4">
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">Volume Controls</h3>
+            <div className="border-t border-gray-100 dark:border-gray-700 pt-4">
+              <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">Volume Controls</h3>
             </div>
 
             {/* New Session Ring Volume */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-gray-700">New Session Ring</span>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">New Session Ring</span>
                   <button
                     onClick={toggleRingTest}
                     className={`p-1.5 rounded transition-colors ${
                       ringPlaying 
-                        ? 'bg-red-100 hover:bg-red-200 text-red-600' 
-                        : 'hover:bg-gray-100 text-gray-400'
+                        ? 'bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/40 text-red-600 dark:text-red-400' 
+                        : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500'
                     }`}
                     title={ringPlaying ? 'Stop sound' : 'Test sound'}
                     disabled={!settings.masterEnabled}
@@ -285,7 +285,7 @@ export default function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsM
                     )}
                   </button>
                 </div>
-                <span className="text-sm text-gray-500">{settings.newSessionRingVolume}%</span>
+                <span className="text-sm text-gray-500 dark:text-gray-400">{settings.newSessionRingVolume}%</span>
               </div>
               <input
                 type="range"
@@ -293,18 +293,18 @@ export default function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsM
                 max="100"
                 value={settings.newSessionRingVolume}
                 onChange={(e) => updateSetting('newSessionRingVolume', parseInt(e.target.value))}
-                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-indigo-600 dark:accent-indigo-400"
                 disabled={!settings.masterEnabled}
               />
             </div>
 
             {/* Repeat Ring */}
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-gray-700">Repeat Ring</span>
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Repeat Ring</span>
               <select
                 value={settings.repeatRing}
                 onChange={(e) => updateSetting('repeatRing', parseInt(e.target.value))}
-                className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-indigo-500 dark:focus:border-indigo-400 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
                 disabled={!settings.masterEnabled}
               >
                 <option value={1}>1x</option>
@@ -319,13 +319,13 @@ export default function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsM
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-gray-700">New Message Pop</span>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">New Message Pop</span>
                   <button
                     onClick={togglePopTest}
                     className={`p-1.5 rounded transition-colors ${
                       popPlaying 
-                        ? 'bg-red-100 hover:bg-red-200 text-red-600' 
-                        : 'hover:bg-gray-100 text-gray-400'
+                        ? 'bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/40 text-red-600 dark:text-red-400' 
+                        : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500'
                     }`}
                     title={popPlaying ? 'Stop sound' : 'Test sound'}
                     disabled={!settings.masterEnabled}
@@ -337,7 +337,7 @@ export default function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsM
                     )}
                   </button>
                 </div>
-                <span className="text-sm text-gray-500">{settings.newMessagePopVolume}%</span>
+                <span className="text-sm text-gray-500 dark:text-gray-400">{settings.newMessagePopVolume}%</span>
               </div>
               <input
                 type="range"
@@ -345,7 +345,7 @@ export default function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsM
                 max="100"
                 value={settings.newMessagePopVolume}
                 onChange={(e) => updateSetting('newMessagePopVolume', parseInt(e.target.value))}
-                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-indigo-600 dark:accent-indigo-400"
                 disabled={!settings.masterEnabled}
               />
             </div>
@@ -354,17 +354,17 @@ export default function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsM
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-gray-700">Notification Pop</span>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Notification Pop</span>
                   <button
                     onClick={testNotificationPop}
-                    className="p-1.5 hover:bg-gray-100 rounded transition-colors text-gray-400"
+                    className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors text-gray-400 dark:text-gray-500"
                     title="Test sound"
                     disabled={!settings.masterEnabled}
                   >
                     <PlayCircle className="w-4 h-4" />
                   </button>
                 </div>
-                <span className="text-sm text-gray-500">{settings.notificationPopVolume}%</span>
+                <span className="text-sm text-gray-500 dark:text-gray-400">{settings.notificationPopVolume}%</span>
               </div>
               <input
                 type="range"
@@ -372,24 +372,24 @@ export default function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsM
                 max="100"
                 value={settings.notificationPopVolume}
                 onChange={(e) => updateSetting('notificationPopVolume', parseInt(e.target.value))}
-                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-indigo-600 dark:accent-indigo-400"
                 disabled={!settings.masterEnabled}
               />
             </div>
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-100 bg-gray-50">
+          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
             <button
               onClick={handleCancel}
-              className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 rounded-lg transition-colors"
+              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
             >
               Cancel
             </button>
             <button
               onClick={handleSave}
               disabled={isSaving || !hasChanges}
-              className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-700 dark:hover:bg-indigo-600 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               {isSaving ? (
                 <>

@@ -1442,20 +1442,7 @@ export default function ConversationView() {
               disabled={!canSendMessages || isSending}
               spellCheck={true}
               rows={1}
-              style={{
-                width: '100%',
-                padding: '10px',
-                border: '1px solid #ddd',
-                borderRadius: '4px',
-                backgroundColor: isSending ? '#f5f5f5' : 'white',
-                cursor: isSending ? 'not-allowed' : 'text',
-                resize: 'vertical',
-                minHeight: '40px',
-                maxHeight: '200px',
-                fontFamily: 'inherit',
-                fontSize: '14px',
-                lineHeight: '1.5'
-              }}
+              className="w-full px-2.5 py-2.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 disabled:bg-gray-100 dark:disabled:bg-gray-700 disabled:cursor-not-allowed resize-y min-h-[40px] max-h-[200px] text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-indigo-500 dark:focus:border-indigo-400"
               onInput={(e) => {
                 // Auto-resize textarea
                 const target = e.target as HTMLTextAreaElement

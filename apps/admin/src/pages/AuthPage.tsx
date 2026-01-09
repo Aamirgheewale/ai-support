@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/useAuth'
 import RoleDropdown, { ROLE_OPTIONS } from '../components/common/RoleDropdown'
 import Toast from '../components/common/Toast'
 import UserProfileModal from '../components/common/UserProfileModal'
+import { Card } from '../components/ui'
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000'
 const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET || 'dev-secret-change-me'
@@ -173,16 +174,16 @@ export default function AuthPage() {
       <UserProfileModal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)} />
       
       <div className="w-full max-w-md">
-        <div className="bg-white rounded-2xl overflow-hidden" style={{ boxShadow: '0 20px 60px -12px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(0, 0, 0, 0.08)' }}>
+        <Card className="rounded-2xl overflow-hidden shadow-2xl">
           {/* Tab Navigation */}
-          <div className="flex border-b border-gray-200">
+          <div className="flex border-b border-gray-200 dark:border-gray-700">
             <button
               type="button"
               onClick={() => setActiveTab('signup')}
               className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${
                 activeTab === 'signup'
-                  ? 'text-indigo-600 border-b-2 border-indigo-600 bg-indigo-50'
-                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                  ? 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400 bg-indigo-50 dark:bg-indigo-900/20'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
               }`}
               aria-selected={activeTab === 'signup'}
               role="tab"
@@ -194,8 +195,8 @@ export default function AuthPage() {
               onClick={() => setActiveTab('signin')}
               className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${
                 activeTab === 'signin'
-                  ? 'text-indigo-600 border-b-2 border-indigo-600 bg-indigo-50'
-                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                  ? 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400 bg-indigo-50 dark:bg-indigo-900/20'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
               }`}
               aria-selected={activeTab === 'signin'}
               role="tab"
@@ -210,42 +211,42 @@ export default function AuthPage() {
             {activeTab === 'signup' && (
               <form onSubmit={handleSignUp} className="space-y-5">
                 <div>
-                  <label htmlFor="signup-name" className="block text-sm font-medium text-gray-700 mb-1">
-                    Full Name <span className="text-red-500">*</span>
+                  <label htmlFor="signup-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Full Name <span className="text-red-500 dark:text-red-400">*</span>
                   </label>
                   <input
                     id="signup-name"
                     type="text"
                     value={signupName}
                     onChange={(e) => setSignupName(e.target.value)}
-                    className={`w-full border rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
-                      signupErrors.name ? 'border-red-300' : 'border-gray-300'
+                    className={`w-full border rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 ${
+                      signupErrors.name ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
                     }`}
                     placeholder="John Doe"
                     required
                   />
                   {signupErrors.name && (
-                    <p className="mt-1 text-sm text-red-600">{signupErrors.name}</p>
+                    <p className="mt-1 text-sm text-red-600 dark:text-red-400">{signupErrors.name}</p>
                   )}
                 </div>
                 
                 <div>
-                  <label htmlFor="signup-email" className="block text-sm font-medium text-gray-700 mb-1">
-                    Email <span className="text-red-500">*</span>
+                  <label htmlFor="signup-email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Email <span className="text-red-500 dark:text-red-400">*</span>
                   </label>
                   <input
                     id="signup-email"
                     type="email"
                     value={signupEmail}
                     onChange={(e) => setSignupEmail(e.target.value)}
-                    className={`w-full border rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
-                      signupErrors.email ? 'border-red-300' : 'border-gray-300'
+                    className={`w-full border rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 ${
+                      signupErrors.email ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
                     }`}
                     placeholder="user@example.com"
                     required
                   />
                   {signupErrors.email && (
-                    <p className="mt-1 text-sm text-red-600">{signupErrors.email}</p>
+                    <p className="mt-1 text-sm text-red-600 dark:text-red-400">{signupErrors.email}</p>
                   )}
                 </div>
                 
@@ -260,7 +261,7 @@ export default function AuthPage() {
                 <button
                   type="submit"
                   disabled={signupLoading}
-                  className="w-full bg-indigo-600 text-white rounded-lg px-4 py-3 font-medium hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="w-full bg-indigo-600 dark:bg-indigo-500 text-white rounded-lg px-4 py-3 font-medium hover:bg-indigo-700 dark:hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   {signupLoading ? 'Creating Account...' : 'Create Account'}
                 </button>
@@ -271,22 +272,22 @@ export default function AuthPage() {
             {activeTab === 'signin' && (
               <form onSubmit={handleSignIn} className="space-y-5">
                 <div>
-                  <label htmlFor="signin-email" className="block text-sm font-medium text-gray-700 mb-1">
-                    Email <span className="text-red-500">*</span>
+                  <label htmlFor="signin-email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Email <span className="text-red-500 dark:text-red-400">*</span>
                   </label>
                   <input
                     id="signin-email"
                     type="email"
                     value={signinEmail}
                     onChange={(e) => setSigninEmail(e.target.value)}
-                    className={`w-full border rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
-                      signinErrors.email ? 'border-red-300' : 'border-gray-300'
+                    className={`w-full border rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 ${
+                      signinErrors.email ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
                     }`}
                     placeholder="user@example.com"
                     required
                   />
                   {signinErrors.email && (
-                    <p className="mt-1 text-sm text-red-600">{signinErrors.email}</p>
+                    <p className="mt-1 text-sm text-red-600 dark:text-red-400">{signinErrors.email}</p>
                   )}
                 </div>
                 
@@ -296,9 +297,9 @@ export default function AuthPage() {
                     type="checkbox"
                     checked={rememberMe}
                     onChange={(e) => setRememberMe(e.target.checked)}
-                    className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                    className="h-4 w-4 text-indigo-600 dark:text-indigo-400 focus:ring-indigo-500 dark:focus:ring-indigo-400 border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700"
                   />
-                  <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-700">
+                  <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
                     Remember me
                   </label>
                 </div>
@@ -306,7 +307,7 @@ export default function AuthPage() {
                 <button
                   type="submit"
                   disabled={signinLoading}
-                  className="w-full bg-indigo-600 text-white rounded-lg px-4 py-3 font-medium hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="w-full bg-indigo-600 dark:bg-indigo-500 text-white rounded-lg px-4 py-3 font-medium hover:bg-indigo-700 dark:hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   {signinLoading ? 'Signing In...' : 'Sign In'}
                 </button>
@@ -314,27 +315,27 @@ export default function AuthPage() {
             )}
             
             {/* Social/SSO Placeholders */}
-            <div className="mt-6 pt-6 border-t border-gray-200">
-              <p className="text-center text-sm text-gray-500 mb-4">Or continue with</p>
+            <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+              <p className="text-center text-sm text-gray-500 dark:text-gray-400 mb-4">Or continue with</p>
               <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"
                   disabled
-                  className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   Google
                 </button>
                 <button
                   type="button"
                   disabled
-                  className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   GitHub
                 </button>
               </div>
             </div>
           </div>
-        </div>
+        </Card>
       </div>
     </div>
   )

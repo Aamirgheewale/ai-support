@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import { Card, TableContainer, Table, Thead, Th, Tbody, Tr, Td } from '../components/ui';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
 const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET || 'dev-secret-change-me';
@@ -192,14 +193,8 @@ export default function AgentsOnline() {
   // Check if user has admin or agent role
   if (!hasRole('admin') && !hasRole('agent')) {
     return (
-      <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
-        <div style={{
-          background: '#fee2e2',
-          border: '1px solid #fecaca',
-          borderRadius: '8px',
-          padding: '16px',
-          color: '#991b1b'
-        }}>
+      <div className="p-5 max-w-7xl mx-auto">
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 text-red-800 dark:text-red-200">
           <p>Access denied. Admin, Super Admin, or Agent role required.</p>
         </div>
       </div>
@@ -207,264 +202,130 @@ export default function AgentsOnline() {
   }
 
   return (
-    <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <h1 style={{ margin: 0, fontSize: '24px', fontWeight: '600' }}>Agents Online</h1>
+    <div className="p-5 max-w-7xl mx-auto">
+      <div className="flex justify-between items-center mb-5">
+        <h1 className="m-0 text-2xl font-semibold text-gray-900 dark:text-white">Agents Online</h1>
         <button
           onClick={loadAgents}
           disabled={loading}
-          style={{
-            padding: '8px 16px',
-            background: loading ? '#ccc' : '#667eea',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: loading ? 'not-allowed' : 'pointer',
-            fontSize: '14px'
-          }}
+          className={`px-4 py-2 text-white border-none rounded transition-colors ${
+            loading
+              ? 'bg-gray-400 dark:bg-gray-600 cursor-not-allowed'
+              : 'bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-700 dark:hover:bg-indigo-600 cursor-pointer'
+          } text-sm`}
         >
           {loading ? 'Loading...' : 'Refresh'}
         </button>
       </div>
 
       {error && (
-        <div style={{
-          background: '#fee2e2',
-          border: '1px solid #fecaca',
-          borderRadius: '8px',
-          padding: '12px',
-          marginBottom: '20px',
-          color: '#991b1b'
-        }}>
-          <p style={{ margin: 0 }}>Error: {error}</p>
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3 mb-5 text-red-800 dark:text-red-200">
+          <p className="m-0">Error: {error}</p>
         </div>
       )}
 
       {loading ? (
-        <div style={{ textAlign: 'center', padding: '40px' }}>
+        <div className="text-center py-10 text-gray-700 dark:text-gray-300">
           <p>Loading agents...</p>
         </div>
       ) : agents.length === 0 ? (
-        <div style={{
-          background: '#f8f9fa',
-          border: '1px solid #dee2e6',
-          borderRadius: '8px',
-          padding: '40px',
-          textAlign: 'center',
-          color: '#6c757d'
-        }}>
-          <p style={{ margin: 0, fontSize: '16px' }}>No agents found.</p>
-        </div>
+        <Card className="p-10 text-center">
+          <p className="m-0 text-base text-gray-600 dark:text-gray-400">No agents found.</p>
+        </Card>
       ) : (
-        <div style={{
-          background: 'white',
-          border: '1px solid #dee2e6',
-          borderRadius: '8px',
-          overflow: 'hidden'
-        }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ background: '#f8f9fa', borderBottom: '2px solid #dee2e6' }}>
-                <th style={{
-                  padding: '12px 16px',
-                  textAlign: 'left',
-                  fontWeight: '600',
-                  fontSize: '14px',
-                  color: '#495057'
-                }}>
-                  Agent Name
-                </th>
-                <th style={{
-                  padding: '12px 16px',
-                  textAlign: 'left',
-                  fontWeight: '600',
-                  fontSize: '14px',
-                  color: '#495057'
-                }}>
-                  Role
-                </th>
-                <th style={{
-                  padding: '12px 16px',
-                  textAlign: 'left',
-                  fontWeight: '600',
-                  fontSize: '14px',
-                  color: '#495057'
-                }}>
-                  Email
-                </th>
-                <th style={{
-                  padding: '12px 16px',
-                  textAlign: 'left',
-                  fontWeight: '600',
-                  fontSize: '14px',
-                  color: '#495057'
-                }}>
-                  On-Boarded Date
-                </th>
-                <th style={{
-                  padding: '12px 16px',
-                  textAlign: 'left',
-                  fontWeight: '600',
-                  fontSize: '14px',
-                  color: '#495057'
-                }}>
-                  Status
-                </th>
-                <th style={{
-                  padding: '12px 16px',
-                  textAlign: 'left',
-                  fontWeight: '600',
-                  fontSize: '14px',
-                  color: '#495057'
-                }}>
-                  History
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {agents.map((agent, index) => (
-                <React.Fragment key={agent.userId}>
-                  <tr
-                    style={{
-                      borderBottom: expandedAgentId === agent.userId ? 'none' : (index < agents.length - 1 ? '1px solid #dee2e6' : 'none'),
-                      transition: 'background-color 0.2s'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = '#f8f9fa';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = 'white';
-                    }}
-                  >
-                    <td style={{ padding: '12px 16px', fontSize: '14px', color: '#212529' }}>
-                      {agent.name || 'N/A'}
-                    </td>
-                    <td style={{ padding: '12px 16px' }}>
-                      <span style={{
-                        display: 'inline-block',
-                        padding: '4px 12px',
-                        background: '#d1ecf1',
-                        color: '#0c5460',
-                        borderRadius: '12px',
-                        fontSize: '12px',
-                        fontWeight: '500'
-                      }}>
-                        Agent
-                      </span>
-                    </td>
-                    <td style={{ padding: '12px 16px', fontSize: '14px', color: '#212529' }}>
-                      {agent.email}
-                    </td>
-                    <td style={{ padding: '12px 16px', fontSize: '14px', color: '#6c757d' }}>
-                      {formatDate(agent.createdAt)}
-                    </td>
-                    <td style={{ padding: '12px 16px' }}>
-                      {/* Status badge based on user-set status and connection status */}
-                      {agent.isOnline ? (
-                        <span style={{
-                          display: 'inline-block',
-                          padding: '4px 12px',
-                          background: agent.status === 'away' ? '#fef3c7' : '#d1fae5',
-                          color: agent.status === 'away' ? '#92400e' : '#065f46',
-                          borderRadius: '12px',
-                          fontSize: '12px',
-                          fontWeight: '500'
-                        }}>
-                          {agent.status === 'away' ? '🟡 Away' : '🟢 Online'}
+        <Card className="overflow-hidden">
+          <TableContainer>
+            <Table>
+              <Thead>
+                <Tr>
+                  <Th>Agent Name</Th>
+                  <Th>Role</Th>
+                  <Th>Email</Th>
+                  <Th>On-Boarded Date</Th>
+                  <Th>Status</Th>
+                  <Th>History</Th>
+                </Tr>
+              </Thead>
+              <Tbody>
+                {agents.map((agent) => (
+                  <React.Fragment key={agent.userId}>
+                    <Tr>
+                      <Td>
+                        {agent.name || 'N/A'}
+                      </Td>
+                      <Td>
+                        <span className="inline-block px-3 py-1 bg-cyan-100 dark:bg-cyan-900/30 text-cyan-800 dark:text-cyan-300 rounded-full text-xs font-medium">
+                          Agent
                         </span>
-                      ) : (
-                        <span style={{
-                          display: 'inline-block',
-                          padding: '4px 12px',
-                          background: '#fee2e2',
-                          color: '#991b1b',
-                          borderRadius: '12px',
-                          fontSize: '12px',
-                          fontWeight: '500'
-                        }}>
-                          ⚫ Offline
-                        </span>
-                      )}
-                    </td>
-                    <td style={{ padding: '12px 16px' }}>
-                      <button
-                        onClick={() => handleViewDetails(agent.userId)}
-                        style={{
-                          padding: '6px 12px',
-                          background: expandedAgentId === agent.userId ? '#667eea' : '#f8f9fa',
-                          color: expandedAgentId === agent.userId ? 'white' : '#495057',
-                          border: '1px solid #dee2e6',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                          fontSize: '12px',
-                          fontWeight: '500',
-                          transition: 'all 0.2s'
-                        }}
-                      >
-                        {expandedAgentId === agent.userId ? 'Hide' : 'View'}
-                      </button>
-                    </td>
-                  </tr>
+                      </Td>
+                      <Td>
+                        {agent.email}
+                      </Td>
+                      <Td className="text-gray-600 dark:text-gray-400">
+                        {formatDate(agent.createdAt)}
+                      </Td>
+                      <Td>
+                        {/* Status badge based on user-set status and connection status */}
+                        {agent.isOnline ? (
+                          <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
+                            agent.status === 'away'
+                              ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300'
+                              : 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300'
+                          }`}>
+                            {agent.status === 'away' ? '🟡 Away' : '🟢 Online'}
+                          </span>
+                        ) : (
+                          <span className="inline-block px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300 rounded-full text-xs font-medium">
+                            ⚫ Offline
+                          </span>
+                        )}
+                      </Td>
+                      <Td>
+                        <button
+                          onClick={() => handleViewDetails(agent.userId)}
+                          className={`px-3 py-1.5 border rounded text-xs font-medium transition-all ${
+                            expandedAgentId === agent.userId
+                              ? 'bg-indigo-600 dark:bg-indigo-500 text-white border-indigo-600 dark:border-indigo-500'
+                              : 'bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600'
+                          } cursor-pointer`}
+                        >
+                          {expandedAgentId === agent.userId ? 'Hide' : 'View'}
+                        </button>
+                      </Td>
+                    </Tr>
                   {expandedAgentId === agent.userId && (
-                    <tr>
-                      <td colSpan={6} style={{ padding: '0', borderBottom: '1px solid #dee2e6' }}>
-                        <div style={{
-                          background: '#f8f9fa',
-                          padding: '20px',
-                          borderTop: '2px solid #667eea'
-                        }}>
-                          <div style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            marginBottom: '16px'
-                          }}>
-                            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#212529' }}>
+                    <Tr>
+                      <Td colSpan={6} className="p-0 border-b border-gray-200 dark:border-gray-700">
+                        <div className="bg-gray-50 dark:bg-gray-800 p-5 border-t-2 border-indigo-600 dark:border-indigo-500">
+                          <div className="flex justify-between items-center mb-4">
+                            <h3 className="m-0 text-lg font-semibold text-gray-900 dark:text-white">
                               Session History - {agent.name || agent.email}
                             </h3>
                             <button
                               onClick={() => handleExportHistory(agent.userId, agent.name || agent.email)}
                               disabled={!sessionHistory[agent.userId] || sessionHistory[agent.userId].length === 0}
-                              style={{
-                                padding: '8px 16px',
-                                background: (!sessionHistory[agent.userId] || sessionHistory[agent.userId].length === 0) ? '#ccc' : '#28a745',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '4px',
-                                cursor: (!sessionHistory[agent.userId] || sessionHistory[agent.userId].length === 0) ? 'not-allowed' : 'pointer',
-                                fontSize: '14px',
-                                fontWeight: '500'
-                              }}
+                              className={`px-4 py-2 text-white border-none rounded transition-colors ${
+                                (!sessionHistory[agent.userId] || sessionHistory[agent.userId].length === 0)
+                                  ? 'bg-gray-400 dark:bg-gray-600 cursor-not-allowed'
+                                  : 'bg-green-600 dark:bg-green-500 hover:bg-green-700 dark:hover:bg-green-600 cursor-pointer'
+                              } text-sm font-medium`}
                             >
                               Export Agent History
                             </button>
                           </div>
 
                           {loadingSessions[agent.userId] ? (
-                            <div style={{ textAlign: 'center', padding: '20px' }}>
-                              <p style={{ color: '#6c757d' }}>Loading session history...</p>
+                            <div className="text-center py-5 text-gray-600 dark:text-gray-400">
+                              <p>Loading session history...</p>
                             </div>
                           ) : sessionError[agent.userId] ? (
-                            <div style={{
-                              background: '#fee2e2',
-                              border: '1px solid #fecaca',
-                              borderRadius: '8px',
-                              padding: '12px',
-                              color: '#991b1b'
-                            }}>
-                              <p style={{ margin: 0 }}>Error: {sessionError[agent.userId]}</p>
+                            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3 text-red-800 dark:text-red-200">
+                              <p className="m-0">Error: {sessionError[agent.userId]}</p>
                             </div>
                           ) : !sessionHistory[agent.userId] || sessionHistory[agent.userId].length === 0 ? (
-                            <div style={{
-                              background: '#f8f9fa',
-                              border: '1px solid #dee2e6',
-                              borderRadius: '8px',
-                              padding: '20px',
-                              textAlign: 'center',
-                              color: '#6c757d'
-                            }}>
-                              <p style={{ margin: 0 }}>No session history found for this agent.</p>
-                            </div>
+                            <Card className="p-5 text-center">
+                              <p className="m-0 text-gray-600 dark:text-gray-400">No session history found for this agent.</p>
+                            </Card>
                           ) : (() => {
                             const SESSIONS_PER_PAGE = 10;
                             const agentPage = currentPage[agent.userId] || 1;
@@ -475,182 +336,99 @@ export default function AgentsOnline() {
                             const paginatedSessions = sessionHistory[agent.userId].slice(startIndex, endIndex);
 
                             return (
-                              <div style={{
-                                background: 'white',
-                                border: '1px solid #dee2e6',
-                                borderRadius: '8px',
-                                overflow: 'hidden'
-                              }}>
-                                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                                  <thead>
-                                    <tr style={{ background: '#f8f9fa', borderBottom: '2px solid #dee2e6' }}>
-                                      <th style={{
-                                        padding: '10px 12px',
-                                        textAlign: 'left',
-                                        fontWeight: '600',
-                                        fontSize: '13px',
-                                        color: '#495057'
-                                      }}>
-                                        Session ID
-                                      </th>
-                                      <th style={{
-                                        padding: '10px 12px',
-                                        textAlign: 'left',
-                                        fontWeight: '600',
-                                        fontSize: '13px',
-                                        color: '#495057'
-                                      }}>
-                                        Status
-                                      </th>
-                                      <th style={{
-                                        padding: '10px 12px',
-                                        textAlign: 'left',
-                                        fontWeight: '600',
-                                        fontSize: '13px',
-                                        color: '#495057'
-                                      }}>
-                                        Start Time
-                                      </th>
-                                      <th style={{
-                                        padding: '10px 12px',
-                                        textAlign: 'left',
-                                        fontWeight: '600',
-                                        fontSize: '13px',
-                                        color: '#495057'
-                                      }}>
-                                        Last Seen
-                                      </th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {paginatedSessions.map((session, index) => (
-                                      <tr
-                                        key={session.sessionId}
-                                        style={{
-                                          borderBottom: index < paginatedSessions.length - 1 ? '1px solid #dee2e6' : 'none',
-                                          transition: 'background-color 0.2s'
-                                        }}
-                                        onMouseEnter={(e) => {
-                                          e.currentTarget.style.backgroundColor = '#f8f9fa';
-                                        }}
-                                        onMouseLeave={(e) => {
-                                          e.currentTarget.style.backgroundColor = 'white';
-                                        }}
-                                      >
-                                        <td style={{ padding: '10px 12px', fontSize: '13px', color: '#212529', fontFamily: 'monospace' }}>
-                                          {session.sessionId}
-                                        </td>
-                                        <td style={{ padding: '10px 12px' }}>
-                                          <span style={{
-                                            display: 'inline-block',
-                                            padding: '4px 10px',
-                                            background: session.status === 'active' ? '#d1fae5' : '#fee2e2',
-                                            color: session.status === 'active' ? '#065f46' : '#991b1b',
-                                            borderRadius: '12px',
-                                            fontSize: '11px',
-                                            fontWeight: '500'
-                                          }}>
-                                            {session.status === 'active' ? 'Active' : session.status === 'closed' ? 'Closed' : session.status}
-                                          </span>
-                                        </td>
-                                        <td style={{ padding: '10px 12px', fontSize: '13px', color: '#6c757d' }}>
-                                          {formatDateTime(session.startTime)}
-                                        </td>
-                                        <td style={{ padding: '10px 12px', fontSize: '13px', color: '#6c757d' }}>
-                                          {formatDateTime(session.lastSeen)}
-                                        </td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
+                              <Card className="overflow-hidden">
+                                <TableContainer>
+                                  <Table>
+                                    <Thead>
+                                      <Tr>
+                                        <Th className="text-xs">Session ID</Th>
+                                        <Th className="text-xs">Status</Th>
+                                        <Th className="text-xs">Start Time</Th>
+                                        <Th className="text-xs">Last Seen</Th>
+                                      </Tr>
+                                    </Thead>
+                                    <Tbody>
+                                      {paginatedSessions.map((session) => (
+                                        <Tr key={session.sessionId}>
+                                          <Td className="font-mono text-xs">
+                                            {session.sessionId}
+                                          </Td>
+                                          <Td>
+                                            <span className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-medium ${
+                                              session.status === 'active'
+                                                ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300'
+                                                : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'
+                                            }`}>
+                                              {session.status === 'active' ? 'Active' : session.status === 'closed' ? 'Closed' : session.status}
+                                            </span>
+                                          </Td>
+                                          <Td className="text-xs text-gray-600 dark:text-gray-400">
+                                            {formatDateTime(session.startTime)}
+                                          </Td>
+                                          <Td className="text-xs text-gray-600 dark:text-gray-400">
+                                            {formatDateTime(session.lastSeen)}
+                                          </Td>
+                                        </Tr>
+                                      ))}
+                                    </Tbody>
+                                  </Table>
+                                </TableContainer>
 
                                 {/* Pagination Controls */}
-                                <div style={{
-                                  display: 'flex',
-                                  justifyContent: 'space-between',
-                                  alignItems: 'center',
-                                  padding: '12px',
-                                  borderTop: '1px solid #dee2e6',
-                                  background: '#f8f9fa'
-                                }}>
-                                  <div style={{
-                                    color: '#6c757d',
-                                    fontSize: '13px'
-                                  }}>
+                                <div className="flex justify-between items-center p-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+                                  <div className="text-gray-600 dark:text-gray-400 text-xs">
                                     Showing {startIndex + 1}-{Math.min(endIndex, totalSessions)} of {totalSessions} session{totalSessions !== 1 ? 's' : ''}
                                   </div>
 
                                   {totalPages > 1 && (
-                                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                    <div className="flex gap-2 items-center">
                                       <button
                                         onClick={() => handlePrevPage(agent.userId)}
                                         disabled={agentPage === 1}
-                                        style={{
-                                          padding: '6px 12px',
-                                          background: agentPage === 1 ? '#e9ecef' : '#667eea',
-                                          color: agentPage === 1 ? '#6c757d' : 'white',
-                                          border: '1px solid #dee2e6',
-                                          borderRadius: '4px',
-                                          cursor: agentPage === 1 ? 'not-allowed' : 'pointer',
-                                          fontSize: '12px',
-                                          fontWeight: '500',
-                                          transition: 'all 0.2s'
-                                        }}
+                                        className={`px-3 py-1.5 border rounded text-xs font-medium transition-all ${
+                                          agentPage === 1
+                                            ? 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-600 cursor-not-allowed'
+                                            : 'bg-indigo-600 dark:bg-indigo-500 text-white border-indigo-600 dark:border-indigo-500 cursor-pointer hover:bg-indigo-700 dark:hover:bg-indigo-600'
+                                        }`}
                                       >
                                         Previous
                                       </button>
 
-                                      <span style={{
-                                        color: '#495057',
-                                        fontSize: '13px',
-                                        fontWeight: '500',
-                                        minWidth: '80px',
-                                        textAlign: 'center'
-                                      }}>
+                                      <span className="text-gray-700 dark:text-gray-300 text-xs font-medium min-w-[80px] text-center">
                                         Page {agentPage} of {totalPages}
                                       </span>
 
                                       <button
                                         onClick={() => handleNextPage(agent.userId)}
                                         disabled={agentPage === totalPages}
-                                        style={{
-                                          padding: '6px 12px',
-                                          background: agentPage === totalPages ? '#e9ecef' : '#667eea',
-                                          color: agentPage === totalPages ? '#6c757d' : 'white',
-                                          border: '1px solid #dee2e6',
-                                          borderRadius: '4px',
-                                          cursor: agentPage === totalPages ? 'not-allowed' : 'pointer',
-                                          fontSize: '12px',
-                                          fontWeight: '500',
-                                          transition: 'all 0.2s'
-                                        }}
+                                        className={`px-3 py-1.5 border rounded text-xs font-medium transition-all ${
+                                          agentPage === totalPages
+                                            ? 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-600 cursor-not-allowed'
+                                            : 'bg-indigo-600 dark:bg-indigo-500 text-white border-indigo-600 dark:border-indigo-500 cursor-pointer hover:bg-indigo-700 dark:hover:bg-indigo-600'
+                                        }`}
                                       >
                                         Next
                                       </button>
                                     </div>
                                   )}
                                 </div>
-                              </div>
+                              </Card>
                             );
                           })()}
                         </div>
-                      </td>
-                    </tr>
+                      </Td>
+                    </Tr>
                   )}
                 </React.Fragment>
               ))}
-            </tbody>
-          </table>
-        </div>
+              </Tbody>
+            </Table>
+          </TableContainer>
+        </Card>
       )}
 
       {!loading && agents.length > 0 && (
-        <div style={{
-          marginTop: '16px',
-          textAlign: 'right',
-          color: '#6c757d',
-          fontSize: '14px'
-        }}>
+        <div className="mt-4 text-right text-gray-600 dark:text-gray-400 text-sm">
           Total: {agents.length} agent{agents.length !== 1 ? 's' : ''}
         </div>
       )}

@@ -393,24 +393,24 @@ export default function CannedResponsesModal({ isOpen, onClose }: CannedResponse
         <div className="flex items-center justify-center min-h-screen p-4 relative z-[10002]">
           <div
             ref={modalRef}
-            className="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden"
+            className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-700">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center">
-                  <MessageSquare className="w-5 h-5 text-indigo-600" />
+                <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center">
+                  <MessageSquare className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-semibold text-gray-900">Canned Responses</h2>
-                  <p className="text-xs text-gray-500">Manage quick response templates</p>
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Canned Responses</h2>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Manage quick response templates</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleAddNew}
-                  className="px-3 py-1.5 text-sm font-medium text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                  className="px-3 py-1.5 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors"
                   disabled={importing}
                 >
                   Add New
@@ -419,7 +419,7 @@ export default function CannedResponsesModal({ isOpen, onClose }: CannedResponse
                   <button
                     onClick={handleImportExcel}
                     disabled={importing}
-                    className="px-3 py-1.5 text-sm font-medium text-green-600 hover:bg-green-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                    className="px-3 py-1.5 text-sm font-medium text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                     title="Import canned responses from Excel file"
                   >
                     <UploadCloud className="w-4 h-4" />
@@ -435,24 +435,24 @@ export default function CannedResponsesModal({ isOpen, onClose }: CannedResponse
                 </div>
                 <button
                   onClick={onClose}
-                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
                   aria-label="Close"
                   disabled={importing}
                 >
-                  <X className="w-5 h-5 text-gray-500" />
+                  <X className="w-5 h-5 text-gray-500 dark:text-gray-400 dark:hover:text-gray-200" />
                 </button>
               </div>
             </div>
 
             {/* User Guidance */}
-            <div className="px-6 py-3 bg-blue-50 border-b border-blue-100">
+            <div className="px-6 py-3 bg-blue-50 dark:bg-blue-900/20 border-b border-blue-100 dark:border-blue-800">
               <div className="flex items-center justify-between">
-                <p className="text-xs text-blue-700">
-                  <strong>Excel Import Format:</strong> Columns must be: <code className="bg-blue-100 px-1 rounded">shortcut</code>, <code className="bg-blue-100 px-1 rounded">content</code>, <code className="bg-blue-100 px-1 rounded">category</code> (category is optional)
+                <p className="text-xs text-blue-700 dark:text-blue-300">
+                  <strong>Excel Import Format:</strong> Columns must be: <code className="bg-blue-100 dark:bg-blue-900/40 px-1 rounded">shortcut</code>, <code className="bg-blue-100 dark:bg-blue-900/40 px-1 rounded">content</code>, <code className="bg-blue-100 dark:bg-blue-900/40 px-1 rounded">category</code> (category is optional)
                 </p>
                 <button
                   onClick={handleDownloadSample}
-                  className="text-xs text-blue-600 hover:text-blue-800 hover:underline cursor-pointer font-medium flex items-center gap-1 ml-4 whitespace-nowrap"
+                  className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline cursor-pointer font-medium flex items-center gap-1 ml-4 whitespace-nowrap"
                   title="Download Excel template with sample data"
                 >
                   <Download className="w-4 h-4" />
@@ -465,67 +465,67 @@ export default function CannedResponsesModal({ isOpen, onClose }: CannedResponse
             <div className="px-6 py-6 max-h-[60vh] overflow-y-auto">
               {loading ? (
                 <div className="flex items-center justify-center py-12">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-                  <span className="ml-3 text-gray-600">Loading canned responses...</span>
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
+                  <span className="ml-3 text-gray-600 dark:text-gray-300">Loading canned responses...</span>
                 </div>
               ) : (
-                <div className="bg-white rounded-lg overflow-hidden border border-gray-200">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
+                <div className="bg-white dark:bg-gray-800 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+                  <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead className="bg-gray-50 dark:bg-gray-900">
                       <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Shortcut
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Category
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Content Preview
                         </th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Actions
                         </th>
                       </tr>
                     </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
+                    <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                       {responses.length === 0 ? (
                         <tr>
-                          <td colSpan={4} className="px-6 py-8 text-center text-gray-500">
+                          <td colSpan={4} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
                             No canned responses found. Click "Add New" to create one.
                           </td>
                         </tr>
                       ) : (
                         responses.map((response) => (
-                          <tr key={response.$id} className="hover:bg-gray-50">
+                          <tr key={response.$id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                             <td className="px-6 py-4 whitespace-nowrap">
-                              <span className="text-sm font-medium text-gray-900">
+                              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
                                 /{response.shortcut}
                               </span>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                               {response.category ? (
-                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300">
                                   {response.category}
                                 </span>
                               ) : (
-                                <span className="text-sm text-gray-400">-</span>
+                                <span className="text-sm text-gray-400 dark:text-gray-500">-</span>
                               )}
                             </td>
                             <td className="px-6 py-4">
-                              <span className="text-sm text-gray-600">
+                              <span className="text-sm text-gray-600 dark:text-gray-300">
                                 {truncateContent(response.content)}
                               </span>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                               <button
                                 onClick={() => handleEdit(response)}
-                                className="text-blue-600 hover:text-blue-900 mr-4"
+                                className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 mr-4"
                               >
                                 Edit
                               </button>
                               <button
                                 onClick={() => handleDelete(response.$id)}
-                                className="text-red-600 hover:text-red-900"
+                                className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300"
                               >
                                 Delete
                               </button>
@@ -545,49 +545,49 @@ export default function CannedResponsesModal({ isOpen, onClose }: CannedResponse
       {/* Add/Edit Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10002]">
-          <div className="bg-white rounded-lg shadow-xl p-6 max-w-2xl w-full mx-4">
-            <h2 className="text-xl font-semibold mb-4">
+          <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl p-6 max-w-2xl w-full mx-4">
+            <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">
               {editingResponse ? 'Edit Canned Response' : 'Add New Canned Response'}
             </h2>
             <form onSubmit={handleSubmit}>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Shortcut *
                   </label>
                   <div className="flex items-center">
-                    <span className="text-gray-500 mr-2">/</span>
+                    <span className="text-gray-500 dark:text-gray-400 mr-2">/</span>
                     <input
                       type="text"
                       value={formData.shortcut}
                       onChange={handleShortcutChange}
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                      className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-blue-500 dark:focus:border-blue-400 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
                       placeholder="greet"
                       required
                       disabled={saving}
                     />
                   </div>
-                  <p className="mt-1 text-xs text-gray-500">
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                     Lowercase letters only, no spaces
                   </p>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Category
                   </label>
                   <input
                     type="text"
                     value={formData.category}
                     onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-blue-500 dark:focus:border-blue-400 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
                     placeholder="e.g., Greeting, FAQ, Troubleshooting"
                     disabled={saving}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Content *
                   </label>
                   <textarea
@@ -599,12 +599,12 @@ export default function CannedResponsesModal({ isOpen, onClose }: CannedResponse
                     }}
                     rows={5}
                     maxLength={5000}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-blue-500 dark:focus:border-blue-400 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
                     placeholder="Enter the response content..."
                     required
                     disabled={saving}
                   />
-                  <p className="mt-1 text-xs text-gray-500">
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                     {formData.content.length} / 5000 characters
                   </p>
                 </div>
@@ -619,14 +619,14 @@ export default function CannedResponsesModal({ isOpen, onClose }: CannedResponse
                     setEditingResponse(null)
                   }}
                   disabled={saving}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 dark:bg-indigo-500 rounded-md hover:bg-indigo-700 dark:hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {saving ? 'Saving...' : editingResponse ? 'Update' : 'Create'}
                 </button>

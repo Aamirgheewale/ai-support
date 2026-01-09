@@ -115,7 +115,7 @@ export default function SidebarHeader({ isCollapsed = false }: SidebarHeaderProp
         {/* User Profile Button */}
         <button
           onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
-          className={`flex items-center ${isCollapsed ? 'justify-center group/item hover:scale-110' : 'gap-2.5'} px-2 py-1.5 -ml-2 rounded-lg hover:bg-gray-100 transition-all duration-200 relative`}
+          className={`flex items-center group ${isCollapsed ? 'justify-center group/item hover:scale-110' : 'gap-2.5'} px-2 py-1.5 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-200 relative`}
           title={!isCollapsed ? (unreadCount > 0 ? `${unreadCount} Unread Notifications` : `${firstName} (${userStatus})`) : undefined}
         >
           {/* Square Avatar with Status Indicator */}
@@ -125,7 +125,7 @@ export default function SidebarHeader({ isCollapsed = false }: SidebarHeaderProp
             </div>
             {/* Status Indicator Dot - Floating half outside avatar */}
             <span 
-              className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white ${
+              className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white dark:border-gray-800 ${
                 userStatus === 'away' ? 'bg-yellow-500' : 'bg-green-500'
               }`}
               aria-label={userStatus === 'away' ? 'Away' : 'Online'}
@@ -139,7 +139,7 @@ export default function SidebarHeader({ isCollapsed = false }: SidebarHeaderProp
               </span>
               {/* Chevron */}
               <ChevronDown 
-                className={`w-4 h-4 text-gray-400 dark:text-gray-500 transition-transform duration-200 ${isProfileMenuOpen ? 'rotate-180' : ''}`}
+                className={`w-4 h-4 text-gray-400 dark:text-gray-500 group-hover:text-gray-600 dark:group-hover:text-gray-300 transition-transform duration-200 ${isProfileMenuOpen ? 'rotate-180' : ''}`}
               />
             </>
           )}

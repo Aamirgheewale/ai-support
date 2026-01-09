@@ -1,5 +1,6 @@
 import React from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Card } from '../components/ui'
 
 export default function PermissionDeniedPage() {
   const navigate = useNavigate()
@@ -13,11 +14,11 @@ export default function PermissionDeniedPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-      <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8 text-center">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center px-4">
+      <Card className="max-w-md w-full p-8 text-center">
         <div className="mb-6">
           <svg
-            className="mx-auto h-16 w-16 text-gray-400"
+            className="mx-auto h-16 w-16 text-gray-400 dark:text-gray-500"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -31,25 +32,25 @@ export default function PermissionDeniedPage() {
             />
           </svg>
         </div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Access Restricted</h2>
-        <p className="text-gray-600 mb-6">
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Access Restricted</h2>
+        <p className="text-gray-600 dark:text-gray-400 mb-6">
           Super admin only — you do not have permission to view this tab.
         </p>
         <div className="space-y-3">
           <button
             onClick={handleRequestHelp}
-            className="w-full bg-indigo-600 text-white rounded-lg px-4 py-2 font-medium hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full bg-indigo-600 dark:bg-indigo-500 text-white rounded-lg px-4 py-2 font-medium hover:bg-indigo-700 dark:hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
           >
             Request Access
           </button>
           <button
             onClick={() => navigate('/sessions')}
-            className="w-full bg-gray-200 text-gray-700 rounded-lg px-4 py-2 font-medium hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500"
+            className="w-full bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg px-4 py-2 font-medium hover:bg-gray-300 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 transition-colors"
           >
             Go to Sessions
           </button>
         </div>
-      </div>
+      </Card>
     </div>
   )
 }

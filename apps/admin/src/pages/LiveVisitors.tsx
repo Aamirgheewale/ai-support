@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { io } from 'socket.io-client'
 import { useAuth } from '../hooks/useAuth'
+import { Card, TableContainer, Table, Thead, Th, Tbody, Tr, Td } from '../components/ui'
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_API_BASE || 'http://localhost:4000'
 
@@ -152,417 +153,166 @@ export default function LiveVisitors() {
   }
 
   return (
-    <div style={{ padding: '20px', maxWidth: '1400px', margin: '0 auto' }}>
-      <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '28px', fontWeight: '600', color: '#1f2937', marginBottom: '8px' }}>
+    <div className="p-5 max-w-7xl mx-auto">
+      <div className="mb-6">
+        <h1 className="text-3xl font-semibold text-gray-900 dark:text-white mb-2">
           Live Visitors
         </h1>
-        <p style={{ color: '#6b7280', fontSize: '14px' }}>
+        <p className="text-gray-600 dark:text-gray-400 text-sm">
           Real-time tracking of visitors on your site 
         </p>
       </div>
 
       {visitors.length === 0 ? (
-        <div style={{
-          padding: '60px 20px',
-          textAlign: 'center',
-          background: 'white',
-          borderRadius: '8px',
-          border: '1px solid #e5e7eb',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-        }}>
-          <div style={{ fontSize: '48px', marginBottom: '16px' }}>👤</div>
-          <div style={{ fontSize: '18px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
+        <Card className="p-16 text-center">
+          <div className="text-5xl mb-4">👤</div>
+          <div className="text-lg font-medium text-gray-700 dark:text-gray-300 mb-2">
             No active visitors
           </div>
-          <div style={{ fontSize: '14px', color: '#6b7280' }}>
+          <div className="text-sm text-gray-500 dark:text-gray-400">
             Visitors will appear here when they land on your site
           </div>
-        </div>
+        </Card>
       ) : (
-        <div style={{
-          background: 'white',
-          borderRadius: '8px',
-          border: '1px solid #e5e7eb',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-          overflow: 'hidden'
-        }}>
-          <div style={{
-            padding: '16px 20px',
-            background: '#f9fafb',
-            borderBottom: '1px solid #e5e7eb',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center'
-          }}>
-            <div style={{ fontSize: '14px', fontWeight: '500', color: '#374151' }}>
+        <Card className="overflow-hidden">
+          <div className="px-5 py-4 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+            <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
               {visitors.length} active visitor{visitors.length !== 1 ? 's' : ''}
             </div>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              fontSize: '12px',
-              color: '#10b981'
-            }}>
-              <span style={{
-                width: '8px',
-                height: '8px',
-                borderRadius: '50%',
-                background: '#10b981',
-                display: 'inline-block',
-                animation: 'pulse 2s infinite'
-              }}></span>
+            <div className="flex items-center gap-2 text-xs text-green-600 dark:text-green-400">
+              <span className="w-2 h-2 rounded-full bg-green-600 dark:bg-green-400 inline-block animate-pulse"></span>
               Live
             </div>
           </div>
           
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ background: '#f9fafb' }}>
-                  <th style={{
-                    padding: '12px 20px',
-                    textAlign: 'left',
-                    fontSize: '12px',
-                    fontWeight: '600',
-                    color: '#6b7280',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                    borderBottom: '1px solid #e5e7eb'
-                  }}>
-                    Status
-                  </th>
-                  <th style={{
-                    padding: '12px 20px',
-                    textAlign: 'left',
-                    fontSize: '12px',
-                    fontWeight: '600',
-                    color: '#6b7280',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                    borderBottom: '1px solid #e5e7eb'
-                  }}>
-                    URL
-                  </th>
-                  <th style={{
-                    padding: '12px 20px',
-                    textAlign: 'left',
-                    fontSize: '12px',
-                    fontWeight: '600',
-                    color: '#6b7280',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                    borderBottom: '1px solid #e5e7eb'
-                  }}>
-                    Page Title
-                  </th>
-                  <th style={{
-                    padding: '12px 20px',
-                    textAlign: 'left',
-                    fontSize: '12px',
-                    fontWeight: '600',
-                    color: '#6b7280',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                    borderBottom: '1px solid #e5e7eb'
-                  }}>
-                    Device
-                  </th>
-                  <th style={{
-                    padding: '12px 20px',
-                    textAlign: 'left',
-                    fontSize: '12px',
-                    fontWeight: '600',
-                    color: '#6b7280',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                    borderBottom: '1px solid #e5e7eb'
-                  }}>
-                    Time Online
-                  </th>
-                  <th style={{
-                    padding: '12px 20px',
-                    textAlign: 'left',
-                    fontSize: '12px',
-                    fontWeight: '600',
-                    color: '#6b7280',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                    borderBottom: '1px solid #e5e7eb'
-                  }}>
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {visitors.map((visitor, index) => (
-                  <tr
-                    key={visitor.socketId}
-                    style={{
-                      borderBottom: index < visitors.length - 1 ? '1px solid #e5e7eb' : 'none',
-                      transition: 'background 0.15s'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = '#f9fafb'
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'white'
-                    }}
-                  >
-                    <td style={{ padding: '16px 20px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{
-                          width: '10px',
-                          height: '10px',
-                          borderRadius: '50%',
-                          background: visitor.status === 'chatting' ? '#3b82f6' : '#10b981',
-                          display: 'inline-block',
-                          boxShadow: `0 0 0 2px ${visitor.status === 'chatting' ? 'rgba(59, 130, 246, 0.2)' : 'rgba(16, 185, 129, 0.2)'}`
-                        }}></span>
-                        <span style={{ fontSize: '12px', color: '#6b7280' }}>
+          <TableContainer>
+            <Table>
+              <Thead>
+                <Tr>
+                  <Th>Status</Th>
+                  <Th>URL</Th>
+                  <Th>Page Title</Th>
+                  <Th>Device</Th>
+                  <Th>Time Online</Th>
+                  <Th>Actions</Th>
+                </Tr>
+              </Thead>
+              <Tbody>
+                {visitors.map((visitor) => (
+                  <Tr key={visitor.socketId}>
+                    <Td>
+                      <div className="flex items-center gap-2">
+                        <span className={`w-2.5 h-2.5 rounded-full inline-block ${
+                          visitor.status === 'chatting' 
+                            ? 'bg-blue-600 dark:bg-blue-400 shadow-[0_0_0_2px_rgba(59,130,246,0.2)]' 
+                            : 'bg-green-600 dark:bg-green-400 shadow-[0_0_0_2px_rgba(16,185,129,0.2)]'
+                        }`}></span>
+                        <span className="text-xs text-gray-600 dark:text-gray-400">
                           {visitor.status === 'chatting' ? 'Chatting' : 'Online'}
                         </span>
                       </div>
-                    </td>
-                    <td style={{ padding: '16px 20px' }}>
+                    </Td>
+                    <Td>
                       <a
                         href={visitor.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        style={{
-                          color: '#3b82f6',
-                          textDecoration: 'none',
-                          fontSize: '14px',
-                          maxWidth: '400px',
-                          display: 'block',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap'
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.textDecoration = 'underline'
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.textDecoration = 'none'
-                        }}
+                        className="text-blue-600 dark:text-blue-400 hover:underline text-sm max-w-[400px] block truncate"
                       >
                         {visitor.url}
                       </a>
-                    </td>
-                    <td style={{ padding: '16px 20px' }}>
-                      <div style={{
-                        fontSize: '14px',
-                        color: '#374151',
-                        maxWidth: '300px',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap'
-                      }}>
+                    </Td>
+                    <Td>
+                      <div className="text-sm max-w-[300px] truncate">
                         {visitor.title || '(No title)'}
                       </div>
-                    </td>
-                    <td style={{ padding: '16px 20px' }}>
-                      <div style={{
-                        fontSize: '14px',
-                        color: '#374151'
-                      }}>
+                    </Td>
+                    <Td>
+                      <div className="text-sm">
                         {getDeviceInfo(visitor.userAgent)}
                       </div>
-                    </td>
-                    <td style={{ padding: '16px 20px' }}>
-                      <div style={{
-                        fontSize: '14px',
-                        color: '#374151'
-                      }}>
+                    </Td>
+                    <Td>
+                      <div className="text-sm">
                         {getTimeOnline(visitor.onlineAt)}
                       </div>
-                    </td>
-                    <td style={{ padding: '16px 20px' }}>
+                    </Td>
+                    <Td>
                       <button
                         onClick={() => handleInitiateChat(visitor)}
-                        style={{
-                          padding: '6px 12px',
-                          background: '#3b82f6',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '6px',
-                          fontSize: '13px',
-                          fontWeight: '500',
-                          cursor: 'pointer',
-                          transition: 'background 0.15s'
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = '#2563eb'
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = '#3b82f6'
-                        }}
+                        className="px-3 py-1.5 bg-blue-600 dark:bg-blue-500 hover:bg-blue-700 dark:hover:bg-blue-600 text-white rounded-md text-xs font-medium cursor-pointer transition-colors"
                       >
                         Initiate Chat
                       </button>
-                    </td>
-                  </tr>
+                    </Td>
+                  </Tr>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+              </Tbody>
+            </Table>
+          </TableContainer>
+        </Card>
       )}
       
       {/* Initiate Chat Modal */}
       {isModalOpen && selectedVisitorId && (() => {
         const selectedVisitor = visitors.find(v => v.socketId === selectedVisitorId)
         return selectedVisitor ? (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0, 0, 0, 0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000
-        }} onClick={handleCancelInitiateChat}>
-          <div style={{
-            background: 'white',
-            borderRadius: '8px',
-            padding: '24px',
-            maxWidth: '500px',
-            width: '90%',
-            boxShadow: '0 10px 25px rgba(0,0,0,0.2)'
-          }} onClick={(e) => e.stopPropagation()}>
-            <h2 style={{
-              fontSize: '20px',
-              fontWeight: '600',
-              color: '#1f2937',
-              marginBottom: '16px'
-            }}>
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 dark:bg-opacity-70 flex items-center justify-center z-[1000]"
+          onClick={handleCancelInitiateChat}
+        >
+          <Card 
+            className="p-6 max-w-lg w-[90%]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
               Initiate Chat
             </h2>
             
-            <div style={{ marginBottom: '16px' }}>
-              <div style={{
-                fontSize: '14px',
-                color: '#6b7280',
-                marginBottom: '8px'
-              }}>
-                Visitor: <strong>{selectedVisitor.url}</strong>
+            <div className="mb-4">
+              <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                Visitor: <strong className="text-gray-900 dark:text-white">{selectedVisitor.url}</strong>
               </div>
-              <div style={{
-                fontSize: '12px',
-                color: '#9ca3af'
-              }}>
+              <div className="text-xs text-gray-400 dark:text-gray-500">
                 {selectedVisitor.title || '(No title)'}
               </div>
             </div>
             
-            <div style={{ marginBottom: '20px' }}>
-              <label style={{
-                display: 'block',
-                fontSize: '14px',
-                fontWeight: '500',
-                color: '#374151',
-                marginBottom: '8px'
-              }}>
+            <div className="mb-5">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Welcome Message:
               </label>
               <textarea
                 value={welcomeMessage}
                 onChange={(e) => setWelcomeMessage(e.target.value)}
                 placeholder="Enter your welcome message..."
-                style={{
-                  width: '100%',
-                  minHeight: '100px',
-                  padding: '12px',
-                  border: '1px solid #d1d5db',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  fontFamily: 'inherit',
-                  resize: 'vertical',
-                  outline: 'none'
-                }}
-                onFocus={(e) => {
-                  e.currentTarget.style.borderColor = '#3b82f6'
-                }}
-                onBlur={(e) => {
-                  e.currentTarget.style.borderColor = '#d1d5db'
-                }}
+                className="w-full min-h-[100px] p-3 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-inherit resize-y outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
               />
             </div>
             
-            <div style={{
-              display: 'flex',
-              gap: '12px',
-              justifyContent: 'flex-end'
-            }}>
+            <div className="flex gap-3 justify-end">
               <button
                 onClick={handleCancelInitiateChat}
-                style={{
-                  padding: '8px 16px',
-                  background: '#f3f4f6',
-                  color: '#374151',
-                  border: 'none',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  fontWeight: '500',
-                  cursor: 'pointer',
-                  transition: 'background 0.15s'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#e5e7eb'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = '#f3f4f6'
-                }}
+                className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-none rounded-md text-sm font-medium cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleConfirmInitiateChat}
                 disabled={!welcomeMessage.trim()}
-                style={{
-                  padding: '8px 16px',
-                  background: welcomeMessage.trim() ? '#3b82f6' : '#d1d5db',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  fontWeight: '500',
-                  cursor: welcomeMessage.trim() ? 'pointer' : 'not-allowed',
-                  transition: 'background 0.15s'
-                }}
-                onMouseEnter={(e) => {
-                  if (welcomeMessage.trim()) {
-                    e.currentTarget.style.background = '#2563eb'
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (welcomeMessage.trim()) {
-                    e.currentTarget.style.background = '#3b82f6'
-                  }
-                }}
+                className={`px-4 py-2 border-none rounded-md text-sm font-medium transition-colors ${
+                  welcomeMessage.trim()
+                    ? 'bg-blue-600 dark:bg-blue-500 hover:bg-blue-700 dark:hover:bg-blue-600 text-white cursor-pointer'
+                    : 'bg-gray-300 dark:bg-gray-600 text-white cursor-not-allowed'
+                }`}
               >
                 Send
               </button>
             </div>
-          </div>
+          </Card>
         </div>
         ) : null
       })()}
-      
-      <style>{`
-        @keyframes pulse {
-          0%, 100% {
-            opacity: 1;
-          }
-          50% {
-            opacity: 0.5;
-          }
-        }
-      `}</style>
     </div>
   )
 }
