@@ -1,56 +1,89 @@
 import { Client, Storage } from 'appwrite';
 
 /**
- * Appwrite Configuration
+ * Appwrite Storage Configuration
  * 
- * These environment variables must be set for file uploads to work:
- * - VITE_APPWRITE_ENDPOINT: Appwrite API endpoint (defaults to cloud.appwrite.io)
- * - VITE_APPWRITE_PROJECT_ID: Appwrite project ID (REQUIRED - no default)
- * - VITE_APPWRITE_BUCKET_ID: Storage bucket ID (defaults to 'chat-attachments')
+ * CRITICAL: Both VITE_APPWRITE_PROJECT_ID and VITE_APPWRITE_BUCKET_ID are REQUIRED.
+ * 
+ * Why bucket IDs must not have defaults:
+ * - Using a fallback bucket ID (e.g., 'chat-attachments') can cause silent failures
+ * - If the bucket doesn't exist, uploads will return 404 errors without clear indication
+ * - Misconfigured bucket IDs lead to files being uploaded to wrong buckets or failing silently
+ * - Strict validation ensures the widget fails fast with clear error messages
+ * - This prevents production issues where files appear to upload but are actually lost
  */
 
-const APPWRITE_ENDPOINT = import.meta.env.VITE_APPWRITE_ENDPOINT || 'https://cloud.appwrite.io/v1';
-const APPWRITE_PROJECT_ID = import.meta.env.VITE_APPWRITE_PROJECT_ID;
-const BUCKET_ID = import.meta.env.VITE_APPWRITE_BUCKET_ID || 'chat-attachments';
+// Appwrite endpoint - always use cloud.appwrite.io (consistent CORS configuration)
+const APPWRITE_ENDPOINT = 'https://cloud.appwrite.io/v1';
 
-// TEMPORARY: Log Appwrite project ID for production verification
-console.log('🔍 [TEMPORARY] Appwrite Config - VITE_APPWRITE_PROJECT_ID:', APPWRITE_PROJECT_ID || 'MISSING');
+// Read required environment variables (NO FALLBACKS)
+const APPWRITE_PROJECT_ID = import.meta.env.VITE_APPWRITE_PROJECT_ID;
+const APPWRITE_BUCKET_ID = import.meta.env.VITE_APPWRITE_BUCKET_ID;
+
+// TEMPORARY: Log Appwrite configuration in development mode for verification
+if (import.meta.env.DEV) {
+  console.log('🔍 [TEMPORARY] Appwrite Configuration:', {
+    VITE_APPWRITE_PROJECT_ID: APPWRITE_PROJECT_ID || 'MISSING',
+    VITE_APPWRITE_BUCKET_ID: APPWRITE_BUCKET_ID || 'MISSING',
+    endpoint: APPWRITE_ENDPOINT
+  });
+}
 
 /**
- * Defensive check: Fail fast if project ID is missing
- * This prevents CORS errors and provides clear error messages
+ * Strict validation: Fail fast if required configuration is missing
+ * 
+ * Both PROJECT_ID and BUCKET_ID are required:
+ * - PROJECT_ID: Required for CORS headers and API authentication
+ * - BUCKET_ID: Required to prevent 404 errors from uploading to non-existent buckets
  * 
  * Note: The Vite build plugin will catch this at build time,
  * but we also check here for runtime safety.
  */
 if (!APPWRITE_PROJECT_ID) {
-  const errorMessage = 'VITE_APPWRITE_PROJECT_ID is missing. Appwrite uploads will fail due to CORS. Please set this environment variable.';
+  const errorMessage = 
+    'VITE_APPWRITE_PROJECT_ID is missing. Appwrite uploads will fail due to CORS. ' +
+    'Please set this environment variable in your deployment platform.';
   console.error('❌ Appwrite Configuration Error:', errorMessage);
-  
-  // Always throw - the build plugin should catch this, but runtime check is a safety net
-  // In production builds, this code should never execute if the build plugin worked correctly
   throw new Error(errorMessage);
 }
 
+if (!APPWRITE_BUCKET_ID) {
+  const errorMessage = 
+    'VITE_APPWRITE_BUCKET_ID is missing. File uploads will fail with 404 errors. ' +
+    'Please set this environment variable to your Appwrite Storage bucket ID. ' +
+    'Do not use fallback values - they can cause silent failures.';
+  console.error('❌ Appwrite Configuration Error:', errorMessage);
+  throw new Error(errorMessage);
+}
+
+// Validated bucket ID constant (exported for use in upload code)
+export const BUCKET_ID: string = APPWRITE_BUCKET_ID;
+
 /**
- * Initialize Appwrite Client
+ * Initialize Appwrite Client (Singleton Pattern)
  * 
- * This client is initialized once and reused across all upload operations.
- * It must be configured with:
- * 1. Endpoint (setEndpoint)
- * 2. Project ID (setProject) - REQUIRED for CORS headers
+ * The client is initialized exactly once and reused across all upload operations.
+ * Initialization order is critical:
+ * 1. setEndpoint() - Sets the Appwrite API endpoint
+ * 2. setProject() - Sets the project ID (REQUIRED for CORS headers)
+ * 3. new Storage() - Creates storage instance AFTER client is fully configured
  * 
- * The Storage instance is created AFTER the client is fully configured.
+ * This ensures proper CORS headers are included in all requests.
  */
 let appwriteClient: Client | null = null;
 let appwriteStorage: Storage | null = null;
 
 /**
- * Get or create the Appwrite client instance
+ * Get or create the Appwrite client instance (singleton)
  * 
- * @throws {Error} If VITE_APPWRITE_PROJECT_ID is missing
+ * Client is initialized with:
+ * - Endpoint: https://cloud.appwrite.io/v1 (hardcoded for consistency)
+ * - Project ID: VITE_APPWRITE_PROJECT_ID (from environment)
+ * 
+ * @throws {Error} If VITE_APPWRITE_PROJECT_ID is missing (should never happen after validation)
  */
 function getAppwriteClient(): Client {
+  // This check is redundant after module-level validation, but provides extra safety
   if (!APPWRITE_PROJECT_ID) {
     throw new Error('VITE_APPWRITE_PROJECT_ID is missing. Appwrite uploads will fail due to CORS.');
   }
@@ -65,11 +98,12 @@ function getAppwriteClient(): Client {
 }
 
 /**
- * Get or create the Appwrite Storage instance
+ * Get or create the Appwrite Storage instance (singleton)
  * 
  * Storage is created AFTER the client is fully initialized.
+ * This ensures the client has proper CORS configuration before storage operations.
  * 
- * @throws {Error} If VITE_APPWRITE_PROJECT_ID is missing
+ * @returns {Storage} Singleton Storage instance
  */
 export function getAppwriteStorage(): Storage {
   if (!appwriteStorage) {
@@ -81,27 +115,24 @@ export function getAppwriteStorage(): Storage {
 }
 
 /**
- * Get the configured bucket ID
- */
-export function getBucketId(): string {
-  return BUCKET_ID;
-}
-
-/**
  * Check if Appwrite is properly configured
+ * 
+ * @returns {boolean} True if both PROJECT_ID and BUCKET_ID are set
  */
 export function isAppwriteConfigured(): boolean {
-  return !!APPWRITE_PROJECT_ID;
+  return !!(APPWRITE_PROJECT_ID && APPWRITE_BUCKET_ID);
 }
 
 /**
  * Get Appwrite configuration for debugging
+ * 
+ * @returns {object} Configuration object with endpoint, projectId, bucketId, and isConfigured status
  */
 export function getAppwriteConfig() {
   return {
     endpoint: APPWRITE_ENDPOINT,
     projectId: APPWRITE_PROJECT_ID || 'MISSING',
-    bucketId: BUCKET_ID,
+    bucketId: APPWRITE_BUCKET_ID || 'MISSING',
     isConfigured: isAppwriteConfigured(),
   };
 }

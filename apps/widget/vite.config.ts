@@ -47,13 +47,18 @@ import react from '@vitejs/plugin-react'
 /**
  * Vite plugin to validate Appwrite environment variables at build time.
  * This ensures the build fails fast if required configuration is missing.
+ * 
+ * Both PROJECT_ID and BUCKET_ID are required - no fallbacks allowed.
+ * Fallback bucket IDs can cause silent 404 errors in production.
  */
 function validateAppwriteConfig(): Plugin {
   return {
     name: 'validate-appwrite-config',
     buildStart() {
       const rawProjectId = process.env.VITE_APPWRITE_PROJECT_ID
+      const rawBucketId = process.env.VITE_APPWRITE_BUCKET_ID
 
+      // Validate PROJECT_ID
       if (!rawProjectId) {
         this.error(
           '❌ Build Error: VITE_APPWRITE_PROJECT_ID is missing.\n' +
@@ -64,16 +69,26 @@ function validateAppwriteConfig(): Plugin {
         return
       }
 
-      // ✅ TypeScript now KNOWS this is a string
+      // Validate BUCKET_ID (no fallbacks - prevents 404 errors)
+      if (!rawBucketId) {
+        this.error(
+          '❌ Build Error: VITE_APPWRITE_BUCKET_ID is missing.\n' +
+          'Appwrite file uploads require this environment variable to be set.\n' +
+          'Please set VITE_APPWRITE_BUCKET_ID in Railway → Widget Service → Variables.\n' +
+          'Do not use fallback values - they can cause silent failures and 404 errors.\n' +
+          'The bucket ID must match an existing bucket in your Appwrite project.'
+        )
+        return
+      }
+
+      // ✅ TypeScript now KNOWS these are strings
       const projectId: string = rawProjectId
+      const bucketId: string = rawBucketId
 
       console.log('✅ Appwrite configuration validated:', {
-        endpoint:
-          process.env.VITE_APPWRITE_ENDPOINT ??
-          'https://cloud.appwrite.io/v1',
+        endpoint: 'https://cloud.appwrite.io/v1',
         projectId: projectId.slice(0, 8) + '...',
-        bucketId:
-          process.env.VITE_APPWRITE_BUCKET_ID ?? 'chat-attachments',
+        bucketId: bucketId,
       })
     },
   }
