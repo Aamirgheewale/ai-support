@@ -3,6 +3,9 @@ import React, { useState, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import EmbedWidget from './components/EmbedWidget'
 
+// TEMPORARY: Log Appwrite project ID for production verification
+console.log('🔍 [TEMPORARY] VITE_APPWRITE_PROJECT_ID:', import.meta.env.VITE_APPWRITE_PROJECT_ID || 'MISSING');
+
 // Wrapper component with circular button
 function ChatWidgetWithButton({ initialSessionId }: { initialSessionId?: string }) {
   const [chatWidgetOpen, setChatWidgetOpen] = useState(false);
