@@ -27,10 +27,10 @@ export default function NotificationsPage() {
                     const data = await response.json();
                     const tickets = data.tickets || [];
                     // Create a Set of resolved ticket IDs
-                    const resolvedIds = new Set(
+                    const resolvedIds = new Set<string>(
                         tickets
                             .filter((ticket: any) => ticket.status === 'resolved')
-                            .map((ticket: any) => ticket.ticketId)
+                            .map((ticket: any) => ticket.ticketId as string)
                     );
                     setResolvedTicketIds(resolvedIds);
                 }
