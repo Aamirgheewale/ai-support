@@ -1,3 +1,5 @@
+# 
+
 FROM node:18-alpine
 
 WORKDIR /app
@@ -11,7 +13,20 @@ COPY . .
 # 3. Install Dependencies
 RUN pnpm install --no-frozen-lockfile
 
+# --- 🚀 FIX START: Inject Variables for Build ---
+# We must declare these ARGs so Docker accepts them from Railway
+ARG VITE_APPWRITE_ENDPOINT
+ARG VITE_APPWRITE_PROJECT_ID
+ARG VITE_APPWRITE_BUCKET_ID
+
+# We set them as ENV so the build script can access them
+ENV VITE_APPWRITE_ENDPOINT=$VITE_APPWRITE_ENDPOINT
+ENV VITE_APPWRITE_PROJECT_ID=$VITE_APPWRITE_PROJECT_ID
+ENV VITE_APPWRITE_BUCKET_ID=$VITE_APPWRITE_BUCKET_ID
+# --- 🚀 FIX END ---
+
 # 4. Build Admin (Verbose mode to see errors)
+# Now 'vite build' can see the keys and bake them into the HTML/JS
 RUN cd apps/admin && pnpm run build
 
 # --- CRITICAL DEBUG STEP ---
@@ -30,5 +45,3 @@ RUN if [ ! -f /app/apps/admin/dist/index.html ]; then \
 # 5. Serve using Absolute Path
 ENV PORT=8080
 CMD ["serve", "-s", "/app/apps/admin/dist", "-l", "8080"]
-
-
