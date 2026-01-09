@@ -376,7 +376,7 @@ export default function SessionsList() {
                       type="checkbox"
                       checked={selectedSessions.size === sessions.length && sessions.length > 0}
                       onChange={toggleSelectAll}
-                      className="cursor-pointer"
+                      className="cursor-pointer h-4 w-4 text-indigo-600 dark:text-indigo-400 focus:ring-indigo-500 dark:focus:ring-indigo-400 border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-800"
                     />
                   </Th>
                   <Th>Session ID</Th>
@@ -400,7 +400,7 @@ export default function SessionsList() {
                         checked={selectedSessions.has(session.sessionId)}
                         onChange={() => {}}
                         onClick={(e) => toggleSessionSelection(session.sessionId, e)}
-                        className="cursor-pointer"
+                        className="cursor-pointer h-4 w-4 text-indigo-600 dark:text-indigo-400 focus:ring-indigo-500 dark:focus:ring-indigo-400 border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-800"
                       />
                     </Td>
                     <Td className="font-mono text-xs">{session.sessionId}</Td>

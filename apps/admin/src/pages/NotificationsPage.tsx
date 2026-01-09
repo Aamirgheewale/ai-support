@@ -167,32 +167,33 @@ export default function NotificationsPage() {
         // Determine hover colors based on notification type
         const getHoverClasses = () => {
             if (notification.type === 'ticket_created') {
-                return 'hover:bg-gradient-to-r hover:from-red-50 hover:to-pink-50 hover:border-red-300 hover:border-l-red-500';
+                return 'hover:bg-gradient-to-r hover:from-red-50 hover:to-pink-50 dark:hover:bg-none dark:hover:bg-red-500/20 hover:border-red-300 dark:hover:border-red-800 hover:border-l-red-500 dark:hover:border-l-red-600';
             } else if (notification.type === 'request_agent') {
-                return 'hover:bg-gradient-to-r hover:from-yellow-50 hover:to-amber-50 hover:border-yellow-300 hover:border-l-yellow-500';
+                return 'hover:bg-gradient-to-r hover:from-yellow-50 hover:to-amber-50 dark:hover:bg-none dark:hover:bg-yellow-500/20 hover:border-yellow-300 dark:hover:border-yellow-800 hover:border-l-yellow-500 dark:hover:border-l-yellow-600';
             } else if (notification.type === 'agent_connected') {
-                return 'hover:bg-gradient-to-r hover:from-green-50 hover:to-emerald-50 hover:border-green-300 hover:border-l-green-500';
+                return 'hover:bg-gradient-to-r hover:from-green-50 hover:to-emerald-50 dark:hover:bg-none dark:hover:bg-green-500/20 hover:border-green-300 dark:hover:border-green-800 hover:border-l-green-500 dark:hover:border-l-green-600';
             } else if (notification.type === 'agent_disconnected') {
-                return 'hover:bg-gradient-to-r hover:from-gray-50 hover:to-slate-50 hover:border-gray-300 hover:border-l-gray-500';
+                return 'hover:bg-gradient-to-r hover:from-gray-50 hover:to-slate-50 dark:hover:bg-none dark:hover:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-700 hover:border-l-gray-500 dark:hover:border-l-gray-600';
             }
-            return 'hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 hover:border-blue-300 hover:border-l-blue-500';
+            // Default: assignments and other types
+            return 'hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 dark:hover:bg-none dark:hover:bg-blue-500/20 hover:border-blue-300 dark:hover:border-blue-800 hover:border-l-blue-500 dark:hover:border-l-blue-600';
         };
 
         return (
         <div
             onClick={() => handleNotificationClick(notification)}
-            className={`px-4 py-2.5 border-b border-gray-100 dark:border-gray-700 ${getHoverClasses()} hover:shadow-md hover:border-l-4 transition-all duration-200 ease-in-out cursor-pointer flex items-start justify-between group relative`}
+            className={`px-4 py-2.5 bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 ${getHoverClasses()} hover:shadow-md hover:border-l-4 transition-all duration-200 ease-in-out cursor-pointer flex items-start justify-between group relative`}
         >
             <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
                     {getBadgeForNotification(notification.type)}
-                    <span className="text-[10px] text-gray-500 dark:text-gray-400">
+                    <span className="text-[10px] text-gray-500 dark:text-gray-400 dark:group-hover:text-gray-200">
                         {formatTime(notification.createdAt || notification.$createdAt || '')}
                     </span>
                 </div>
-                <p className="text-xs text-gray-900 dark:text-gray-100 font-medium truncate">{notification.content}</p>
+                <p className="text-xs text-gray-900 dark:text-gray-100 dark:group-hover:text-white font-medium truncate">{notification.content}</p>
                 {notification.sessionId && notification.sessionId.trim() !== '' && (
-                    <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 truncate">Session: {notification.sessionId}</p>
+                    <p className="text-[10px] text-gray-500 dark:text-gray-400 dark:group-hover:text-gray-200 mt-0.5 truncate">Session: {notification.sessionId}</p>
                 )}
             </div>
             <div className="flex items-center gap-2 flex-shrink-0 ml-2">
@@ -207,7 +208,7 @@ export default function NotificationsPage() {
                 </button>
                 {/* Arrow icon - Only show if sessionId exists */}
                 {notification.sessionId && notification.sessionId.trim() !== '' && (
-                    <ChevronRight className="w-4 h-4 text-gray-400 dark:text-gray-500 group-hover:text-gray-600 dark:group-hover:text-gray-400 transition-colors" />
+                    <ChevronRight className="w-4 h-4 text-gray-400 dark:text-gray-500 dark:group-hover:text-gray-200 transition-colors" />
                 )}
             </div>
         </div>

@@ -328,7 +328,7 @@ export default function UsersPage() {
                         type="checkbox"
                         checked={newUser.roles.includes(role)}
                         onChange={() => toggleNewUserRole(role)}
-                        className="rounded border-gray-300 dark:border-gray-600 text-blue-600 dark:text-blue-400"
+                        className="rounded border-gray-300 dark:border-gray-700 text-blue-600 dark:text-blue-400 focus:ring-blue-500 dark:focus:ring-blue-400 bg-white dark:bg-gray-800"
                       />
                       <span className="text-sm text-gray-900 dark:text-gray-100">{role}</span>
                     </label>

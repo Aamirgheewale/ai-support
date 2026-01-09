@@ -47,10 +47,10 @@ export default function UserRoleEditor({ userId, currentRoles, onSave, onCancel 
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full">
-        <h2 className="text-xl font-semibold mb-4">Edit Roles</h2>
-        <p className="text-sm text-gray-600 mb-4">User ID: {userId}</p>
+    <div className="fixed inset-0 bg-black bg-opacity-50 dark:bg-opacity-70 flex items-center justify-center z-50">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-md w-full">
+        <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">Edit Roles</h2>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">User ID: {userId}</p>
         
         <div className="space-y-2 mb-6">
           {AVAILABLE_ROLES.map(role => (
@@ -59,11 +59,11 @@ export default function UserRoleEditor({ userId, currentRoles, onSave, onCancel 
                 type="checkbox"
                 checked={selectedRoles.includes(role)}
                 onChange={() => toggleRole(role)}
-                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                className="rounded border-gray-300 dark:border-gray-700 text-blue-600 dark:text-blue-400 focus:ring-blue-500 dark:focus:ring-blue-400 bg-white dark:bg-gray-800"
               />
-              <span className="text-sm">
+              <span className="text-sm text-gray-700 dark:text-gray-300">
                 {role}
-                {role === 'admin' && <span className="text-red-600 ml-1">(all permissions)</span>}
+                {role === 'admin' && <span className="text-red-600 dark:text-red-400 ml-1">(all permissions)</span>}
               </span>
             </label>
           ))}
@@ -73,14 +73,14 @@ export default function UserRoleEditor({ userId, currentRoles, onSave, onCancel 
           <button
             onClick={onCancel}
             disabled={saving}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 disabled:opacity-50"
+            className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             onClick={handleSave}
             disabled={saving}
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
+            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 dark:bg-blue-500 rounded-md hover:bg-blue-700 dark:hover:bg-blue-600 disabled:opacity-50"
           >
             {saving ? 'Saving...' : 'Save'}
           </button>

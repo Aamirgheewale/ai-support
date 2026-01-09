@@ -1174,9 +1174,9 @@ export default function ConversationView() {
         </div>
       </div>
 
-      <div style={{ background: 'white', borderRadius: '8px', padding: '20px', marginBottom: '20px', minHeight: '400px', maxHeight: '600px', overflow: 'auto' }}>
+      <div className="bg-white dark:bg-gray-900 rounded-lg p-5 mb-5 min-h-[400px] max-h-[600px] overflow-auto">
         {loading ? (
-          <div>Loading messages...</div>
+          <div className="text-gray-600 dark:text-gray-400">Loading messages...</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {/* Load older messages button */}
@@ -1199,27 +1199,34 @@ export default function ConversationView() {
                 </button>
               </div>
             )}
-            {messages.map((msg, i) => (
+            {messages.map((msg, i) => {
+              // Determine background and text colors based on sender type
+              const getBubbleStyles = () => {
+                const baseStyles = 'px-3.5 py-2.5 rounded-lg max-w-[70%]'
+                const alignment = msg.sender === 'user' ? 'self-end' : 'self-start'
+                
+                switch (msg.sender) {
+                  case 'user':
+                    return `${baseStyles} ${alignment} bg-indigo-500 dark:bg-indigo-600 text-white`
+                  case 'agent':
+                    return `${baseStyles} ${alignment} bg-green-500 dark:bg-green-600 text-white`
+                  case 'bot':
+                    return `${baseStyles} ${alignment} bg-gray-600 dark:bg-gray-700 text-white`
+                  case 'internal':
+                    return `${baseStyles} ${alignment} bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200 border-2 border-dashed border-yellow-400 dark:border-yellow-600`
+                  case 'system':
+                    return `${baseStyles} ${alignment} bg-blue-50 dark:bg-gray-800 text-blue-900 dark:text-gray-100`
+                  default:
+                    return `${baseStyles} ${alignment} bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100`
+                }
+              }
+              
+              return (
               <div
                 key={i}
-                style={{
-                  padding: '10px 14px',
-                  borderRadius: '8px',
-                  background: msg.sender === 'user' ? '#667eea' :
-                    msg.sender === 'agent' ? '#28a745' :
-                      msg.sender === 'bot' ? '#6c757d' :
-                        msg.sender === 'internal' ? '#fff3cd' :
-                          msg.sender === 'system' ? '#e7f3ff' : '#f8f9fa',
-                  color: msg.sender === 'user' ? 'white' :
-                    msg.sender === 'bot' ? 'white' :
-                      msg.sender === 'internal' ? '#856404' :
-                        msg.sender === 'system' ? '#004085' : '#333',
-                  alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start',
-                  maxWidth: '70%',
-                  border: msg.sender === 'internal' ? '2px dashed #ffc107' : 'none'
-                }}
+                className={getBubbleStyles()}
               >
-                <div style={{ fontSize: '12px', opacity: 0.8, marginBottom: '4px', fontWeight: '500' }}>
+                <div className="text-xs opacity-80 mb-1 font-medium text-current">
                   {msg.sender === 'bot' ? '🤖 Bot' :
                     msg.sender === 'agent' ? `👤 Agent${msg.agentId ? ` (${msg.agentId})` : ''}` :
                       msg.sender === 'internal' ? '🔒 Private Note' :
@@ -1336,32 +1343,33 @@ export default function ConversationView() {
                       )}
                     </div>
                     {msg.text && msg.text !== 'Image' && (
-                      <div style={{ fontSize: '13px', lineHeight: '1.4', wordBreak: 'break-word' }}>
+                      <div className="text-[13px] leading-relaxed break-words text-current">
                         {msg.text}
                       </div>
                     )}
                   </div>
                 ) : (
-                  <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{msg.text}</div>
+                  <div className="whitespace-pre-wrap break-words text-current">{msg.text}</div>
                 )}
-                <div style={{ fontSize: '11px', opacity: 0.7, marginTop: '4px' }}>
+                <div className="text-[11px] opacity-70 mt-1 text-current">
                   {new Date(msg.timestamp).toLocaleString()}
                 </div>
               </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
         {/* Private Note Toggle */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '14px', color: '#666' }}>
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-600 dark:text-gray-400">
             <input
               type="checkbox"
               checked={isPrivateNote}
               onChange={(e) => setIsPrivateNote(e.target.checked)}
-              style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+              className="w-4 h-4 cursor-pointer text-indigo-600 dark:text-indigo-400 focus:ring-indigo-500 dark:focus:ring-indigo-400 border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-800"
             />
             <span>🔒 Private Note (only visible to agents)</span>
           </label>
@@ -1370,62 +1378,41 @@ export default function ConversationView() {
           <div style={{ position: 'relative', flex: 1 }}>
             {/* Suggestions Menu */}
             {showSuggestions && suggestions.length > 0 && (
-              <div
-                style={{
-                  position: 'absolute',
-                  bottom: '100%',
-                  left: 0,
-                  marginBottom: '8px',
-                  backgroundColor: 'white',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
-                  maxHeight: '200px',
-                  overflowY: 'auto',
-                  zIndex: 1000,
-                  minWidth: '300px'
-                }}
-              >
+              <div className="absolute bottom-full left-0 mb-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg max-h-[200px] overflow-y-auto z-[1000] min-w-[300px]">
                 {suggestions.map((resp, index) => (
                   <div
                     key={resp.$id}
                     onClick={() => selectCannedResponse(resp)}
-                    style={{
-                      padding: '10px 12px',
-                      cursor: 'pointer',
-                      backgroundColor: index === selectedSuggestionIndex ? '#3b82f6' : 'transparent',
-                      color: index === selectedSuggestionIndex ? 'white' : '#111827',
-                      borderBottom: index < suggestions.length - 1 ? '1px solid #e5e7eb' : 'none'
-                    }}
+                    className={`px-3 py-2.5 cursor-pointer transition-colors ${
+                      index === selectedSuggestionIndex 
+                        ? 'bg-blue-600 dark:bg-blue-900/50 text-white dark:text-gray-100' 
+                        : 'bg-transparent hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100'
+                    } ${
+                      index < suggestions.length - 1 ? 'border-b border-gray-200 dark:border-gray-700' : ''
+                    }`}
                     onMouseEnter={() => setSelectedSuggestionIndex(index)}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                      <span style={{ fontWeight: 'bold', fontSize: '14px' }}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-bold text-sm">
                         /{resp.shortcut}
                       </span>
                       {resp.category && (
                         <span
-                          style={{
-                            fontSize: '11px',
-                            padding: '2px 6px',
-                            borderRadius: '4px',
-                            backgroundColor: index === selectedSuggestionIndex ? 'rgba(255, 255, 255, 0.2)' : '#f3f4f6',
-                            color: index === selectedSuggestionIndex ? 'white' : '#6b7280'
-                          }}
+                          className={`text-[11px] px-1.5 py-0.5 rounded ${
+                            index === selectedSuggestionIndex
+                              ? 'bg-white/20 dark:bg-white/10 text-white dark:text-gray-200'
+                              : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+                          }`}
                         >
                           {resp.category}
                         </span>
                       )}
                     </div>
-                    <div
-                      style={{
-                        fontSize: '12px',
-                        color: index === selectedSuggestionIndex ? 'rgba(255, 255, 255, 0.9)' : '#6b7280',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap'
-                      }}
-                    >
+                    <div className={`text-xs ${
+                      index === selectedSuggestionIndex 
+                        ? 'text-white/90 dark:text-gray-200' 
+                        : 'text-gray-600 dark:text-gray-400'
+                    } overflow-hidden text-ellipsis whitespace-nowrap`}>
                       {resp.content.length > 50 ? resp.content.substring(0, 50) + '...' : resp.content}
                     </div>
                   </div>
