@@ -1,3 +1,5 @@
+# 
+
 FROM node:18-alpine
 WORKDIR /app
 
@@ -10,17 +12,19 @@ COPY . .
 # 3. Install Dependencies
 RUN pnpm install --no-frozen-lockfile
 
-# 4. Bake in Environment Variables
+# 4. Bake in Environment Variables (BUILD-TIME for Vite)
 ARG VITE_API_BASE
 ARG VITE_SOCKET_URL
+ARG VITE_APPWRITE_PROJECT_ID
+
 ENV VITE_API_BASE=$VITE_API_BASE
 ENV VITE_SOCKET_URL=$VITE_SOCKET_URL
+ENV VITE_APPWRITE_PROJECT_ID=$VITE_APPWRITE_PROJECT_ID
 
 # 5. Build Widget
 RUN cd apps/widget && pnpm run build
 
 # --- DEBUG: Verify Build ---
-# Check for index.html (Main App)
 RUN if [ ! -f /app/apps/widget/dist/index.html ]; then \
         echo "❌ ERROR: index.html NOT found in /app/apps/widget/dist!"; \
         ls -la /app/apps/widget; \
@@ -29,16 +33,17 @@ RUN if [ ! -f /app/apps/widget/dist/index.html ]; then \
         echo "✅ SUCCESS: Widget index.html found!"; \
     fi
 
-# 👇 NEW: Check for embed.js (The Script) 👇
-RUN if [ ! -f /app/apps/widget/dist/embed.js ]; then \
-        echo "❌ ERROR: embed.js NOT found in dist folder! Make sure it is in the 'public' folder locally."; \
-        ls -la /app/apps/widget/dist; \
-        exit 1; \
-    else \
-        echo "✅ SUCCESS: embed.js found!"; \
-    fi
+# --- Optional: embed.js check (only keep if you really generate it) ---
+# ⚠️ Remove this check if embed.js is bundled by Vite instead of copied
+# RUN if [ ! -f /app/apps/widget/dist/embed.js ]; then \
+#         echo "❌ ERROR: embed.js NOT found in dist folder!"; \
+#         ls -la /app/apps/widget/dist; \
+#         exit 1; \
+#     else \
+#         echo "✅ SUCCESS: embed.js found!"; \
+#     fi
 
-# 6. Start Express server
+# 6. Start server
 WORKDIR /app/apps/widget
 ENV PORT=8080
 CMD ["node", "server.js"]
