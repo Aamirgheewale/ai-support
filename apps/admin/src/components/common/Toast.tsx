@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react'
+import { X } from 'lucide-react'
 
 interface ToastProps {
   message: string
@@ -28,9 +29,7 @@ export default function Toast({ message, type, onClose, duration = 3000 }: Toast
           className="text-gray-400 hover:text-gray-600 focus:outline-none flex-shrink-0 mt-0.5"
           aria-label="Close"
         >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
+          <X className="h-4 w-4" />
         </button>
       </div>
     </div>

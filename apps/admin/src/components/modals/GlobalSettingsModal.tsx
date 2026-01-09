@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { Volume2, VolumeX, Bell, PlayCircle, PauseCircle, Loader2, X } from 'lucide-react'
 import { useAuth, DEFAULT_USER_PREFS, UserPrefs } from '../../hooks/useAuth'
 import { useSoundContext } from '../../context/SoundContext'
 
@@ -187,9 +188,7 @@ export default function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsM
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center">
-                <svg className="w-5 h-5 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-                </svg>
+                <Volume2 className="w-5 h-5 text-indigo-600" />
               </div>
               <div>
                 <h2 className="text-lg font-semibold text-gray-900">Sounds & Notifications</h2>
@@ -201,9 +200,7 @@ export default function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsM
               className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
               aria-label="Close"
             >
-              <svg className="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <X className="w-5 h-5 text-gray-500" />
             </button>
           </div>
 
@@ -214,13 +211,9 @@ export default function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsM
               <div className="flex items-center gap-3">
                 <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${settings.masterEnabled ? 'bg-green-100' : 'bg-gray-200'}`}>
                   {settings.masterEnabled ? (
-                    <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-                    </svg>
+                    <Volume2 className="w-5 h-5 text-green-600" />
                   ) : (
-                    <svg className="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zm11-4l4-4m0 4l-4-4" />
-                    </svg>
+                    <VolumeX className="w-5 h-5 text-gray-500" />
                   )}
                 </div>
                 <div>
@@ -242,9 +235,7 @@ export default function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsM
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
-                  <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                  </svg>
+                  <Bell className="w-5 h-5 text-blue-600" />
                 </div>
                 <div>
                   <h3 className="text-sm font-semibold text-gray-900">Desktop Notifications</h3>
@@ -288,15 +279,9 @@ export default function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsM
                     disabled={!settings.masterEnabled}
                   >
                     {ringPlaying ? (
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10h6v4H9z" />
-                      </svg>
+                      <PauseCircle className="w-4 h-4" />
                     ) : (
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
+                      <PlayCircle className="w-4 h-4" />
                     )}
                   </button>
                 </div>
@@ -346,15 +331,9 @@ export default function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsM
                     disabled={!settings.masterEnabled}
                   >
                     {popPlaying ? (
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10h6v4H9z" />
-                      </svg>
+                      <PauseCircle className="w-4 h-4" />
                     ) : (
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
+                      <PlayCircle className="w-4 h-4" />
                     )}
                   </button>
                 </div>
@@ -382,10 +361,7 @@ export default function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsM
                     title="Test sound"
                     disabled={!settings.masterEnabled}
                   >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
+                    <PlayCircle className="w-4 h-4" />
                   </button>
                 </div>
                 <span className="text-sm text-gray-500">{settings.notificationPopVolume}%</span>
@@ -417,10 +393,7 @@ export default function GlobalSettingsModal({ isOpen, onClose }: GlobalSettingsM
             >
               {isSaving ? (
                 <>
-                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
+                  <Loader2 className="w-4 h-4 animate-spin" />
                   Saving...
                 </>
               ) : (

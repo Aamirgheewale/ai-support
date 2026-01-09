@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import PaginationControls from '../components/common/PaginationControls'
+import { Card, TableContainer, Table, Thead, Th, Tbody, Tr, Td } from '../components/ui'
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000'
 const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET || 'dev-secret-change-me'
@@ -244,30 +245,30 @@ export default function SessionsList() {
   }
 
   return (
-    <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
-      <h1>Customer Support - Sessions</h1>
+    <div className="p-5 max-w-7xl mx-auto">
+      <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Customer Support - Sessions</h1>
       
-      <div style={{ marginTop: '50px', marginBottom: '20px' }}>
+      <div className="mt-12 mb-5">
         {/* Main Search Bar */}
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+        <div className="flex gap-2.5 mb-2.5 flex-wrap items-center">
           <input
             type="text"
             placeholder="Search session ID..."
             value={search}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
-            style={{ padding: '8px', flex: 1, minWidth: '200px', border: '1px solid #ddd', borderRadius: '4px' }}
+            className="flex-1 min-w-[200px] px-2 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
           />
           <input
             type="text"
             placeholder="Full-text search in messages..."
             value={fullTextSearch}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFullTextSearch(e.target.value)}
-            style={{ padding: '8px', flex: 1, minWidth: '200px', border: '1px solid #ddd', borderRadius: '4px' }}
+            className="flex-1 min-w-[200px] px-2 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
           />
           <select
             value={statusFilter}
             onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setStatusFilter(e.target.value)}
-            style={{ padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }}
+            className="px-2 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
           >
             <option value="">All Status</option>
             <option value="active">Active</option>
@@ -276,14 +277,11 @@ export default function SessionsList() {
           </select>
           <button 
             onClick={() => setShowFilters(!showFilters)}
-            style={{ 
-              padding: '8px 16px', 
-              background: showFilters ? '#6c757d' : '#667eea', 
-              color: 'white', 
-              border: 'none', 
-              borderRadius: '4px', 
-              cursor: 'pointer' 
-            }}
+            className={`px-4 py-2 text-white rounded cursor-pointer transition-colors ${
+              showFilters 
+                ? 'bg-gray-600 dark:bg-gray-600 hover:bg-gray-700 dark:hover:bg-gray-700' 
+                : 'bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-700 dark:hover:bg-indigo-600'
+            }`}
           >
             {showFilters ? 'Hide Filters' : 'More Filters'}
           </button>
@@ -291,35 +289,29 @@ export default function SessionsList() {
             <button
               onClick={() => setShowBulkModal(true)}
               disabled={bulkExporting}
-              style={{ 
-                padding: '8px 16px', 
-                background: bulkExporting ? '#ccc' : '#28a745', 
-                color: 'white', 
-                border: 'none', 
-                borderRadius: '4px', 
-                cursor: bulkExporting ? 'not-allowed' : 'pointer' 
-              }}
+              className={`px-4 py-2 text-white rounded transition-colors ${
+                bulkExporting
+                  ? 'bg-gray-400 dark:bg-gray-600 cursor-not-allowed'
+                  : 'bg-green-600 dark:bg-green-500 hover:bg-green-700 dark:hover:bg-green-600 cursor-pointer'
+              }`}
             >
               {bulkExporting ? 'Exporting...' : `Bulk Export (${selectedSessions.size})`}
             </button>
           )}
-          <button onClick={() => loadSessions()} style={{ padding: '8px 16px', background: '#667eea', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+          <button 
+            onClick={() => loadSessions()} 
+            className="px-4 py-2 bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-700 dark:hover:bg-indigo-600 text-white rounded cursor-pointer transition-colors"
+          >
             Refresh
           </button>
         </div>
 
         {/* Advanced Filters Panel */}
         {showFilters && (
-          <div style={{ 
-            padding: '15px', 
-            background: '#f8f9fa', 
-            borderRadius: '4px', 
-            border: '1px solid #ddd',
-            marginBottom: '10px'
-          }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
+          <Card className="p-4 mb-2.5">
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-2.5">
               <div>
-                <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: '500' }}>
+                <label className="block mb-1 text-[13px] font-medium text-gray-700 dark:text-gray-300">
                   Agent ID
                 </label>
                 <input
@@ -327,33 +319,33 @@ export default function SessionsList() {
                   placeholder="Filter by agent..."
                   value={agentFilter}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAgentFilter(e.target.value)}
-                  style={{ padding: '6px', width: '100%', border: '1px solid #ddd', borderRadius: '4px', fontSize: '13px' }}
+                  className="w-full px-1.5 py-1.5 border border-gray-300 dark:border-gray-600 rounded text-[13px] bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
                 />
               </div>
               <div>
-                <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: '500' }}>
+                <label className="block mb-1 text-[13px] font-medium text-gray-700 dark:text-gray-300">
                   Start Date
                 </label>
                 <input
                   type="date"
                   value={startDate}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setStartDate(e.target.value)}
-                  style={{ padding: '6px', width: '100%', border: '1px solid #ddd', borderRadius: '4px', fontSize: '13px' }}
+                  className="w-full px-1.5 py-1.5 border border-gray-300 dark:border-gray-600 rounded text-[13px] bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                 />
               </div>
               <div>
-                <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: '500' }}>
+                <label className="block mb-1 text-[13px] font-medium text-gray-700 dark:text-gray-300">
                   End Date
                 </label>
                 <input
                   type="date"
                   value={endDate}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEndDate(e.target.value)}
-                  style={{ padding: '6px', width: '100%', border: '1px solid #ddd', borderRadius: '4px', fontSize: '13px' }}
+                  className="w-full px-1.5 py-1.5 border border-gray-300 dark:border-gray-600 rounded text-[13px] bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                 />
               </div>
             </div>
-            <div style={{ marginTop: '10px', display: 'flex', gap: '10px' }}>
+            <div className="mt-2.5 flex gap-2.5">
               <button
                 onClick={() => {
                   setAgentFilter('')
@@ -362,205 +354,163 @@ export default function SessionsList() {
                   setFullTextSearch('')
                   setSearch('')
                 }}
-                style={{
-                  padding: '6px 12px',
-                  background: '#6c757d',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontSize: '12px'
-                }}
+                className="px-3 py-1.5 bg-gray-600 dark:bg-gray-600 hover:bg-gray-700 dark:hover:bg-gray-700 text-white rounded cursor-pointer text-xs transition-colors"
               >
                 Clear All Filters
               </button>
             </div>
-          </div>
+          </Card>
         )}
       </div>
 
       {loading ? (
-        <div>Loading...</div>
+        <div className="text-center py-8 text-gray-700 dark:text-gray-300">Loading...</div>
       ) : (
-        <table style={{ width: '100%', background: 'white', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ background: '#f8f9fa', borderBottom: '2px solid #ddd' }}>
-              <th style={{ padding: '12px', textAlign: 'left', width: '40px' }}>
-                <input
-                  type="checkbox"
-                  checked={selectedSessions.size === sessions.length && sessions.length > 0}
-                  onChange={toggleSelectAll}
-                  style={{ cursor: 'pointer' }}
-                />
-              </th>
-              <th style={{ padding: '12px', textAlign: 'left' }}>Session ID</th>
-              <th style={{ padding: '12px', textAlign: 'left' }}>Status</th>
-              <th style={{ padding: '12px', textAlign: 'left' }}>Agent ID</th>
-              <th style={{ padding: '12px', textAlign: 'left' }}>Last Seen</th>
-              <th style={{ padding: '12px', textAlign: 'left' }}>Start Time</th>
-              <th style={{ padding: '12px', textAlign: 'left', width: '120px' }}>Export</th>
-            </tr>
-          </thead>
-          <tbody>
-            {paginatedSessions.map((session) => (
-              <tr
-                key={session.sessionId}
-                onClick={() => navigate(`/sessions/${session.sessionId}`)}
-                style={{ cursor: 'pointer', borderBottom: '1px solid #eee' }}
-                onMouseEnter={(e: React.MouseEvent<HTMLTableRowElement>) => e.currentTarget.style.background = '#f8f9fa'}
-                onMouseLeave={(e: React.MouseEvent<HTMLTableRowElement>) => e.currentTarget.style.background = 'white'}
-              >
-                <td style={{ padding: '12px' }} onClick={(e) => toggleSessionSelection(session.sessionId, e)}>
-                  <input
-                    type="checkbox"
-                    checked={selectedSessions.has(session.sessionId)}
-                    onChange={() => {}}
-                    onClick={(e) => toggleSessionSelection(session.sessionId, e)}
-                    style={{ cursor: 'pointer' }}
-                  />
-                </td>
-                <td style={{ padding: '12px', fontFamily: 'monospace', fontSize: '12px' }}>{session.sessionId}</td>
-                <td style={{ padding: '12px' }}>
-                  <span style={{
-                    padding: '4px 8px',
-                    borderRadius: '4px',
-                    fontSize: '12px',
-                    fontWeight: '500',
-                    background: session.status === 'active' ? '#d4edda' : session.status === 'agent_assigned' ? '#d1ecf1' : session.status === 'closed' ? '#f8d7da' : '#e2e3e5',
-                    color: session.status === 'active' ? '#155724' : session.status === 'agent_assigned' ? '#0c5460' : session.status === 'closed' ? '#721c24' : '#383d41'
-                  }}>
-                    {session.status || 'unknown'}
-                  </span>
-                </td>
-                <td style={{ padding: '12px', fontWeight: session.assignedAgent ? '600' : 'normal' }}>
-                  {session.assignedAgent ? (
-                    <span style={{ color: '#28a745' }}>{session.assignedAgent}</span>
-                  ) : (
-                    <span style={{ color: '#999' }}>-</span>
-                  )}
-                </td>
-                <td style={{ padding: '12px', fontSize: '13px' }}>
-                  {session.lastSeen ? new Date(session.lastSeen).toLocaleString() : '-'}
-                </td>
-                <td style={{ padding: '12px', fontSize: '13px' }}>
-                  {session.startTime ? new Date(session.startTime).toLocaleString() : session.$createdAt ? new Date(session.$createdAt).toLocaleString() : '-'}
-                </td>
-                <td style={{ padding: '12px' }} onClick={(e) => e.stopPropagation()}>
-                  {(hasRole('admin') || hasRole('agent')) ? (
-                    <div style={{ position: 'relative', display: 'inline-block' }}>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          const menu = document.getElementById(`export-menu-${session.sessionId}`)
-                          if (menu) {
-                            menu.style.display = menu.style.display === 'block' ? 'none' : 'block'
-                          }
-                        }}
-                        disabled={exporting === session.sessionId}
-                        style={{
-                          padding: '6px 12px',
-                          background: exporting === session.sessionId ? '#ccc' : '#667eea',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '4px',
-                          cursor: exporting === session.sessionId ? 'not-allowed' : 'pointer',
-                          fontSize: '12px'
-                        }}
-                      >
-                        {exporting === session.sessionId ? '...' : 'Export'}
-                      </button>
-                    <div
-                      id={`export-menu-${session.sessionId}`}
-                      style={{
-                        display: 'none',
-                        position: 'absolute',
-                        top: '100%',
-                        left: 0,
-                        background: 'white',
-                        border: '1px solid #ddd',
-                        borderRadius: '4px',
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                        zIndex: 1000,
-                        minWidth: '120px',
-                        marginTop: '4px'
-                      }}
-                    >
-                      <button
-                        onClick={(e) => {
-                          exportSession(session.sessionId, 'json', e)
-                          const menu = document.getElementById(`export-menu-${session.sessionId}`)
-                          if (menu) menu.style.display = 'none'
-                        }}
-                        style={{
-                          display: 'block',
-                          width: '100%',
-                          padding: '8px 12px',
-                          textAlign: 'left',
-                          background: 'white',
-                          border: 'none',
-                          cursor: 'pointer',
-                          fontSize: '13px'
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = '#f8f9fa'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
-                      >
-                        Export JSON
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          exportSession(session.sessionId, 'csv', e)
-                          const menu = document.getElementById(`export-menu-${session.sessionId}`)
-                          if (menu) menu.style.display = 'none'
-                        }}
-                        style={{
-                          display: 'block',
-                          width: '100%',
-                          padding: '8px 12px',
-                          textAlign: 'left',
-                          background: 'white',
-                          border: 'none',
-                          borderTop: '1px solid #eee',
-                          cursor: 'pointer',
-                          fontSize: '13px'
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = '#f8f9fa'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
-                      >
-                        Export CSV
-                      </button>
-                    </div>
-                  </div>
-                  ) : (
-                    <span style={{ color: '#999', fontSize: '12px' }}>-</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <Card className="overflow-hidden">
+          <TableContainer>
+            <Table>
+              <Thead>
+                <Tr>
+                  <Th className="w-10">
+                    <input
+                      type="checkbox"
+                      checked={selectedSessions.size === sessions.length && sessions.length > 0}
+                      onChange={toggleSelectAll}
+                      className="cursor-pointer"
+                    />
+                  </Th>
+                  <Th>Session ID</Th>
+                  <Th>Status</Th>
+                  <Th>Agent ID</Th>
+                  <Th>Last Seen</Th>
+                  <Th>Start Time</Th>
+                  <Th className="w-32">Export</Th>
+                </Tr>
+              </Thead>
+              <Tbody>
+                {paginatedSessions.map((session) => (
+                  <Tr
+                    key={session.sessionId}
+                    onClick={() => navigate(`/sessions/${session.sessionId}`)}
+                    className="cursor-pointer"
+                  >
+                    <Td onClick={(e) => toggleSessionSelection(session.sessionId, e)}>
+                      <input
+                        type="checkbox"
+                        checked={selectedSessions.has(session.sessionId)}
+                        onChange={() => {}}
+                        onClick={(e) => toggleSessionSelection(session.sessionId, e)}
+                        className="cursor-pointer"
+                      />
+                    </Td>
+                    <Td className="font-mono text-xs">{session.sessionId}</Td>
+                    <Td>
+                      <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
+                        session.status === 'active' 
+                          ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' 
+                          : session.status === 'agent_assigned'
+                          ? 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-800 dark:text-cyan-300'
+                          : session.status === 'closed'
+                          ? 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'
+                          : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300'
+                      }`}>
+                        {session.status || 'unknown'}
+                      </span>
+                    </Td>
+                    <Td className={session.assignedAgent ? 'font-semibold' : ''}>
+                      {session.assignedAgent ? (
+                        <span className="text-green-600 dark:text-green-400">{session.assignedAgent}</span>
+                      ) : (
+                        <span className="text-gray-400 dark:text-gray-500">-</span>
+                      )}
+                    </Td>
+                    <Td className="text-xs">
+                      {session.lastSeen ? new Date(session.lastSeen).toLocaleString() : '-'}
+                    </Td>
+                    <Td className="text-xs">
+                      {session.startTime ? new Date(session.startTime).toLocaleString() : session.$createdAt ? new Date(session.$createdAt).toLocaleString() : '-'}
+                    </Td>
+                    <Td onClick={(e) => e.stopPropagation()}>
+                      {(hasRole('admin') || hasRole('agent')) ? (
+                        <div className="relative inline-block">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              const menu = document.getElementById(`export-menu-${session.sessionId}`)
+                              if (menu) {
+                                menu.style.display = menu.style.display === 'block' ? 'none' : 'block'
+                              }
+                            }}
+                            disabled={exporting === session.sessionId}
+                            className={`px-3 py-1.5 text-xs rounded ${
+                              exporting === session.sessionId
+                                ? 'bg-gray-400 dark:bg-gray-600 cursor-not-allowed'
+                                : 'bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-700 dark:hover:bg-indigo-600 cursor-pointer'
+                            } text-white`}
+                          >
+                            {exporting === session.sessionId ? '...' : 'Export'}
+                          </button>
+                          <div
+                            id={`export-menu-${session.sessionId}`}
+                            className="hidden absolute top-full left-0 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded shadow-lg z-[1000] min-w-[120px] mt-1"
+                          >
+                            <button
+                              onClick={(e) => {
+                                exportSession(session.sessionId, 'json', e)
+                                const menu = document.getElementById(`export-menu-${session.sessionId}`)
+                                if (menu) menu.style.display = 'none'
+                              }}
+                              className="block w-full px-3 py-2 text-left text-sm bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100 border-none cursor-pointer transition-colors"
+                            >
+                              Export JSON
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                exportSession(session.sessionId, 'csv', e)
+                                const menu = document.getElementById(`export-menu-${session.sessionId}`)
+                                if (menu) menu.style.display = 'none'
+                              }}
+                              className="block w-full px-3 py-2 text-left text-sm bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100 border-t border-gray-200 dark:border-gray-700 border-l-0 border-r-0 border-b-0 cursor-pointer transition-colors"
+                            >
+                              Export CSV
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-gray-400 dark:text-gray-500 text-xs">-</span>
+                      )}
+                    </Td>
+                  </Tr>
+                ))}
+              </Tbody>
+            </Table>
+          </TableContainer>
+        </Card>
       )}
 
       {!loading && allSessions.length === 0 && (
-        <div style={{ padding: '40px', textAlign: 'center', color: '#666' }}>
+        <Card className="p-10 text-center">
           {statusFilter ? (
             <>
-              <p>No sessions found with status: <strong>{statusFilter}</strong></p>
+              <p className="text-gray-600 dark:text-gray-400">
+                No sessions found with status: <strong className="text-gray-900 dark:text-white">{statusFilter}</strong>
+              </p>
               <button 
                 onClick={() => setStatusFilter('')} 
-                style={{ marginTop: '10px', padding: '8px 16px', background: '#667eea', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                className="mt-2.5 px-4 py-2 bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-700 dark:hover:bg-indigo-600 text-white rounded cursor-pointer transition-colors"
               >
                 Show All Sessions
               </button>
             </>
           ) : (
-            <p>No sessions found</p>
+            <p className="text-gray-600 dark:text-gray-400">No sessions found</p>
           )}
-        </div>
+        </Card>
       )}
       
       {!loading && allSessions.length > 0 && (
         <>
-          <div style={{ marginTop: '10px', padding: '10px', background: '#f8f9fa', borderRadius: '4px', fontSize: '14px', color: '#666' }}>
+          <div className="mt-2.5 p-2.5 bg-gray-50 dark:bg-gray-800 rounded text-sm text-gray-600 dark:text-gray-400">
             Showing {paginatedSessions.length} session{paginatedSessions.length !== 1 ? 's' : ''} of {allSessions.length} (page {currentPage + 1} of {totalPages})
             {statusFilter && ` with status: ${statusFilter}`}
             {selectedSessions.size > 0 && ` • ${selectedSessions.size} selected`}

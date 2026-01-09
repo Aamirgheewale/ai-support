@@ -2,6 +2,8 @@ import { BrowserRouter, Routes, Route, Link, Navigate, useLocation, useNavigate 
 import { AuthProvider, useAuth, ProtectedRoute } from './hooks/useAuth'
 import { NotificationProvider, useNotifications } from './context/NotificationContext'
 import { SoundProvider } from './context/SoundContext'
+import { ThemeProvider, useTheme } from './context/ThemeContext'
+import { Shirt, Sun, Moon, ChevronRight, ChevronLeft, MessageSquare, Video, Users, FileText, Bell, BarChart3, CheckCircle, Lock, Check, LogOut } from 'lucide-react'
 import SessionsList from './pages/SessionsList'
 import ConversationView from './pages/ConversationView'
 import AnalyticsPage from './pages/AnalyticsPage'
@@ -28,10 +30,12 @@ interface NavigationProps {
 function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
   const { hasRole, user, isAdmin, loading, signout } = useAuth()
   const { unreadCount } = useNotifications()
+  const { theme, setTheme } = useTheme()
   const location = useLocation()
   const navigate = useNavigate()
   const [isPendingQueriesOpen, setIsPendingQueriesOpen] = useState(false)
   const [pendingCount, setPendingCount] = useState(0)
+  const [isThemePopoverOpen, setIsThemePopoverOpen] = useState(false)
   const prevPathnameRef = useRef<string>('')
 
   const handleLogout = async () => {
@@ -142,21 +146,17 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
   return (
     <>
       {/* Sidebar */}
-      <aside className={`fixed left-0 top-0 h-screen bg-white border-r border-gray-200 flex flex-col z-50 hidden lg:flex transition-all duration-300 ${isSidebarCollapsed ? 'w-20 overflow-visible' : 'w-64'} group`}>
+      <aside className={`fixed left-0 top-0 h-screen bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 flex flex-col z-50 hidden lg:flex transition-all duration-300 ${isSidebarCollapsed ? 'w-20 overflow-visible' : 'w-64'} group`}>
         {/* Toggle Button - Centered vertically */}
         <button
           onClick={toggleSidebar}
-          className="absolute -right-3 top-1/2 -translate-y-1/2 z-10 w-6 h-6 bg-white border border-gray-300 rounded-full flex items-center justify-center shadow-md hover:bg-gray-50 hover:shadow-lg transition-all duration-200"
+          className="absolute -right-3 top-1/2 -translate-y-1/2 z-10 w-6 h-6 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-full flex items-center justify-center shadow-md hover:bg-gray-50 dark:hover:bg-gray-700 hover:shadow-lg transition-all duration-200"
           aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           {isSidebarCollapsed ? (
-            <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
+            <ChevronRight className="w-4 h-4 text-gray-600 dark:text-gray-300" />
           ) : (
-            <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
+            <ChevronLeft className="w-4 h-4 text-gray-600 dark:text-gray-300" />
           )}
         </button>
         
@@ -168,14 +168,12 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
           <Link
             to="/sessions"
             className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/sessions')
-              ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-700'
-              : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+              ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
+              : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
               } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
             title={isSidebarCollapsed ? 'Sessions' : ''}
           >
-            <svg className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-            </svg>
+            <MessageSquare className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
             {!isSidebarCollapsed && <span>Sessions</span>}
             {/* Tooltip when collapsed */}
             {isSidebarCollapsed && (
@@ -188,14 +186,12 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
           <Link
             to="/live"
             className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/live')
-              ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-700'
-              : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+              ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
+              : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
               } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
             title={isSidebarCollapsed ? 'Live View' : ''}
           >
-            <svg className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-            </svg>
+            <Video className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
             {!isSidebarCollapsed && <span>Live View</span>}
             {/* Tooltip when collapsed */}
             {isSidebarCollapsed && (
@@ -210,14 +206,12 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
             <Link
               to="/users"
               className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/users')
-                ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-700'
-                : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
+                : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
                 } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
               title={isSidebarCollapsed ? 'Users' : ''}
             >
-              <svg className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-              </svg>
+              <Users className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
               {!isSidebarCollapsed && <span>Users</span>}
               {/* Tooltip when collapsed */}
               {isSidebarCollapsed && (
@@ -233,14 +227,12 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
             <Link
               to="/agents-online"
               className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/agents-online')
-                ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-700'
-                : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
+                : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
                 } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
               title={isSidebarCollapsed ? 'Agents Online' : ''}
             >
-              <svg className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-              </svg>
+              <Users className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
               {!isSidebarCollapsed && <span>Agents Online</span>}
               {/* Tooltip when collapsed */}
               {isSidebarCollapsed && (
@@ -266,16 +258,14 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
                   }
                 }}
                 className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'justify-between px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isPendingQueriesActive
-                  ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-700'
-                  : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                  ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
+                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
                   } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
                 title={!isSidebarCollapsed ? (pendingCount > 0 ? `${pendingCount} Pending Queries` : 'Pending Queries') : undefined}
               >
                 <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center relative' : 'flex-1 min-w-0'}`}>
                   <div className="relative flex-shrink-0">
-                    <svg className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
+                    <FileText className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
                     {/* Slack-style badge at top-right corner when collapsed */}
                     {isSidebarCollapsed && pendingCount > 0 && (
                       <span className="absolute top-0 right-0 -translate-y-1/2 translate-x-1/2 bg-red-500 text-white rounded-full flex items-center justify-center shadow-md border-2 border-white min-w-[16px] h-4 px-1 text-[10px] font-bold leading-tight">
@@ -296,14 +286,9 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
                   )}
                 </div>
                 {!isSidebarCollapsed && (
-                  <svg
+                  <ChevronRight
                     className={`w-4 h-4 transition-transform duration-200 flex-shrink-0 ${isPendingQueriesOpen ? 'transform rotate-90' : ''}`}
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
+                  />
                 )}
                 {/* Enhanced tooltip when collapsed - exact same styling as profile tooltip */}
                 {isSidebarCollapsed && (
@@ -320,8 +305,8 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
                   <Link
                     to="/pending-queries?status=pending"
                     className={`flex items-center px-4 py-2 text-xs font-medium rounded-lg transition-colors ${location.pathname === '/pending-queries' && (location.search === '' || location.search === '?status=pending')
-                      ? 'bg-blue-50 text-blue-700'
-                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                      ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                      : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
                       }`}
                   >
                     <span className="ml-2">Pending</span>
@@ -329,8 +314,8 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
                   <Link
                     to="/pending-queries?status=resolved"
                     className={`flex items-center px-4 py-2 text-xs font-medium rounded-lg transition-colors ${location.pathname === '/pending-queries' && location.search === '?status=resolved'
-                      ? 'bg-blue-50 text-blue-700'
-                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                      ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                      : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
                       }`}
                   >
                     <span className="ml-2">Resolved</span>
@@ -345,16 +330,14 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
             <Link
               to="/notifications"
               className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'justify-between px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/notifications')
-                ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-700'
-                : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
+                : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
                 } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
               title={!isSidebarCollapsed ? (unreadCount > 0 ? `${unreadCount} Unread Notifications` : 'Notifications') : undefined}
             >
               <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center relative' : ''}`}>
                 <div className="relative">
-                  <svg className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                  </svg>
+                  <Bell className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
                   {/* Slack-style badge at top-right corner when collapsed */}
                   {isSidebarCollapsed && unreadCount > 0 && (
                     <span className="absolute top-0 right-0 -translate-y-1/2 translate-x-1/2 bg-blue-500 text-white rounded-full flex items-center justify-center shadow-md border-2 border-white min-w-[16px] h-4 px-1 text-[10px] font-bold leading-tight">
@@ -387,14 +370,12 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
             <Link
               to="/analytics"
               className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/analytics')
-                ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-700'
-                : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
+                : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
                 } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
               title={isSidebarCollapsed ? 'Analytics' : ''}
             >
-              <svg className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
+              <BarChart3 className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
               {!isSidebarCollapsed && <span>Analytics</span>}
               {/* Tooltip when collapsed */}
               {isSidebarCollapsed && (
@@ -410,14 +391,12 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
             <Link
               to="/accuracy"
               className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/accuracy')
-                ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-700'
-                : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
+                : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
                 } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
               title={isSidebarCollapsed ? 'Accuracy' : ''}
             >
-              <svg className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+              <CheckCircle className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
               {!isSidebarCollapsed && <span>Accuracy</span>}
               {/* Tooltip when collapsed */}
               {isSidebarCollapsed && (
@@ -433,14 +412,12 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
             <Link
               to="/encryption"
               className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/encryption')
-                ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-700'
-                : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
+                : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
                 } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
               title={isSidebarCollapsed ? 'Encryption' : ''}
             >
-              <svg className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-              </svg>
+              <Lock className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
               {!isSidebarCollapsed && <span>Encryption</span>}
               {/* Tooltip when collapsed */}
               {isSidebarCollapsed && (
@@ -452,16 +429,69 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
           )}
         </nav>
 
+        {/* Theme Toggle - Only visible when collapsed */}
+        {isSidebarCollapsed && (
+          <div className="border-t border-gray-200 dark:border-gray-800 p-4">
+            <div className="relative group/item">
+              <button
+                onMouseEnter={() => setIsThemePopoverOpen(true)}
+                onMouseLeave={() => setIsThemePopoverOpen(false)}
+                className="w-full flex items-center justify-center px-2 py-3 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-all duration-200 hover:scale-110"
+              >
+                <Shirt className="w-5 h-5 transition-transform duration-200 group-hover/item:scale-125" />
+              </button>
+              
+              {/* Theme Popover - Shows on hover */}
+              {isThemePopoverOpen && (
+                <div 
+                  className="absolute left-full ml-2 top-0 w-40 bg-gray-900 dark:bg-gray-800 rounded-lg shadow-lg border border-gray-700 z-50 py-1"
+                  onMouseEnter={() => setIsThemePopoverOpen(true)}
+                  onMouseLeave={() => setIsThemePopoverOpen(false)}
+                >
+                  <button
+                    onClick={() => {
+                      setTheme('light')
+                      setIsThemePopoverOpen(false)
+                    }}
+                    className={`w-full px-3 py-2 flex items-center gap-2 text-sm text-white dark:text-gray-300 hover:bg-gray-800 dark:hover:bg-gray-700 transition-colors ${
+                      theme === 'light' ? 'bg-gray-800 dark:bg-gray-700' : ''
+                    }`}
+                  >
+                    <Sun className={`w-4 h-4 ${theme === 'light' ? 'text-yellow-400' : 'text-gray-400'}`} />
+                    <span>Light</span>
+                    {theme === 'light' && (
+                      <Check className="w-4 h-4 ml-auto text-yellow-400" />
+                    )}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setTheme('dark')
+                      setIsThemePopoverOpen(false)
+                    }}
+                    className={`w-full px-3 py-2 flex items-center gap-2 text-sm text-white dark:text-gray-300 hover:bg-gray-800 dark:hover:bg-gray-700 transition-colors ${
+                      theme === 'dark' ? 'bg-gray-800 dark:bg-gray-700' : ''
+                    }`}
+                  >
+                    <Moon className={`w-4 h-4 ${theme === 'dark' ? 'text-blue-400' : 'text-gray-400'}`} />
+                    <span>Dark</span>
+                    {theme === 'dark' && (
+                      <Check className="w-4 h-4 ml-auto text-blue-400" />
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Logout Button - Fixed at bottom */}
-        <div className="border-t border-gray-200 p-4">
+        <div className="border-t border-gray-200 dark:border-gray-800 p-4">
           <button
             onClick={handleLogout}
-            className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900 rounded-lg transition-all duration-200 ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
+            className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white rounded-lg transition-all duration-200 ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
             title={isSidebarCollapsed ? 'Logout' : ''}
           >
-            <svg className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-            </svg>
+            <LogOut className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
             {!isSidebarCollapsed && <span>Logout</span>}
             {/* Tooltip when collapsed */}
             {isSidebarCollapsed && (
@@ -481,9 +511,7 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
           <div className="flex items-center gap-2">
             {unreadCount > 0 && (
               <Link to="/notifications" className="relative p-2 hover:bg-gray-100 rounded-lg">
-                <svg className="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                </svg>
+                <Bell className="w-5 h-5 text-gray-500" />
                 <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[16px] h-4 px-1 text-[10px] font-bold text-white bg-blue-500 rounded-full">
                   {unreadCount}
                 </span>
@@ -607,38 +635,40 @@ function App() {
   }
 
   return (
-    <AuthProvider>
-      <SoundProvider>
-        <NotificationProvider>
-          <BrowserRouter>
-            <div className="min-h-screen bg-gray-50">
-              <Navigation isSidebarCollapsed={isSidebarCollapsed} toggleSidebar={toggleSidebar} />
-              <AudioNotifications />
-              <StopRingButton />
+    <ThemeProvider>
+      <AuthProvider>
+        <SoundProvider>
+          <NotificationProvider>
+            <BrowserRouter>
+              <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+                <Navigation isSidebarCollapsed={isSidebarCollapsed} toggleSidebar={toggleSidebar} />
+                <AudioNotifications />
+                <StopRingButton />
 
-              {/* Main Content Area */}
-              <main className={`min-h-screen transition-all duration-300 ${isSidebarCollapsed ? 'lg:ml-20' : 'lg:ml-64'}`}>
-                <Routes>
-                  <Route path="/" element={<Navigate to="/auth" replace />} />
-                  <Route path="/auth" element={<AuthPage />} />
-                  <Route path="/sessions" element={<ProtectedRoute><SessionsList /></ProtectedRoute>} />
-                  <Route path="/sessions/:sessionId" element={<ProtectedRoute><ConversationView /></ProtectedRoute>} />
-                  <Route path="/live" element={<ProtectedRoute><LiveVisitors /></ProtectedRoute>} />
-                  <Route path="/pending-queries" element={<ProtectedRoute requiredRole={['admin', 'agent']}><PendingQueries /></ProtectedRoute>} />
-                  <Route path="/analytics" element={<ProtectedRoute requiredRole="admin"><AnalyticsPage /></ProtectedRoute>} />
-                  <Route path="/accuracy" element={<ProtectedRoute requiredRole="admin"><AccuracyPage /></ProtectedRoute>} />
-                  <Route path="/users" element={<ProtectedRoute><UsersRoute /></ProtectedRoute>} />
-                  <Route path="/agents-online" element={<ProtectedRoute requiredRole={['admin', 'agent']}><AgentsOnline /></ProtectedRoute>} />
-                  <Route path="/signup" element={<ProtectedRoute requiredRole="admin"><SignupPage /></ProtectedRoute>} />
-                  <Route path="/encryption" element={<ProtectedRoute requiredRole="admin"><EncryptionPage /></ProtectedRoute>} />
-                  <Route path="/notifications" element={<ProtectedRoute requiredRole={['admin', 'agent']}><NotificationsPage /></ProtectedRoute>} />
-                </Routes>
-              </main>
-            </div>
-          </BrowserRouter>
-        </NotificationProvider>
-      </SoundProvider>
-    </AuthProvider>
+                {/* Main Content Area */}
+                <main className={`min-h-screen transition-all duration-300 text-gray-900 dark:text-white ${isSidebarCollapsed ? 'lg:ml-20' : 'lg:ml-64'}`}>
+                  <Routes>
+                    <Route path="/" element={<Navigate to="/auth" replace />} />
+                    <Route path="/auth" element={<AuthPage />} />
+                    <Route path="/sessions" element={<ProtectedRoute><SessionsList /></ProtectedRoute>} />
+                    <Route path="/sessions/:sessionId" element={<ProtectedRoute><ConversationView /></ProtectedRoute>} />
+                    <Route path="/live" element={<ProtectedRoute><LiveVisitors /></ProtectedRoute>} />
+                    <Route path="/pending-queries" element={<ProtectedRoute requiredRole={['admin', 'agent']}><PendingQueries /></ProtectedRoute>} />
+                    <Route path="/analytics" element={<ProtectedRoute requiredRole="admin"><AnalyticsPage /></ProtectedRoute>} />
+                    <Route path="/accuracy" element={<ProtectedRoute requiredRole="admin"><AccuracyPage /></ProtectedRoute>} />
+                    <Route path="/users" element={<ProtectedRoute><UsersRoute /></ProtectedRoute>} />
+                    <Route path="/agents-online" element={<ProtectedRoute requiredRole={['admin', 'agent']}><AgentsOnline /></ProtectedRoute>} />
+                    <Route path="/signup" element={<ProtectedRoute requiredRole="admin"><SignupPage /></ProtectedRoute>} />
+                    <Route path="/encryption" element={<ProtectedRoute requiredRole="admin"><EncryptionPage /></ProtectedRoute>} />
+                    <Route path="/notifications" element={<ProtectedRoute requiredRole={['admin', 'agent']}><NotificationsPage /></ProtectedRoute>} />
+                  </Routes>
+                </main>
+              </div>
+            </BrowserRouter>
+          </NotificationProvider>
+        </SoundProvider>
+      </AuthProvider>
+    </ThemeProvider>
   )
 }
 

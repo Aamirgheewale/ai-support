@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { MessageSquare, UploadCloud, Download, X } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
 import Toast from '../common/Toast'
 import * as XLSX from 'xlsx'
@@ -399,9 +400,7 @@ export default function CannedResponsesModal({ isOpen, onClose }: CannedResponse
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center">
-                  <svg className="w-5 h-5 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-                  </svg>
+                  <MessageSquare className="w-5 h-5 text-indigo-600" />
                 </div>
                 <div>
                   <h2 className="text-lg font-semibold text-gray-900">Canned Responses</h2>
@@ -423,9 +422,7 @@ export default function CannedResponsesModal({ isOpen, onClose }: CannedResponse
                     className="px-3 py-1.5 text-sm font-medium text-green-600 hover:bg-green-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                     title="Import canned responses from Excel file"
                   >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                    </svg>
+                    <UploadCloud className="w-4 h-4" />
                     {importing ? 'Importing...' : 'Import Excel'}
                   </button>
                   <input
@@ -442,9 +439,7 @@ export default function CannedResponsesModal({ isOpen, onClose }: CannedResponse
                   aria-label="Close"
                   disabled={importing}
                 >
-                  <svg className="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                  <X className="w-5 h-5 text-gray-500" />
                 </button>
               </div>
             </div>
@@ -460,9 +455,7 @@ export default function CannedResponsesModal({ isOpen, onClose }: CannedResponse
                   className="text-xs text-blue-600 hover:text-blue-800 hover:underline cursor-pointer font-medium flex items-center gap-1 ml-4 whitespace-nowrap"
                   title="Download Excel template with sample data"
                 >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
+                  <Download className="w-4 h-4" />
                   Download Sample Template
                 </button>
               </div>

@@ -5,6 +5,7 @@ import TimeSeriesChart from '../components/analytics/TimeSeriesChart';
 import HistogramChart from '../components/analytics/HistogramChart';
 import ResponseTimeChart from '../components/analytics/ResponseTimeChart';
 import AgentPerformanceTable from '../components/analytics/AgentPerformanceTable';
+import { Card } from '../components/ui';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
 const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET || 'dev-secret-change-me';
@@ -180,10 +181,10 @@ export default function AnalyticsPage() {
     return (
       <div className="p-6">
         <div className="animate-pulse space-y-4">
-          <div className="h-8 bg-gray-200 rounded w-1/4"></div>
+          <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/4"></div>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             {[1, 2, 3, 4].map(i => (
-              <div key={i} className="h-24 bg-gray-200 rounded"></div>
+              <div key={i} className="h-24 bg-gray-200 dark:bg-gray-700 rounded"></div>
             ))}
           </div>
         </div>
@@ -194,30 +195,30 @@ export default function AnalyticsPage() {
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="mb-6">
-        <h1 className="text-3xl font-bold mb-4">Analytics Dashboard</h1>
+        <h1 className="text-3xl font-bold mb-4 text-gray-900 dark:text-white">Analytics Dashboard</h1>
         
         <div className="flex flex-wrap items-center gap-4 mb-4">
           <div>
-            <label className="block text-sm font-medium mb-1">
-              From Date {!fromDate && !toDate && <span className="text-gray-500 text-xs">(empty = all data)</span>}
+            <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">
+              From Date {!fromDate && !toDate && <span className="text-gray-500 dark:text-gray-400 text-xs">(empty = all data)</span>}
             </label>
             <input
               type="date"
               value={fromDate}
               onChange={(e) => setFromDate(e.target.value)}
-              className="border rounded px-3 py-2"
+              className="border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
             />
           </div>
           
           <div>
-            <label className="block text-sm font-medium mb-1">
-              To Date {!fromDate && !toDate && <span className="text-gray-500 text-xs">(empty = all data)</span>}
+            <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">
+              To Date {!fromDate && !toDate && <span className="text-gray-500 dark:text-gray-400 text-xs">(empty = all data)</span>}
             </label>
             <input
               type="date"
               value={toDate}
               onChange={(e) => setToDate(e.target.value)}
-              className="border rounded px-3 py-2"
+              className="border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
             />
           </div>
           
@@ -228,7 +229,7 @@ export default function AnalyticsPage() {
                 setToDate('');
                 setTimeout(fetchMetrics, 100);
               }}
-              className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 text-sm"
+              className="bg-gray-500 dark:bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-600 dark:hover:bg-gray-700 text-sm transition-colors"
               title="Clear dates to show all data"
             >
               Show All
@@ -236,11 +237,11 @@ export default function AnalyticsPage() {
           </div>
           
           <div>
-            <label className="block text-sm font-medium mb-1">Interval</label>
+            <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Interval</label>
             <select
               value={interval}
               onChange={(e) => setInterval(e.target.value as 'day' | 'week' | 'month')}
-              className="border rounded px-3 py-2"
+              className="border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
             >
               <option value="day">Day</option>
               <option value="week">Week</option>
@@ -251,20 +252,20 @@ export default function AnalyticsPage() {
           <div className="flex items-end gap-2">
             <button
               onClick={fetchMetrics}
-              className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+              className="bg-blue-600 dark:bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors"
             >
               Refresh
             </button>
             <button
               onClick={handleExportCSV}
-              className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+              className="bg-green-600 dark:bg-green-500 text-white px-4 py-2 rounded hover:bg-green-700 dark:hover:bg-green-600 transition-colors"
             >
               Download CSV
             </button>
           </div>
           
           {lastUpdated && (
-            <div className="text-sm text-gray-500">
+            <div className="text-sm text-gray-500 dark:text-gray-400">
               Last updated: {lastUpdated.toLocaleTimeString()}
               {overview?.cached && ' (cached)'}
             </div>
@@ -272,7 +273,7 @@ export default function AnalyticsPage() {
         </div>
         
         {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+          <div className="bg-red-100 dark:bg-red-900/20 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-200 px-4 py-3 rounded mb-4">
             {error}
           </div>
         )}
@@ -306,44 +307,44 @@ export default function AnalyticsPage() {
       <div className="space-y-6">
         {/* Messages Over Time */}
         {timeSeries.length > 0 && (
-          <div className="bg-white p-4 rounded-lg shadow">
-            <h2 className="text-xl font-semibold mb-4">Messages Over Time</h2>
+          <Card className="p-4">
+            <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">Messages Over Time</h2>
             <TimeSeriesChart data={timeSeries} />
-          </div>
+          </Card>
         )}
 
         {/* Confidence Histogram */}
         {confidenceHistogram && confidenceHistogram.histogram && confidenceHistogram.histogram.length > 0 && (
-          <div className="bg-white p-4 rounded-lg shadow">
-            <h2 className="text-xl font-semibold mb-4">
+          <Card className="p-4">
+            <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">
               AI Confidence Distribution ({confidenceHistogram.totalMessages} bot messages)
             </h2>
             <HistogramChart data={confidenceHistogram.histogram} />
-          </div>
+          </Card>
         )}
 
         {/* Response Times */}
         {responseTimes && responseTimes.percentiles && Object.keys(responseTimes.percentiles).length > 0 && (
-          <div className="bg-white p-4 rounded-lg shadow">
-            <h2 className="text-xl font-semibold mb-4">
+          <Card className="p-4">
+            <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">
               Response Time Percentiles ({responseTimes.count || 0} responses)
             </h2>
             <ResponseTimeChart data={responseTimes} />
-          </div>
+          </Card>
         )}
 
         {/* Agent Performance */}
         {agentPerformance.length > 0 && (
-          <div className="bg-white p-4 rounded-lg shadow">
-            <h2 className="text-xl font-semibold mb-4">Agent Performance</h2>
+          <Card className="p-4">
+            <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">Agent Performance</h2>
             <AgentPerformanceTable data={agentPerformance} />
-          </div>
+          </Card>
         )}
 
         {/* Session Statuses */}
         {sessionStatuses.length > 0 && (
-          <div className="bg-white p-4 rounded-lg shadow">
-            <h2 className="text-xl font-semibold mb-4">Session Statuses</h2>
+          <Card className="p-4">
+            <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">Session Statuses</h2>
             <ResponsiveContainer width="100%" height={350}>
               <PieChart>
                 <Pie
@@ -371,7 +372,7 @@ export default function AnalyticsPage() {
                 </Pie>
                 <Tooltip 
                   formatter={(value: number, name: string) => [`${value} sessions`, name]}
-                  contentStyle={{ borderRadius: '8px', border: '1px solid #e5-7eb' }}
+                  contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', backgroundColor: '#fff' }}
                 />
               </PieChart>
             </ResponsiveContainer>
@@ -383,13 +384,13 @@ export default function AnalyticsPage() {
                     className="w-4 h-4 rounded" 
                     style={{ backgroundColor: status.value > 0 ? COLORS[index % COLORS.length] : '#e5e7eb' }}
                   />
-                  <span className="text-sm text-gray-700">
+                  <span className="text-sm text-gray-700 dark:text-gray-300">
                     {status.name} ({status.value})
                   </span>
                 </div>
               ))}
             </div>
-          </div>
+          </Card>
         )}
       </div>
     </div>

@@ -31,6 +31,9 @@ importers:
       fabric:
         specifier: ^7.1.0
         version: 7.1.0
+      lucide-react:
+        specifier: ^0.562.0
+        version: 0.562.0(react@18.3.1)
       postcss:
         specifier: ^8.5.6
         version: 8.5.6

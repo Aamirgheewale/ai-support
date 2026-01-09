@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useAuth } from '../../hooks/useAuth'
 import { useNotifications } from '../../context/NotificationContext'
+import { ChevronDown } from 'lucide-react'
 import NotificationBell from './NotificationBell'
 import UserProfileMenu from './UserProfileMenu'
 
@@ -133,18 +134,13 @@ export default function SidebarHeader({ isCollapsed = false }: SidebarHeaderProp
           {/* First Name - Hidden when collapsed */}
           {!isCollapsed && (
             <>
-              <span className="text-medium font-medium text-gray-700 group-hover:text-gray-900">
+              <span className="text-medium font-medium text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-white">
                 {firstName}
               </span>
               {/* Chevron */}
-              <svg 
-                className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${isProfileMenuOpen ? 'rotate-180' : ''}`}
-                fill="none" 
-                viewBox="0 0 24 24" 
-                stroke="currentColor"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
+              <ChevronDown 
+                className={`w-4 h-4 text-gray-400 dark:text-gray-500 transition-transform duration-200 ${isProfileMenuOpen ? 'rotate-180' : ''}`}
+              />
             </>
           )}
           {/* Enhanced tooltip when collapsed */}

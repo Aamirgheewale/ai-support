@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Volume2, ChevronDown } from 'lucide-react'
 import { useSound } from '../../hooks/useSound'
 
 /**
@@ -56,9 +57,7 @@ export default function AudioControls() {
           onClick={() => setAudioEnabled(true)}
           className="flex items-center justify-center w-full px-3 py-2 text-sm font-medium text-gray-700 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
         >
-          <svg className="w-4 h-4 mr-2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-          </svg>
+          <Volume2 className="w-4 h-4 mr-2 text-gray-500" />
           <span>Enable Audio</span>
         </button>
       ) : (
@@ -85,14 +84,9 @@ export default function AudioControls() {
               className="w-full px-3 py-2 text-xs font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 transition-colors flex items-center justify-between"
             >
               <span>Test Sounds</span>
-              <svg 
+              <ChevronDown 
                 className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} 
-                fill="none" 
-                viewBox="0 0 24 24" 
-                stroke="currentColor"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
+              />
             </button>
             
             {isExpanded && (

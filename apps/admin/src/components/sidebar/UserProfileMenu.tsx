@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../../hooks/useAuth'
+import { useTheme } from '../../context/ThemeContext'
 import EditProfileModal from '../modals/EditProfileModal'
 import GlobalSettingsModal from '../modals/GlobalSettingsModal'
 import CannedResponsesModal from '../modals/CannedResponsesModal'
+import { Sun, Moon, Palette, Loader2, MoreVertical, Volume2, MessageSquare, Check } from 'lucide-react'
 
 interface UserProfileMenuProps {
   onClose: () => void
@@ -16,14 +18,18 @@ type UserStatus = 'online' | 'away'
  */
 export default function UserProfileMenu({ onClose, onModalStateChange }: UserProfileMenuProps) {
   const { user, updateUserStatus, hasRole } = useAuth()
+  const { theme, setTheme } = useTheme()
   const [status, setStatus] = useState<UserStatus>('online')
   const [isStatusMenuOpen, setIsStatusMenuOpen] = useState(false)
+  const [isThemeMenuOpen, setIsThemeMenuOpen] = useState(false)
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isCannedResponsesOpen, setIsCannedResponsesOpen] = useState(false)
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
   const statusButtonRef = useRef<HTMLButtonElement>(null)
+  const themeButtonRef = useRef<HTMLButtonElement>(null)
   const [statusMenuPosition, setStatusMenuPosition] = useState({ top: 0, left: 0 })
+  const [themeMenuPosition, setThemeMenuPosition] = useState({ top: 0, left: 0 })
 
   // Track if any modal is open and notify parent
   const hasOpenModal = isEditProfileOpen || isSettingsOpen || isCannedResponsesOpen
@@ -105,10 +111,22 @@ export default function UserProfileMenu({ onClose, onModalStateChange }: UserPro
       const rect = statusButtonRef.current.getBoundingClientRect()
       setStatusMenuPosition({
         top: rect.top,
-        left: rect.right + 8 // 8px gap to the right of the button
+        left: rect.right - 10 // 8px gap to the right of the button
       })
     }
     setIsStatusMenuOpen(!isStatusMenuOpen)
+  }
+
+  // Calculate position for theme menu when opening
+  const handleThemeMenuToggle = () => {
+    if (!isThemeMenuOpen && themeButtonRef.current) {
+      const rect = themeButtonRef.current.getBoundingClientRect()
+      setThemeMenuPosition({
+        top: rect.top,
+        left: rect.right - 10 // 8px gap to the right of the button
+      })
+    }
+    setIsThemeMenuOpen(!isThemeMenuOpen)
   }
 
   if (!user) return null
@@ -121,9 +139,9 @@ export default function UserProfileMenu({ onClose, onModalStateChange }: UserPro
     <>
       {/* Menu Container - Fixed positioning with breathing room */}
       {/* Higher z-index to stay above modal backdrops but below modal content */}
-      <div className="fixed left-3 top-[70px] w-64 bg-white rounded-xl shadow-2xl border border-gray-100 z-[10001]">
+      <div className="fixed left-3 top-[70px] w-64 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-100 dark:border-gray-700 z-[10001]">
         {/* Row 1: Identity - Spacious layout */}
-        <div className="p-5 border-b border-gray-100">
+        <div className="p-5 border-b border-gray-100 dark:border-gray-700">
           <div className="flex items-start gap-4">
             {/* Large Avatar */}
             <div className="relative shrink-0">
@@ -131,12 +149,12 @@ export default function UserProfileMenu({ onClose, onModalStateChange }: UserPro
                 {initials}
               </div>
               {/* Status dot on avatar */}
-              <div className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 ${statusInfo.color} rounded-full border-2 border-white`} />
+              <div className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 ${statusInfo.color} rounded-full border-2 border-white dark:border-gray-800`} />
             </div>
 
             {/* Name and Edit Button - Stacked vertically */}
             <div className="flex-1 flex flex-col gap-2 min-w-0">
-              <h4 className="text-base font-semibold text-gray-900 break-words leading-tight">
+              <h4 className="text-base font-semibold text-gray-900 dark:text-white break-words leading-tight">
                 {displayName}
               </h4>
               <button
@@ -146,7 +164,7 @@ export default function UserProfileMenu({ onClose, onModalStateChange }: UserPro
                   setIsCannedResponsesOpen(false)
                   setIsEditProfileOpen(true)
                 }}
-                className="self-start px-3 py-1 text-xs font-medium text-gray-600 border border-gray-300 hover:bg-gray-50 hover:border-gray-400 rounded transition-colors"
+                className="self-start px-3 py-1 text-xs font-medium text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-400 dark:hover:border-gray-500 rounded transition-colors"
               >
                 Edit Profile
               </button>
@@ -155,29 +173,24 @@ export default function UserProfileMenu({ onClose, onModalStateChange }: UserPro
         </div>
 
         {/* Row 2: Status */}
-        <div className="px-5 py-3 border-b border-gray-100">
+        <div className="px-5 py-3 border-b border-gray-100 dark:border-gray-700">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="text-sm">{statusInfo.emoji}</span>
-              <span className="text-sm font-medium text-gray-700">{statusInfo.label}</span>
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{statusInfo.label}</span>
             </div>
 
             {/* Status Menu Trigger */}
             <button
               ref={statusButtonRef}
               onClick={handleStatusMenuToggle}
-              className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+              className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
               disabled={isUpdatingStatus}
             >
               {isUpdatingStatus ? (
-                <svg className="w-5 h-5 text-gray-400 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
+                <Loader2 className="w-5 h-5 text-gray-400 animate-spin" />
               ) : (
-                <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-                </svg>
+                <MoreVertical className="w-5 h-5 text-gray-400" />
               )}
             </button>
           </div>
@@ -192,11 +205,9 @@ export default function UserProfileMenu({ onClose, onModalStateChange }: UserPro
               setIsCannedResponsesOpen(false)
               setIsSettingsOpen(true)
             }}
-            className="w-full px-3 py-2.5 flex items-center gap-3 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
+            className="w-full px-3 py-2.5 flex items-center gap-3 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors"
           >
-            <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-            </svg>
+            <Volume2 className="w-5 h-5 text-gray-400" />
             <span>Sounds & Notifications</span>
           </button>
 
@@ -209,45 +220,84 @@ export default function UserProfileMenu({ onClose, onModalStateChange }: UserPro
                 setIsSettingsOpen(false)
                 setIsCannedResponsesOpen(true)
               }}
-              className="w-full px-3 py-2.5 flex items-center gap-3 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
+              className="w-full px-3 py-2.5 flex items-center gap-3 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors"
             >
-              <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-              </svg>
+              <MessageSquare className="w-5 h-5 text-gray-400" />
               <span>Canned Responses</span>
             </button>
           )}
+
+          {/* Theme Toggle */}
+          <button
+            ref={themeButtonRef}
+            onClick={handleThemeMenuToggle}
+            className="w-full px-3 py-2.5 flex items-center gap-3 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors"
+          >
+            <Palette className="w-5 h-5 text-gray-400 dark:text-gray-500" />
+            <span>Theme</span>
+          </button>
         </div>
       </div>
 
       {/* Status Submenu - Fixed positioning to overflow outside sidebar */}
       {isStatusMenuOpen && (
         <div 
-          className="fixed w-40 bg-white rounded-lg shadow-xl border border-gray-200 z-[9999]"
+          className="fixed w-40 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-[10002]"
           style={{ top: statusMenuPosition.top, left: statusMenuPosition.left }}
         >
           <button
-                    onClick={() => handleUpdateStatus('online')}
-            className={`w-full px-3 py-2.5 flex items-center gap-2 text-sm hover:bg-gray-50 transition-colors ${status === 'online' ? 'bg-gray-50' : ''}`}
+            onClick={() => handleUpdateStatus('online')}
+            className={`w-full px-3 py-2.5 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${status === 'online' ? 'bg-gray-50 dark:bg-gray-700' : ''}`}
           >
             <span className="w-2.5 h-2.5 rounded-full bg-green-500" />
             <span>Online</span>
             {status === 'online' && (
-              <svg className="w-4 h-4 ml-auto text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-              </svg>
+              <Check className="w-4 h-4 ml-auto text-green-600" />
             )}
           </button>
           <button
-                    onClick={() => handleUpdateStatus('away')}
-            className={`w-full px-3 py-2.5 flex items-center gap-2 text-sm hover:bg-gray-50 transition-colors ${status === 'away' ? 'bg-gray-50' : ''}`}
+            onClick={() => handleUpdateStatus('away')}
+            className={`w-full px-3 py-2.5 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${status === 'away' ? 'bg-gray-50 dark:bg-gray-700' : ''}`}
           >
             <span className="w-2.5 h-2.5 rounded-full bg-yellow-500" />
             <span>Away</span>
             {status === 'away' && (
-              <svg className="w-4 h-4 ml-auto text-yellow-600" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-              </svg>
+              <Check className="w-4 h-4 ml-auto text-yellow-600" />
+            )}
+          </button>
+        </div>
+      )}
+
+      {/* Theme Submenu - Fixed positioning to overflow outside sidebar */}
+      {isThemeMenuOpen && (
+        <div 
+          className="fixed w-40 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-[10002]"
+          style={{ top: themeMenuPosition.top, left: themeMenuPosition.left }}
+        >
+          <button
+            onClick={() => {
+              setTheme('light')
+              setIsThemeMenuOpen(false)
+            }}
+            className={`w-full px-3 py-2.5 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${theme === 'light' ? 'bg-gray-50 dark:bg-gray-700' : ''}`}
+          >
+            <Sun className={`w-4 h-4 ${theme === 'light' ? 'text-yellow-500' : 'text-gray-400'}`} />
+            <span>Light</span>
+            {theme === 'light' && (
+              <Check className="w-4 h-4 ml-auto text-yellow-600" />
+            )}
+          </button>
+          <button
+            onClick={() => {
+              setTheme('dark')
+              setIsThemeMenuOpen(false)
+            }}
+            className={`w-full px-3 py-2.5 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${theme === 'dark' ? 'bg-gray-50 dark:bg-gray-700' : ''}`}
+          >
+            <Moon className={`w-4 h-4 ${theme === 'dark' ? 'text-blue-500' : 'text-gray-400'}`} />
+            <span>Dark</span>
+            {theme === 'dark' && (
+              <Check className="w-4 h-4 ml-auto text-blue-600" />
             )}
           </button>
         </div>
