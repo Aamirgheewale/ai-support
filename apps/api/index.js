@@ -321,6 +321,13 @@ const agentSockets = new Map(); // agentId -> socketId
 // In-memory session assignment cache (for fast lookups)
 const sessionAssignments = new Map(); // sessionId -> { agentId, aiPaused }
 
+// User cache to reduce Appwrite API calls (5 minute TTL)
+const userCache = new LRUCache({
+  max: 500,
+  ttl: 1000 * 60 * 5,
+  updateAgeOnGet: true
+});
+
 // Initialize chatService with dependencies
 const chatService = createChatService({
   databases: awDatabases,
@@ -340,6 +347,11 @@ const ADMIN_SHARED_SECRET = process.env.ADMIN_SHARED_SECRET || 'dev-secret-chang
 
 // RBAC Helper Functions
 async function getUserById(userId) {
+  // Check cache first
+  if (userCache.has(userId)) {
+    return userCache.get(userId);
+  }
+
   if (!awDatabases || !APPWRITE_DATABASE_ID) {
     console.warn('⚠️  Appwrite not configured, cannot fetch user');
     return null;
@@ -355,7 +367,14 @@ async function getUserById(userId) {
       [Query.equal('userId', userId)],
       1
     );
-    return result.documents.length > 0 ? result.documents[0] : null;
+    const user = result.documents.length > 0 ? result.documents[0] : null;
+
+    // Cache the result (even if null, to prevent hammering for non-existent users)
+    // For null results, use shorter TTL
+    const ttl = user ? 1000 * 60 * 5 : 1000 * 30; // 5 min for user, 30s for null
+    userCache.set(userId, user, { ttl });
+
+    return user;
   } catch (err) {
     // If collection doesn't exist or attribute not found, return null (migration not run yet)
     if (err.code === 404 || err.type === 'general_query_invalid' || err.message?.includes('not found')) {
@@ -367,6 +386,11 @@ async function getUserById(userId) {
 }
 
 async function getUserByEmail(email) {
+  // Check cache first
+  if (userCache.has(email)) {
+    return userCache.get(email);
+  }
+
   if (!awDatabases || !APPWRITE_DATABASE_ID) {
     console.warn('⚠️  Appwrite not initialized - cannot fetch user by email');
     return null;
@@ -382,7 +406,17 @@ async function getUserByEmail(email) {
       [Query.equal('email', email)],
       1
     );
-    return result.documents.length > 0 ? result.documents[0] : null;
+    const user = result.documents.length > 0 ? result.documents[0] : null;
+
+    // Cache the result
+    const ttl = user ? 1000 * 60 * 5 : 1000 * 30;
+    userCache.set(email, user, { ttl });
+    // Also cache by ID if user found
+    if (user && user.userId) {
+      userCache.set(user.userId, user, { ttl });
+    }
+
+    return user;
   } catch (err) {
     // If collection doesn't exist or attribute not found, return null
     if (err.code === 404 || err.type === 'general_query_invalid' || err.message?.includes('not found')) {
@@ -4599,7 +4633,7 @@ app.post('/auth/login', async (req, res) => {
       // If it's a connection error, return 503 (Service Unavailable) instead of 401
       if (dbError.message?.includes('Database connection failed')) {
         console.error('Database connection error during login:', dbError.message);
-        return res.status(503).json({ 
+        return res.status(503).json({
           error: 'Database connection failed. Please check your Appwrite configuration and ensure the database is accessible.',
           details: 'The server cannot connect to the Appwrite database. This may be due to network issues or incorrect configuration.'
         });
@@ -4607,7 +4641,7 @@ app.post('/auth/login', async (req, res) => {
       // Re-throw other errors
       throw dbError;
     }
-    
+
     if (!user) {
       return res.status(401).json({ error: 'User not found with this email' });
     }

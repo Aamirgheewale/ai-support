@@ -159,7 +159,7 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
             <ChevronLeft className="w-4 h-4 text-gray-600 dark:text-gray-300" />
           )}
         </button>
-        
+
         {/* New Sidebar Header with User Profile & Notifications */}
         <SidebarHeader isCollapsed={isSidebarCollapsed} />
 
@@ -440,10 +440,10 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
               >
                 <Shirt className="w-5 h-5 transition-transform duration-200 group-hover/item:scale-125" />
               </button>
-              
+
               {/* Theme Popover - Shows on hover */}
               {isThemePopoverOpen && (
-                <div 
+                <div
                   className="absolute left-full ml-2 top-0 w-40 bg-gray-900 dark:bg-gray-800 rounded-lg shadow-lg border border-gray-700 z-50 py-1"
                   onMouseEnter={() => setIsThemePopoverOpen(true)}
                   onMouseLeave={() => setIsThemePopoverOpen(false)}
@@ -453,9 +453,8 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
                       setTheme('light')
                       setIsThemePopoverOpen(false)
                     }}
-                    className={`w-full px-3 py-2 flex items-center gap-2 text-sm text-white dark:text-gray-300 hover:bg-gray-800 dark:hover:bg-gray-700 transition-colors ${
-                      theme === 'light' ? 'bg-gray-800 dark:bg-gray-700' : ''
-                    }`}
+                    className={`w-full px-3 py-2 flex items-center gap-2 text-sm text-white dark:text-gray-300 hover:bg-gray-800 dark:hover:bg-gray-700 transition-colors ${theme === 'light' ? 'bg-gray-800 dark:bg-gray-700' : ''
+                      }`}
                   >
                     <Sun className={`w-4 h-4 ${theme === 'light' ? 'text-yellow-400' : 'text-gray-400'}`} />
                     <span>Light</span>
@@ -468,9 +467,8 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
                       setTheme('dark')
                       setIsThemePopoverOpen(false)
                     }}
-                    className={`w-full px-3 py-2 flex items-center gap-2 text-sm text-white dark:text-gray-300 hover:bg-gray-800 dark:hover:bg-gray-700 transition-colors ${
-                      theme === 'dark' ? 'bg-gray-800 dark:bg-gray-700' : ''
-                    }`}
+                    className={`w-full px-3 py-2 flex items-center gap-2 text-sm text-white dark:text-gray-300 hover:bg-gray-800 dark:hover:bg-gray-700 transition-colors ${theme === 'dark' ? 'bg-gray-800 dark:bg-gray-700' : ''
+                      }`}
                   >
                     <Moon className={`w-4 h-4 ${theme === 'dark' ? 'text-blue-400' : 'text-gray-400'}`} />
                     <span>Dark</span>
@@ -627,7 +625,7 @@ function App() {
     const saved = localStorage.getItem('sidebarCollapsed')
     return saved === 'true'
   })
-  
+
   const toggleSidebar = () => {
     const newState = !isSidebarCollapsed
     setIsSidebarCollapsed(newState)
@@ -635,8 +633,8 @@ function App() {
   }
 
   return (
-    <ThemeProvider>
-      <AuthProvider>
+    <AuthProvider>
+      <ThemeProvider>
         <SoundProvider>
           <NotificationProvider>
             <BrowserRouter>
@@ -667,8 +665,8 @@ function App() {
             </BrowserRouter>
           </NotificationProvider>
         </SoundProvider>
-      </AuthProvider>
-    </ThemeProvider>
+      </ThemeProvider>
+    </AuthProvider>
   )
 }
 

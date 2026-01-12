@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import { useAuth } from '../hooks/useAuth'
 
 type Theme = 'light' | 'dark'
 
@@ -14,7 +15,7 @@ interface ThemeProviderProps {
 }
 
 // LocalStorage key for theme preference (client-side only, per-user)
-const THEME_STORAGE_KEY = 'vite-ui-theme'
+const THEME_STORAGE_KEY = 'ui-theme'
 
 /**
  * Get initial theme from localStorage or system preference
@@ -37,66 +38,72 @@ function getInitialTheme(): Theme {
 }
 
 export function ThemeProvider({ children }: ThemeProviderProps) {
-  // Initialize theme from localStorage or system preference
-  const [theme, setThemeState] = useState<Theme>(getInitialTheme)
+  const { user } = useAuth()
 
-  // Apply theme to document root element (for Tailwind dark: classes)
-  useEffect(() => {
-    const root = document.documentElement
-    
-    // Remove both classes first to ensure clean state
-    root.classList.remove('light', 'dark')
-    
-    // Add the current theme class
-    root.classList.add(theme)
-    
-    // Save to localStorage (client-side only, no server sync)
-    localStorage.setItem(THEME_STORAGE_KEY, theme)
-  }, [theme])
+  // Calculate storage key based on current user (or guest)
+  // This ensures User A's theme doesn't overwrite User B's theme
+  const getStorageKey = (userId?: string) => {
+    return userId ? `theme-pref-${userId}` : 'theme-pref-guest'
+  }
 
-  // Listen for system theme changes (optional - only if no localStorage preference exists)
+  // Get current key based on Auth state
+  const currentKey = getStorageKey(user?.userId)
+
+  // Initialize theme with lazy state
+  // We try to read from the *expected* key immediately if possible
+  const [theme, setThemeState] = useState<Theme>(() => {
+    if (typeof window === 'undefined') return 'light'
+
+    // Try reading for the user available at mount (likely guest if auth pending)
+    // Note: If auth connects later, the effect below will handle the switch
+    // Note 2: We can try to peek at a "last_user" key if we wanted to be clever, but safe default is light
+    const key = getStorageKey(user?.userId)
+    const stored = localStorage.getItem(key) as Theme | null
+    if (stored === 'light' || stored === 'dark') return stored
+
+    // System fallback
+    if (window.matchMedia('(prefers-color-scheme: dark)').matches) return 'dark'
+    return 'light'
+  })
+
+  // Sync effect: When User (and thus Key) changes, load their preference
   useEffect(() => {
-    const storedTheme = localStorage.getItem(THEME_STORAGE_KEY)
-    
-    // Only listen to system changes if user hasn't set a preference
-    if (!storedTheme) {
-      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-      
-      const handleChange = (e: MediaQueryListEvent) => {
-        // Only update if user hasn't manually set a preference
-        if (!localStorage.getItem(THEME_STORAGE_KEY)) {
-          setThemeState(e.matches ? 'dark' : 'light')
-        }
+    const key = currentKey
+    const stored = localStorage.getItem(key) as Theme | null
+
+    if (stored === 'light' || stored === 'dark') {
+      if (stored !== theme) {
+        setThemeState(stored)
       }
-      
-      // Modern browsers
-      if (mediaQuery.addEventListener) {
-        mediaQuery.addEventListener('change', handleChange)
-        return () => mediaQuery.removeEventListener('change', handleChange)
-      }
-      // Fallback for older browsers
-      else if (mediaQuery.addListener) {
-        mediaQuery.addListener(handleChange)
-        return () => mediaQuery.removeListener(handleChange)
+    } else {
+      // If new user has no pref, decide default (light)
+      // We don't necessarily reset to light if we want to inherit system?
+      // Strict rule: If no pref, use Light (or system).
+      // Let's use 'light' as safe default for new users, or match system
+      const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+      const defaultTheme = systemDark ? 'dark' : 'light'
+      if (theme !== defaultTheme) {
+        setThemeState(defaultTheme)
       }
     }
-  }, [])
+  }, [currentKey]) // Only run when key changes (user login/logout)
 
-  /**
-   * Set theme - completely client-side, no server sync
-   * This function only updates local state and localStorage
-   */
+  // Apply effect: Update DOM and Storage whenever Theme or Key changes
+  useEffect(() => {
+    const root = document.documentElement
+    root.classList.remove('light', 'dark')
+    root.classList.add(theme)
+
+    // Save to the CURRENT user's key
+    localStorage.setItem(currentKey, theme)
+  }, [theme, currentKey])
+
   const setTheme = (newTheme: Theme) => {
     if (newTheme !== 'light' && newTheme !== 'dark') {
       console.warn(`Invalid theme: ${newTheme}. Using 'light' instead.`)
       newTheme = 'light'
     }
-    
-    // Update state (will trigger useEffect to update DOM and localStorage)
     setThemeState(newTheme)
-    
-    // Explicitly save to localStorage immediately
-    localStorage.setItem(THEME_STORAGE_KEY, newTheme)
   }
 
   return (
