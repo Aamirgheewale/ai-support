@@ -6,6 +6,10 @@ import { useAttachmentUpload } from '../hooks/useAttachmentUpload';
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_API_BASE || 'http://localhost:4000';
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
 
+// Session expiration constants
+const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+const STORAGE_KEY_LAST_ACTIVE = 'ai-support-last-active';
+
 const FAQ_OPTIONS = [
   { id: 'register', label: 'How to register?', answer: 'To register, visit the VTU Internyet portal home page and click "Student Registration". Ensure you have your USN handy.' },
   { id: 'domain', label: 'Domain specific internship?', answer: 'Yes, you can filter internships by domain (e.g., IoT, AI/ML, Web Dev) on the dashboard.' },
@@ -25,10 +29,38 @@ export default function EmbedWidget({
   onAgentInitiatedChat?: () => void;
   onClose?: () => void;
 }) {
+  // Helper function to update last active timestamp
+  const updateLastActive = () => {
+    localStorage.setItem(STORAGE_KEY_LAST_ACTIVE, Date.now().toString());
+  };
+
   // Load sessionId from localStorage or use initialSessionId
-  // BUT: Don't load if conversation was concluded
+  // BUT: Don't load if conversation was concluded or session expired
   const getStoredSessionId = () => {
     if (initialSessionId) return initialSessionId;
+    
+    // Check session expiration first
+    const lastActiveStr = localStorage.getItem(STORAGE_KEY_LAST_ACTIVE);
+    if (lastActiveStr) {
+      const lastActive = parseInt(lastActiveStr, 10);
+      const timeSinceLastActive = Date.now() - lastActive;
+      
+      if (timeSinceLastActive > SESSION_TIMEOUT_MS) {
+        // Session expired - clear all session data
+        const storedSessionId = localStorage.getItem('ai-support-session-id');
+        if (storedSessionId) {
+          localStorage.removeItem('ai-support-session-id');
+          localStorage.removeItem(`ai-support-messages-${storedSessionId}`);
+          localStorage.removeItem(`ai-support-concluded-${storedSessionId}`);
+          localStorage.removeItem(`ai-support-agent-timer-${storedSessionId}`);
+          localStorage.removeItem(`ai-support-agent-request-sent-${storedSessionId}`);
+          console.log(`⏰ Session expired (${Math.floor(timeSinceLastActive / 60000)} minutes inactive) - cleared session data`);
+        }
+        localStorage.removeItem(STORAGE_KEY_LAST_ACTIVE);
+        return null; // Start fresh session
+      }
+    }
+    
     const stored = localStorage.getItem('ai-support-session-id');
     if (stored) {
       // Check if this session was concluded - if so, don't restore it
@@ -206,6 +238,8 @@ export default function EmbedWidget({
   // Load messages when sessionId exists (widget reopened) - run on mount and when sessionId changes
   useEffect(() => {
     if (sessionId && !messagesLoadedRef.current) {
+      // Update last active timestamp when loading existing session
+      updateLastActive();
       loadMessagesFromStorage(sessionId);
     }
   }, [sessionId]);
@@ -565,12 +599,18 @@ export default function EmbedWidget({
       stopTypingIndicator();
       console.log('📨 Widget received bot_stream:', m);
 
+      // Update last active timestamp when bot streams (keeps session alive)
+      updateLastActive();
+
       // Update streaming text - it will be hidden automatically if a matching bot_message exists
       setStreamingText(m.text);
     });
     socket.on('bot_message', (m: any) => {
       stopTypingIndicator();
       console.log('📨 Widget received bot_message:', m);
+
+      // Update last active timestamp when bot replies
+      updateLastActive();
 
       // Clear any in-progress streaming text immediately when final message arrives
       setStreamingText(null);
@@ -924,6 +964,9 @@ export default function EmbedWidget({
     setSessionId(sid);
     // Store sessionId in localStorage
     localStorage.setItem('ai-support-session-id', sid);
+    
+    // Update last active timestamp when starting a new session
+    updateLastActive();
 
     // Clear agent request flag for new session (allows button to show again)
     localStorage.removeItem(`ai-support-agent-request-sent-${sid}`);
@@ -1030,6 +1073,9 @@ export default function EmbedWidget({
   async function send() {
     const socket = socketRef.current;
     if (!socket || (!text.trim() && !selectedFile)) return;
+
+    // Update last active timestamp when user sends a message
+    updateLastActive();
 
     // Switch to chat mode when user sends a message
     if (!isChatMode) {

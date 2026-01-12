@@ -1885,18 +1885,8 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
             });
           }
 
-          io.to('admin_feed').emit('agent_connected', {
-            agentId: finalAgentId,
-            userId,
-            timestamp: new Date().toISOString()
-          });
-
-          io.to('admin_feed').emit('agent_status_changed', {
-            agentId: finalAgentId,
-            userId: userId,
-            status: 'online',
-            action: 'connected'
-          });
+          // Removed: Agent online/offline status notifications are no longer broadcast
+          // Database status updates still occur, but no notifications are sent
         }
       } catch (err) {
         console.error('❌ Error authenticating agent:', err);
@@ -1952,21 +1942,8 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
         }
         socket.emit('agent_connected', { agentId: finalAgentId });
 
-        // Only emit to admin_feed if agent was NOT already registered (prevents duplicate notifications)
-        if (!wasAlreadyRegistered) {
-          io.to('admin_feed').emit('agent_connected', {
-            agentId: finalAgentId,
-            userId: finalAgentId,
-            timestamp: new Date().toISOString()
-          });
-
-          io.to('admin_feed').emit('agent_status_changed', {
-            agentId: finalAgentId,
-            userId: finalAgentId,
-            status: 'online',
-            action: 'connected'
-          });
-        }
+        // Removed: Agent online/offline status notifications are no longer broadcast
+        // Database status updates still occur, but no notifications are sent
         return;
       }
 
@@ -2008,21 +1985,8 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
       }
       socket.emit('agent_connected', { agentId: finalAgentId });
 
-      // Only emit to admin_feed if agent was NOT already registered (prevents duplicate notifications)
-      if (!wasAlreadyRegistered) {
-        io.to('admin_feed').emit('agent_connected', {
-          agentId: finalAgentId,
-          userId: socket.data.userId || finalAgentId,
-          timestamp: new Date().toISOString()
-        });
-
-        io.to('admin_feed').emit('agent_status_changed', {
-          agentId: finalAgentId,
-          userId: socket.data.userId || finalAgentId,
-          status: 'online',
-          action: 'connected'
-        });
-      }
+      // Removed: Agent online/offline status notifications are no longer broadcast
+      // Database status updates still occur, but no notifications are sent
     });
 
     // Agent takeover handler (requires agent role)
@@ -2314,20 +2278,8 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
               }
             }
 
-            // Notify admin feed about agent status change (offline) - single emission only
-            io.to('admin_feed').emit('agent_status_changed', {
-              agentId: agentId,
-              userId: disconnectedUserId,
-              status: 'offline',
-              action: 'disconnected'
-            });
-
-            // Emit agent_disconnected event to admin feed for real-time updates
-            io.to('admin_feed').emit('agent_disconnected', {
-              agentId,
-              userId: disconnectedUserId,
-              timestamp: new Date().toISOString()
-            });
+            // Removed: Agent online/offline status notifications are no longer broadcast
+            // Database status updates still occur, but no notifications are sent
           }, DISCONNECT_GRACE_PERIOD_MS);
 
           // Store the pending disconnect so it can be cancelled if agent reconnects

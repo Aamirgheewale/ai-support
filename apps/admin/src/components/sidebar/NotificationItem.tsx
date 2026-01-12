@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 interface NotificationItemProps {
   notification: {
     $id: string
-    type: 'request_agent' | 'assignment' | 'ticket_created' | 'session_timeout_warning' | 'agent_connected' | 'agent_disconnected'
+    type: 'request_agent' | 'assignment' | 'ticket_created' | 'session_timeout_warning'
     content: string
     sessionId: string
     isRead: boolean
@@ -75,30 +75,7 @@ export default function NotificationItem({ notification, onMarkAsRead, onDelete 
           title: 'Session Timeout',
           bgColor: 'bg-amber-50'
         }
-      case 'agent_connected':
-        return {
-          icon: (
-            <div className="w-10 h-10 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center shrink-0">
-              <svg className="w-5 h-5 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-          ),
-          title: 'Agent Online',
-          bgColor: 'bg-green-50'
-        }
-      case 'agent_disconnected':
-        return {
-          icon: (
-            <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center shrink-0">
-              <svg className="w-5 h-5 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-          ),
-          title: 'Agent Offline',
-          bgColor: 'bg-red-50'
-        }
+      // Removed: agent_connected and agent_disconnected cases (no longer supported)
       case 'assignment':
         return {
           icon: (

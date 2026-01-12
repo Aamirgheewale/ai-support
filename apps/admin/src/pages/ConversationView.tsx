@@ -502,7 +502,8 @@ export default function ConversationView() {
   }
 
   // Load online agents when component mounts (for admins)
-  // Note: Socket events (agent_connected, agent_disconnected, agent_status_changed) handle real-time updates
+  // Note: Socket events (agent_connected, agent_disconnected, agent_status_changed) are received for refreshing online agents list
+  // These are confirmation messages sent to the specific socket, not broadcast notifications
   useEffect(() => {
     if (isAdmin && sessionId) {
       loadOnlineAgents()

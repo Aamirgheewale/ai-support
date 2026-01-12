@@ -147,14 +147,9 @@ export default function NotificationsPage() {
                     🎫 New Ticket
                 </span>
             );
-        } else if (type === 'agent_connected' || type === 'agent_disconnected') {
-            return (
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
-                    📊 Status
-                </span>
-            );
         } else {
             // For other types (session_timeout_warning), show neutral badge
+            // Removed: agent_connected and agent_disconnected badge (no longer supported)
             return (
                 <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
                     ℹ️ Info
@@ -170,10 +165,7 @@ export default function NotificationsPage() {
                 return 'hover:bg-gradient-to-r hover:from-red-50 hover:to-pink-50 dark:hover:bg-none dark:hover:bg-red-500/20 hover:border-red-300 dark:hover:border-red-800 hover:border-l-red-500 dark:hover:border-l-red-600';
             } else if (notification.type === 'request_agent') {
                 return 'hover:bg-gradient-to-r hover:from-yellow-50 hover:to-amber-50 dark:hover:bg-none dark:hover:bg-yellow-500/20 hover:border-yellow-300 dark:hover:border-yellow-800 hover:border-l-yellow-500 dark:hover:border-l-yellow-600';
-            } else if (notification.type === 'agent_connected') {
-                return 'hover:bg-gradient-to-r hover:from-green-50 hover:to-emerald-50 dark:hover:bg-none dark:hover:bg-green-500/20 hover:border-green-300 dark:hover:border-green-800 hover:border-l-green-500 dark:hover:border-l-green-600';
-            } else if (notification.type === 'agent_disconnected') {
-                return 'hover:bg-gradient-to-r hover:from-gray-50 hover:to-slate-50 dark:hover:bg-none dark:hover:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-700 hover:border-l-gray-500 dark:hover:border-l-gray-600';
+            // Removed: agent_connected and agent_disconnected hover styles (no longer supported)
             }
             // Default: assignments and other types
             return 'hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 dark:hover:bg-none dark:hover:bg-blue-500/20 hover:border-blue-300 dark:hover:border-blue-800 hover:border-l-blue-500 dark:hover:border-l-blue-600';

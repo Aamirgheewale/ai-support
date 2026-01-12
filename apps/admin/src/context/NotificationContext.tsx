@@ -8,7 +8,7 @@ const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || API_BASE;
 interface Notification {
     $id: string;
     title?: string;
-    type: 'request_agent' | 'assignment' | 'ticket_created' | 'session_timeout_warning' | 'agent_connected' | 'agent_disconnected';
+    type: 'request_agent' | 'assignment' | 'ticket_created' | 'session_timeout_warning';
     content: string;
     sessionId: string;
     targetUserId: string | null;
@@ -39,8 +39,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     // CRITICAL: Deduplication tracking - tracks all processed notification IDs
     const processedIds = useRef<Set<string>>(new Set());
 
-    // Debouncing refs for agent status changes (Channel C)
-    const lastAgentStatusRef = useRef<Map<string, { type: 'connected' | 'disconnected', timestamp: number }>>(new Map());
+    // Removed: Agent status debouncing refs (no longer needed)
     const playRingRef = useRef(playRing);
 
     // Keep playRing ref updated
@@ -269,7 +268,6 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
             console.log(`📋 [CHANNEL C] Processing silent notification: ${notificationId} (${notification.type})`);
 
             // CRITICAL: Channel C NEVER plays sounds, regardless of options
-            // This ensures agent_connected/disconnected are always silent
 
             // Add to notifications state (inbox) - NO toast/sound/browser notification
             setNotifications(prev => {
@@ -394,98 +392,25 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
             }
         };
 
-        // ============================================
-        // CHANNEL C: Inbox Only (Silent History)
-        // ============================================
-
-        const handleAgentConnected = async (data: any) => {
-            const { agentId, userId, timestamp } = data || {};
-            console.log('🟢 [CHANNEL C] agent_connected:', data);
-
-            if (agentId) {
-                const now = Date.now();
-                const lastStatus = lastAgentStatusRef.current.get(agentId);
-
-                // Debounce: Ignore if SAME status change was < 60s ago
-                // (Allow different status changes - e.g., connect after disconnect is OK)
-                if (lastStatus && lastStatus.type === 'connected' && (now - lastStatus.timestamp) < 60000) {
-                    console.log(`⏭️  Debounced duplicate agent_connected for ${agentId} (last connected ${Math.round((now - lastStatus.timestamp) / 1000)}s ago)`);
-                    return;
-                }
-
-                lastAgentStatusRef.current.set(agentId, { type: 'connected', timestamp: now });
-
-                const notification = await createNotification({
-                    type: 'agent_connected',
-                    content: `Agent ${agentId} is now online`,
-                    sessionId: '',
-                    targetUserId: null,
-                    createdAt: timestamp || new Date().toISOString()
-                });
-
-                if (notification) {
-                    await handleIncomingNotification(notification, 'C', {
-                        playSound: false,
-                        showBrowserNotification: false
-                    });
-                }
-            }
-        };
-
-        const handleAgentDisconnected = async (data: any) => {
-            const { agentId, userId, timestamp } = data || {};
-            console.log('🔴 [CHANNEL C] agent_disconnected:', data);
-
-            if (agentId) {
-                const now = Date.now();
-                const lastStatus = lastAgentStatusRef.current.get(agentId);
-
-                // Debounce: Ignore if SAME status change was < 60s ago
-                // (Allow different status changes - e.g., disconnect after connect is OK)
-                if (lastStatus && lastStatus.type === 'disconnected' && (now - lastStatus.timestamp) < 60000) {
-                    console.log(`⏭️  Debounced duplicate agent_disconnected for ${agentId} (last disconnected ${Math.round((now - lastStatus.timestamp) / 1000)}s ago)`);
-                    return;
-                }
-
-                lastAgentStatusRef.current.set(agentId, { type: 'disconnected', timestamp: now });
-
-                const notification = await createNotification({
-                    type: 'agent_disconnected',
-                    content: `Agent ${agentId} went offline`,
-                    sessionId: '',
-                    targetUserId: null,
-                    createdAt: timestamp || new Date().toISOString()
-                });
-
-                if (notification) {
-                    await handleIncomingNotification(notification, 'C', {
-                        playSound: false,
-                        showBrowserNotification: false
-                    });
-                }
-            }
-        };
+        // Removed: Agent online/offline status notification handlers
+        // These notifications are no longer created or displayed
 
         // Legacy: Listen for new_notification (from backend)
         const handleNewNotification = async (data: Notification) => {
             console.log('🔔 new_notification received:', data);
 
-            // Route agent_connected/disconnected to Channel C (silent)
-            // All other notifications go to Channel B (with sound/toast)
+            // Filter out agent_connected/disconnected notifications (no longer supported)
             if (data.type === 'agent_connected' || data.type === 'agent_disconnected') {
-                console.log(`📋 Routing ${data.type} to Channel C (silent)`);
-                await handleIncomingNotification(data, 'C', {
-                    playSound: false,
-                    showBrowserNotification: false
-                });
-            } else {
-                console.log(`📬 Routing ${data.type} to Channel B (with sound/toast)`);
-                // Route to Channel B (Inbox + Toast)
-                await handleIncomingNotification(data, 'B', {
-                    playSound: true,
-                    showBrowserNotification: true
-                });
+                console.log(`⏭️  Ignoring ${data.type} notification (agent status notifications removed)`);
+                return;
             }
+
+            // Route all other notifications to Channel B (with sound/toast)
+            console.log(`📬 Routing ${data.type} to Channel B (with sound/toast)`);
+            await handleIncomingNotification(data, 'B', {
+                playSound: true,
+                showBrowserNotification: true
+            });
         };
 
         const handleDisconnect = () => {
@@ -501,8 +426,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         newSocket.on('ticket_created', handleTicketCreated);
         newSocket.on('request_agent', handleRequestAgent);
         newSocket.on('session_timeout_warning', handleSessionTimeoutWarning);
-        newSocket.on('agent_connected', handleAgentConnected);
-        newSocket.on('agent_disconnected', handleAgentDisconnected);
+        // Removed: agent_connected and agent_disconnected listeners (no longer supported)
         newSocket.on('new_notification', handleNewNotification);
         newSocket.on('disconnect', handleDisconnect);
         newSocket.on('connect_error', handleConnectError);
@@ -520,8 +444,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
             newSocket.off('ticket_created', handleTicketCreated);
             newSocket.off('request_agent', handleRequestAgent);
             newSocket.off('session_timeout_warning', handleSessionTimeoutWarning);
-            newSocket.off('agent_connected', handleAgentConnected);
-            newSocket.off('agent_disconnected', handleAgentDisconnected);
+            // Removed: agent_connected and agent_disconnected listeners (no longer supported)
             newSocket.off('new_notification', handleNewNotification);
             newSocket.off('disconnect', handleDisconnect);
             newSocket.off('connect_error', handleConnectError);
