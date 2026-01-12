@@ -450,6 +450,25 @@ function initializeSocket(dependencies) {
       io.to(socket.id).emit('live_visitors_update', Array.from(liveVisitors.values()));
     });
 
+    // Handle typing indicators
+    socket.on('typing_start', (data) => {
+      const { sessionId, user } = data || {};
+      if (sessionId && user) {
+        // Broadcast to everyone else in the session room (excluding sender)
+        socket.to(sessionId).emit('display_typing', { user, isTyping: true });
+        console.log(`⌨️  Typing started: ${user.name || user.role} in session ${sessionId}`);
+      }
+    });
+
+    socket.on('typing_stop', (data) => {
+      const { sessionId, user } = data || {};
+      if (sessionId && user) {
+        // Broadcast to everyone else in the session room (excluding sender)
+        socket.to(sessionId).emit('display_typing', { user, isTyping: false });
+        console.log(`⌨️  Typing stopped: ${user.name || user.role} in session ${sessionId}`);
+      }
+    });
+
     // Handle request_human event from widget (when user clicks "Ask something else")
     socket.on('request_human', (data) => {
       const { sessionId, reason } = data || {};

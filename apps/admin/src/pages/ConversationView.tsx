@@ -4,6 +4,7 @@ import { io } from 'socket.io-client'
 import { useAuth } from '../hooks/useAuth'
 import ImageAnnotationModal from '../components/ImageAnnotationModal'
 import { useAppwriteUpload } from '../hooks/useAppwriteUpload'
+import { useTyping } from '../hooks/useTyping'
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000'
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_API_BASE || 'http://localhost:4000'
@@ -75,6 +76,7 @@ export default function ConversationView() {
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0)
   const [slashTrigger, setSlashTrigger] = useState<{ start: number; end: number; searchTerm: string } | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
 
   // Close export menu when clicking outside
   useEffect(() => {
@@ -218,6 +220,24 @@ export default function ConversationView() {
     }, 0)
   }
 
+  // Initialize typing indicator hook
+  const currentUser = {
+    name: user?.name || user?.email || 'Agent',
+    role: isAgent ? 'agent' : isAdmin ? 'admin' : 'user'
+  }
+  const { remoteTypingUser, handleInput: handleTypingInput } = useTyping({
+    socket,
+    sessionId,
+    currentUser
+  })
+
+  // Scroll to bottom when typing indicator appears
+  useEffect(() => {
+    if (remoteTypingUser && messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
+    }
+  }, [remoteTypingUser])
+
   // Load session info and messages when sessionId changes
   useEffect(() => {
     if (!sessionId) return
@@ -231,6 +251,8 @@ export default function ConversationView() {
       withCredentials: true,
       transports: ['websocket', 'polling']
     })
+
+    setSocket(sock)
 
     sock.on('connect', () => {
       console.log('✅ Socket connected')
@@ -1175,7 +1197,7 @@ export default function ConversationView() {
         </div>
       </div>
 
-      <div className="bg-white dark:bg-gray-900 rounded-lg p-5 mb-5 min-h-[400px] max-h-[600px] overflow-auto">
+      <div ref={messagesContainerRef} className="bg-white dark:bg-gray-900 rounded-lg p-5 mb-5 min-h-[400px] max-h-[600px] overflow-auto">
         {loading ? (
           <div className="text-gray-600 dark:text-gray-400">Loading messages...</div>
         ) : (
@@ -1358,6 +1380,14 @@ export default function ConversationView() {
               </div>
               )
             })}
+            
+            {/* Typing Indicator - Inside message list */}
+            {remoteTypingUser && (
+              <div className="flex items-center gap-2 p-4 text-xs text-gray-500 dark:text-gray-400 animate-pulse">
+                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" />
+                <span>{remoteTypingUser} is typing...</span>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1425,7 +1455,10 @@ export default function ConversationView() {
               ref={textareaRef}
               placeholder="Type your message... (Use / for canned responses)"
               value={messageText}
-              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setMessageText(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => {
+                setMessageText(e.target.value)
+                handleTypingInput() // Trigger typing indicator
+              }}
               onKeyDown={handleKeyDown}
               disabled={!canSendMessages || isSending}
               spellCheck={true}

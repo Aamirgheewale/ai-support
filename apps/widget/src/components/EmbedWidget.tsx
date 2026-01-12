@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { Paperclip, X } from 'lucide-react';
 import { useAttachmentUpload } from '../hooks/useAttachmentUpload';
+import { useTyping } from '../hooks/useTyping';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_API_BASE || 'http://localhost:4000';
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
@@ -38,13 +39,13 @@ export default function EmbedWidget({
   // BUT: Don't load if conversation was concluded or session expired
   const getStoredSessionId = () => {
     if (initialSessionId) return initialSessionId;
-    
+
     // Check session expiration first
     const lastActiveStr = localStorage.getItem(STORAGE_KEY_LAST_ACTIVE);
     if (lastActiveStr) {
       const lastActive = parseInt(lastActiveStr, 10);
       const timeSinceLastActive = Date.now() - lastActive;
-      
+
       if (timeSinceLastActive > SESSION_TIMEOUT_MS) {
         // Session expired - clear all session data
         const storedSessionId = localStorage.getItem('ai-support-session-id');
@@ -60,7 +61,7 @@ export default function EmbedWidget({
         return null; // Start fresh session
       }
     }
-    
+
     const stored = localStorage.getItem('ai-support-session-id');
     if (stored) {
       // Check if this session was concluded - if so, don't restore it
@@ -112,6 +113,17 @@ export default function EmbedWidget({
   const attachButtonRef = useRef<HTMLButtonElement>(null); // Ref for paperclip button position
 
   const { uploadFile } = useAttachmentUpload();
+
+  // Initialize typing indicator hook
+  const currentUser = {
+    name: 'Visitor',
+    role: 'user'
+  };
+  const { remoteTypingUser, handleInput: handleTypingInput } = useTyping({
+    socket: socketRef.current,
+    sessionId,
+    currentUser
+  });
 
   // Business hours check (Mon-Fri, 09:00 - 17:00)
   // TEST MODE: Add ?testBusinessHours=false to URL to force offline form
@@ -964,7 +976,7 @@ export default function EmbedWidget({
     setSessionId(sid);
     // Store sessionId in localStorage
     localStorage.setItem('ai-support-session-id', sid);
-    
+
     // Update last active timestamp when starting a new session
     updateLastActive();
 
@@ -2102,6 +2114,25 @@ export default function EmbedWidget({
           </div>
         )}
 
+        {/* Typing Indicator in Message Area */}
+        {remoteTypingUser && (
+          <div style={{
+            display: 'flex',
+            justifyContent: 'flex-start',
+            marginBottom: '4px',
+            padding: '8px 16px'
+          }}>
+            <div style={{
+              fontSize: '13px',
+              color: 'rgba(255, 255, 255, 0.7)',
+              fontStyle: 'italic',
+              animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite'
+            }}>
+              {remoteTypingUser} is typing<span style={{ animation: 'blink 1.4s infinite' }}>...</span>
+            </div>
+          </div>
+        )}
+
         <div ref={messagesEndRef} />
       </div>
 
@@ -2296,9 +2327,13 @@ export default function EmbedWidget({
               );
             })()}
           </div>
+
           <input
             value={text}
-            onChange={e => setText(e.target.value)}
+            onChange={e => {
+              setText(e.target.value);
+              handleTypingInput(); // Trigger typing indicator
+            }}
             onKeyPress={handleKeyPress}
             disabled={!sessionId || conversationConcluded || agentRequestSent || (agentWaitTimer !== null && agentWaitTimer > 0) || showOfflineForm}
             style={{
