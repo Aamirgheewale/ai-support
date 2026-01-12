@@ -191,8 +191,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (storedToken) {
         const userData = await fetchUser(storedToken);
 
-        // Auto-connect agent to Socket.IO if they have agent role and are already logged in
-        if (userData && userData.roles && userData.roles.includes('agent') && typeof window !== 'undefined') {
+        // Auto-connect agent/admin to Socket.IO if they have agent or admin role and are already logged in
+        // Both agents and admins should be marked as online in the database
+        const hasAgentRole = userData?.roles && userData.roles.includes('agent');
+        const hasAdminRole = userData?.roles && userData.roles.includes('admin');
+        const hasSuperAdminRole = userData?.roles && userData.roles.includes('super_admin');
+        
+        if (userData && (hasAgentRole || hasAdminRole || hasSuperAdminRole) && typeof window !== 'undefined') {
           try {
             const { io } = await import('socket.io-client');
             const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_API_BASE || 'http://localhost:4000';
@@ -208,11 +213,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
             const authenticateAgent = () => {
               if (hasAuthenticated) {
-                console.log('🔌 Agent already authenticated, skipping duplicate auth');
+                console.log('🔌 Agent/Admin already authenticated, skipping duplicate auth');
                 return;
               }
               hasAuthenticated = true;
-              console.log('🔌 Agent auto-connected to Socket.IO for online status (on page load)');
+              console.log('🔌 Agent/Admin auto-connected to Socket.IO for online status (on page load)');
               socket.emit('agent_auth', {
                 token: storedToken,
                 agentId: userData.userId
@@ -222,15 +227,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             socket.on('connect', authenticateAgent);
 
             socket.on('agent_connected', (data: any) => {
-              console.log('✅ Agent authenticated successfully:', data);
+              console.log('✅ Agent/Admin authenticated successfully:', data);
             });
 
             socket.on('auth_error', (error: any) => {
-              console.error('❌ Agent authentication failed:', error);
+              console.error('❌ Agent/Admin authentication failed:', error);
             });
 
             socket.on('disconnect', () => {
-              console.log('🔌 Agent Socket disconnected');
+              console.log('🔌 Agent/Admin Socket disconnected');
               // Reset flag so we can re-authenticate on reconnect
               hasAuthenticated = false;
             });
@@ -285,8 +290,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error('Failed to load user profile');
     }
 
-    // Automatically connect agent to Socket.IO if they have agent role
-    if (userData.roles && userData.roles.includes('agent') && typeof window !== 'undefined') {
+    // Automatically connect agent/admin to Socket.IO if they have agent or admin role
+    // Both agents and admins should be marked as online in the database
+    const hasAgentRole = userData.roles && userData.roles.includes('agent');
+    const hasAdminRole = userData.roles && userData.roles.includes('admin');
+    const hasSuperAdminRole = userData.roles && userData.roles.includes('super_admin');
+    
+    if ((hasAgentRole || hasAdminRole || hasSuperAdminRole) && typeof window !== 'undefined') {
       try {
         const { io } = await import('socket.io-client');
         const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_API_BASE || 'http://localhost:4000';
@@ -302,11 +312,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         const authenticateAgent = () => {
           if (hasAuthenticated) {
-            console.log('🔌 Agent already authenticated, skipping duplicate auth');
+            console.log('🔌 Agent/Admin already authenticated, skipping duplicate auth');
             return;
           }
           hasAuthenticated = true;
-          console.log('🔌 Agent auto-connected to Socket.IO for online status');
+          console.log('🔌 Agent/Admin auto-connected to Socket.IO for online status');
           socket.emit('agent_auth', {
             token: data.token,
             agentId: userData.userId
@@ -316,15 +326,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         socket.on('connect', authenticateAgent);
 
         socket.on('agent_connected', (authData: any) => {
-          console.log('✅ Agent authenticated successfully after login:', authData);
+          console.log('✅ Agent/Admin authenticated successfully after login:', authData);
         });
 
         socket.on('auth_error', (error: any) => {
-          console.error('❌ Agent authentication failed after login:', error);
+          console.error('❌ Agent/Admin authentication failed after login:', error);
         });
 
         socket.on('disconnect', () => {
-          console.log('🔌 Agent Socket disconnected after login');
+          console.log('🔌 Agent/Admin Socket disconnected after login');
           // Reset flag so we can re-authenticate on reconnect
           hasAuthenticated = false;
         });

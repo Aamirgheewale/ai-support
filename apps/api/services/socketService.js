@@ -1677,24 +1677,40 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
         }
 
         const userId = authResult.userId;
-        console.log(`🔍 Checking agent role for userId: ${userId}`);
+        console.log(`🔍 Checking agent/admin role for userId: ${userId}`);
+        
+        // Allow both 'agent' and 'admin' roles to connect and be marked as online
+        // Admins should also be tracked as online since they use the admin dashboard
         const hasAgentRole = await isUserInRole(userId, 'agent');
+        const hasAdminRole = await isUserInRole(userId, 'admin');
+        const hasSuperAdminRole = await isUserInRole(userId, 'super_admin');
 
-        if (!hasAgentRole) {
-          console.error(`❌ agent_auth: User ${userId} does not have agent role`);
-          socket.emit('auth_error', { error: 'Insufficient permissions: agent role required' });
+        console.log(`🔍 Role check results for ${userId}:`, {
+          hasAgentRole,
+          hasAdminRole,
+          hasSuperAdminRole,
+          hasAnyRole: hasAgentRole || hasAdminRole || hasSuperAdminRole
+        });
+
+        if (!hasAgentRole && !hasAdminRole && !hasSuperAdminRole) {
+          console.error(`❌ agent_auth: User ${userId} does not have agent, admin, or super_admin role`);
+          socket.emit('auth_error', { error: 'Insufficient permissions: agent or admin role required' });
           setTimeout(() => socket.disconnect(), 1000);
           return;
         }
 
+        // Log which role type the user has (for logging purposes)
+        const userType = hasSuperAdminRole ? 'super_admin' : hasAdminRole ? 'admin' : 'agent';
+        console.log(`✅ User ${userId} authenticated as ${userType}`);
+
         const finalAgentId = agentId || userId;
 
-        // Check if there's a pending disconnect for this agent (page refresh scenario)
+        // Check if there's a pending disconnect for this agent/admin (page refresh scenario)
         const pendingDisconnect = pendingDisconnects.get(finalAgentId);
         if (pendingDisconnect) {
           clearTimeout(pendingDisconnect.timeout);
           pendingDisconnects.delete(finalAgentId);
-          console.log(`🔄 Agent ${finalAgentId} reconnected within grace period (page refresh) - cancelling disconnect`);
+          console.log(`🔄 ${userType} ${finalAgentId} reconnected within grace period (page refresh) - cancelling disconnect`);
           // This is a reconnection, so don't emit new events - just update the socket
           agentSockets.set(finalAgentId, socket.id);
           socket.join(`agents:${finalAgentId}`);
@@ -1702,7 +1718,42 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
           socket.data.userId = userId;
           socket.data.agentId = finalAgentId;
           socket.emit('agent_connected', { agentId: finalAgentId, userId });
-          return; // Skip emitting to admin_feed since agent never truly went offline
+          
+          // CRITICAL: Still update database status to 'online' even for reconnections
+          // This ensures admins/agents are marked as online after page refresh
+          if (databases && databaseId && usersCollectionId && userId) {
+            (async () => {
+              try {
+                console.log(`🔄 Updating database status to 'online' for reconnected ${userType} ${userId}...`);
+                let userDoc = null;
+                if (Query) {
+                  const result = await databases.listDocuments(
+                    databaseId,
+                    usersCollectionId,
+                    [Query.equal('userId', userId)],
+                    1
+                  );
+                  if (result.documents.length > 0) {
+                    userDoc = result.documents[0];
+                  }
+                }
+                
+                if (userDoc && socket.connected && socket.data?.authenticated) {
+                  await databases.updateDocument(
+                    databaseId,
+                    usersCollectionId,
+                    userDoc.$id,
+                    { status: 'online' }
+                  );
+                  console.log(`✅ Database status set to 'online' for reconnected ${userType} ${userId}`);
+                }
+              } catch (dbErr) {
+                console.error(`❌ Failed to update database status for reconnected ${userType} ${userId}:`, dbErr?.message || dbErr);
+              }
+            })();
+          }
+          
+          return; // Skip emitting to admin_feed since agent/admin never truly went offline
         }
 
         // Check if agent is already registered:
@@ -1719,18 +1770,11 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
         socket.data.agentId = finalAgentId;
 
         if (wasAlreadyRegistered) {
-          console.log(`🔄 Agent ${finalAgentId} reconnected (was already in agentSockets map)${hadSameSocket ? ' [same socket]' : ' [new socket]'}`);
-        } else {
-          console.log(`✅ Agent authenticated and connected: ${finalAgentId} (user: ${userId}, socket: ${socket.id})`);
-        }
-        console.log(`📊 agentSockets Map now has ${agentSockets.size} entries:`, Array.from(agentSockets.keys()));
-        socket.emit('agent_connected', { agentId: finalAgentId, userId });
-
-        // Only emit to admin_feed and update database if agent was NOT already registered
-        // This prevents duplicate notifications when socket.io auto-reconnects
-        if (!wasAlreadyRegistered) {
-          // Update user status in database to 'online'
-          if (databases && databaseId && usersCollectionId && userId) {
+          console.log(`🔄 ${userType} ${finalAgentId} reconnected (was already in agentSockets map)${hadSameSocket ? ' [same socket]' : ' [new socket]'}`);
+          
+          // CRITICAL: Even if already registered, ensure database status is 'online'
+          // This handles cases where user reconnected quickly but database wasn't updated
+          if (databases && databaseId && usersCollectionId && userId && socket.connected && socket.data?.authenticated) {
             (async () => {
               try {
                 let userDoc = null;
@@ -1745,19 +1789,100 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
                     userDoc = result.documents[0];
                   }
                 }
+                
                 if (userDoc) {
-                  await databases.updateDocument(
-                    databaseId,
-                    usersCollectionId,
-                    userDoc.$id,
-                    { status: 'online' }
-                  );
-                  console.log(`✅ Database status set to 'online' for agent ${userId}`);
+                  // Only update if status is not already 'online' (avoid unnecessary writes)
+                  if (userDoc.status !== 'online') {
+                    await databases.updateDocument(
+                      databaseId,
+                      usersCollectionId,
+                      userDoc.$id,
+                      { status: 'online' }
+                    );
+                    console.log(`✅ Database status updated to 'online' for reconnected ${userType} ${userId} (was: ${userDoc.status})`);
+                  } else {
+                    console.log(`ℹ️  ${userType} ${userId} already marked as 'online' in database`);
+                  }
                 }
               } catch (dbErr) {
-                console.warn(`⚠️  Failed to update database status for agent ${userId}:`, dbErr?.message || dbErr);
+                console.warn(`⚠️  Failed to verify/update database status for reconnected ${userType} ${userId}:`, dbErr?.message || dbErr);
               }
             })();
+          }
+        } else {
+          console.log(`✅ ${userType} authenticated and connected: ${finalAgentId} (user: ${userId}, socket: ${socket.id})`);
+        }
+        console.log(`📊 agentSockets Map now has ${agentSockets.size} entries:`, Array.from(agentSockets.keys()));
+        socket.emit('agent_connected', { agentId: finalAgentId, userId });
+
+        // Only emit to admin_feed and update database if agent/admin was NOT already registered
+        // This prevents duplicate notifications when socket.io auto-reconnects
+        if (!wasAlreadyRegistered) {
+          // Update user status in database to 'online'
+          // CRITICAL: Only update if socket is still connected and authenticated
+          // This applies to both agents and admins
+          if (databases && databaseId && usersCollectionId && userId) {
+            (async () => {
+              try {
+                console.log(`🔄 Attempting to update database status to 'online' for ${userType} ${userId}...`);
+                
+                // Check if socket is still connected before updating database
+                // This prevents race conditions where user disconnects before async update completes
+                if (!socket.connected || !socket.data?.authenticated) {
+                  console.log(`⚠️  Socket ${socket.id} disconnected or not authenticated - skipping status update to 'online' for ${userType} ${userId}`);
+                  return;
+                }
+
+                let userDoc = null;
+                if (Query) {
+                  const result = await databases.listDocuments(
+                    databaseId,
+                    usersCollectionId,
+                    [Query.equal('userId', userId)],
+                    1
+                  );
+                  if (result.documents.length > 0) {
+                    userDoc = result.documents[0];
+                  } else {
+                    console.warn(`⚠️  User document not found for userId: ${userId}`);
+                  }
+                }
+                
+                // Double-check socket is still connected before updating database
+                if (userDoc && socket.connected && socket.data?.authenticated) {
+                  // Verify agent/admin is still in agentSockets map (hasn't been disconnected)
+                  const isStillRegistered = agentSockets.has(finalAgentId) && agentSockets.get(finalAgentId) === socket.id;
+                  
+                  if (isStillRegistered) {
+                    await databases.updateDocument(
+                      databaseId,
+                      usersCollectionId,
+                      userDoc.$id,
+                      { status: 'online' }
+                    );
+                    console.log(`✅ Database status set to 'online' for ${userType} ${userId} (document ID: ${userDoc.$id})`);
+                  } else {
+                    console.log(`⚠️  ${userType} ${userId} no longer registered in agentSockets - skipping status update to 'online'`);
+                  }
+                } else if (!userDoc) {
+                  console.warn(`⚠️  User document not found for ${userType} ${userId} - cannot update status`);
+                } else if (!socket.connected) {
+                  console.log(`⚠️  Socket ${socket.id} disconnected before database update - skipping status update to 'online' for ${userType} ${userId}`);
+                } else if (!socket.data?.authenticated) {
+                  console.log(`⚠️  Socket ${socket.id} not authenticated - skipping status update to 'online' for ${userType} ${userId}`);
+                }
+              } catch (dbErr) {
+                console.error(`❌ Failed to update database status for ${userType} ${userId}:`, dbErr?.message || dbErr);
+                console.error(`   Error details:`, dbErr);
+              }
+            })();
+          } else {
+            console.warn(`⚠️  Database not configured - cannot update status for ${userType} ${userId}`, {
+              databases: !!databases,
+              databaseId: !!databaseId,
+              usersCollectionId: !!usersCollectionId,
+              userId: !!userId
+            });
           }
 
           io.to('admin_feed').emit('agent_connected', {
@@ -2108,8 +2233,24 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
       let disconnectedUserId = null;
       for (const [agentId, socketId] of agentSockets.entries()) {
         if (socketId === socket.id) {
+          // CRITICAL: Only process disconnect if socket was actually authenticated as an agent
+          // This prevents non-authenticated connections from updating database status
+          if (!socket.data?.authenticated) {
+            console.warn(`⚠️  Socket ${socket.id} disconnected but was not authenticated - skipping status update`);
+            agentSockets.delete(agentId);
+            break;
+          }
+
           disconnectedAgentId = agentId;
           disconnectedUserId = socket.data?.userId || agentId;
+          
+          // Verify we have a valid userId before proceeding
+          if (!disconnectedUserId) {
+            console.warn(`⚠️  Socket ${socket.id} disconnected but no userId found - skipping status update`);
+            agentSockets.delete(agentId);
+            break;
+          }
+
           agentSockets.delete(agentId);
 
           // Use grace period to allow for page refresh reconnection
@@ -2121,6 +2262,7 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
             console.log(`👤 Agent ${agentId} did not reconnect - processing as truly disconnected`);
 
             // Update user status in database to 'offline'
+            // Only update if we have valid userId and databases are configured
             if (databases && databaseId && usersCollectionId && disconnectedUserId) {
               try {
                 // Find user document by userId
@@ -2147,14 +2289,25 @@ REMEMBER: 20-30 words maximum for EVERY response. No exceptions. Always use prev
                 }
 
                 if (userDoc) {
-                  // Set status to 'offline' when agent disconnects
-                  await databases.updateDocument(
-                    databaseId,
-                    usersCollectionId,
-                    userDoc.$id,
-                    { status: 'offline' }
-                  );
-                  console.log(`✅ Database status set to 'offline' for agent ${disconnectedUserId}`);
+                  // Check if agent reconnected during grace period
+                  // Only set to offline if they're truly not connected anymore
+                  // Check if the agentId is still in agentSockets map (reconnected)
+                  const isStillConnected = agentSockets.has(disconnectedAgentId);
+
+                  if (!isStillConnected) {
+                    // Set status to 'offline' when agent disconnects
+                    await databases.updateDocument(
+                      databaseId,
+                      usersCollectionId,
+                      userDoc.$id,
+                      { status: 'offline' }
+                    );
+                    console.log(`✅ Database status set to 'offline' for agent ${disconnectedUserId}`);
+                  } else {
+                    console.log(`🔄 Agent ${disconnectedAgentId} (userId: ${disconnectedUserId}) reconnected during grace period - skipping offline status update`);
+                  }
+                } else {
+                  console.warn(`⚠️  User document not found for userId: ${disconnectedUserId} - cannot update status`);
                 }
               } catch (dbErr) {
                 console.warn(`⚠️  Failed to update database status for agent ${disconnectedUserId}:`, dbErr?.message || dbErr);

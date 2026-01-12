@@ -13,39 +13,90 @@ interface ThemeProviderProps {
   children: ReactNode
 }
 
-export function ThemeProvider({ children }: ThemeProviderProps) {
-  const [theme, setThemeState] = useState<Theme>(() => {
-    // Check localStorage first
-    const storedTheme = localStorage.getItem('theme') as Theme | null
-    if (storedTheme === 'light' || storedTheme === 'dark') {
-      return storedTheme
-    }
-    
-    // If not found, check system preference
-    if (typeof window !== 'undefined') {
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-      return prefersDark ? 'dark' : 'light'
-    }
-    
-    // Default to light if window is not available
-    return 'light'
-  })
+// LocalStorage key for theme preference (client-side only, per-user)
+const THEME_STORAGE_KEY = 'vite-ui-theme'
 
-  // Apply theme to document on mount and when theme changes
+/**
+ * Get initial theme from localStorage or system preference
+ * This is completely client-side and isolated per browser instance
+ */
+function getInitialTheme(): Theme {
+  if (typeof window === 'undefined') {
+    return 'light'
+  }
+
+  // Check localStorage first (user's saved preference)
+  const storedTheme = localStorage.getItem(THEME_STORAGE_KEY) as Theme | null
+  if (storedTheme === 'light' || storedTheme === 'dark') {
+    return storedTheme
+  }
+
+  // If no stored preference, check system preference
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+  return prefersDark ? 'dark' : 'light'
+}
+
+export function ThemeProvider({ children }: ThemeProviderProps) {
+  // Initialize theme from localStorage or system preference
+  const [theme, setThemeState] = useState<Theme>(getInitialTheme)
+
+  // Apply theme to document root element (for Tailwind dark: classes)
   useEffect(() => {
     const root = document.documentElement
     
-    if (theme === 'dark') {
-      root.classList.add('dark')
-    } else {
-      root.classList.remove('dark')
-    }
+    // Remove both classes first to ensure clean state
+    root.classList.remove('light', 'dark')
+    
+    // Add the current theme class
+    root.classList.add(theme)
+    
+    // Save to localStorage (client-side only, no server sync)
+    localStorage.setItem(THEME_STORAGE_KEY, theme)
   }, [theme])
 
-  // Save to localStorage when theme changes
+  // Listen for system theme changes (optional - only if no localStorage preference exists)
+  useEffect(() => {
+    const storedTheme = localStorage.getItem(THEME_STORAGE_KEY)
+    
+    // Only listen to system changes if user hasn't set a preference
+    if (!storedTheme) {
+      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+      
+      const handleChange = (e: MediaQueryListEvent) => {
+        // Only update if user hasn't manually set a preference
+        if (!localStorage.getItem(THEME_STORAGE_KEY)) {
+          setThemeState(e.matches ? 'dark' : 'light')
+        }
+      }
+      
+      // Modern browsers
+      if (mediaQuery.addEventListener) {
+        mediaQuery.addEventListener('change', handleChange)
+        return () => mediaQuery.removeEventListener('change', handleChange)
+      }
+      // Fallback for older browsers
+      else if (mediaQuery.addListener) {
+        mediaQuery.addListener(handleChange)
+        return () => mediaQuery.removeListener(handleChange)
+      }
+    }
+  }, [])
+
+  /**
+   * Set theme - completely client-side, no server sync
+   * This function only updates local state and localStorage
+   */
   const setTheme = (newTheme: Theme) => {
+    if (newTheme !== 'light' && newTheme !== 'dark') {
+      console.warn(`Invalid theme: ${newTheme}. Using 'light' instead.`)
+      newTheme = 'light'
+    }
+    
+    // Update state (will trigger useEffect to update DOM and localStorage)
     setThemeState(newTheme)
-    localStorage.setItem('theme', newTheme)
+    
+    // Explicitly save to localStorage immediately
+    localStorage.setItem(THEME_STORAGE_KEY, newTheme)
   }
 
   return (
