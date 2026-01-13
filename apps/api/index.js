@@ -340,6 +340,24 @@ const chatService = createChatService({
 // Preloaded responses and ending phrase detection are now in socketService.js
 
 // ============================================================================
+// Dashboard Routes (Admin Panel)
+// ============================================================================
+try {
+  const dashboardRoutes = require('./routes/dashboardRoutes');
+  // Pass existing Appwrite instances and config constants
+  app.use('/admin/dashboard', dashboardRoutes(awDatabases, {
+    databaseId: APPWRITE_DATABASE_ID,
+    sessionsCollectionId: APPWRITE_SESSIONS_COLLECTION_ID,
+    usersCollectionId: APPWRITE_USERS_COLLECTION_ID,
+    ticketsCollectionId: process.env.APPWRITE_TICKETS_COLLECTION_ID || 'tickets',
+    accuracyCollectionId: APPWRITE_AI_ACCURACY_COLLECTION_ID
+  }, Query));
+  console.log('✅ Dashboard routes mounted at /admin/dashboard');
+} catch (e) {
+  console.error('❌ Failed to mount dashboard routes:', e.message);
+}
+
+// ============================================================================
 // RBAC (Role-Based Access Control) Implementation
 // ============================================================================
 
