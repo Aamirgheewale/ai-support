@@ -7,7 +7,7 @@ let dashboardCache = {
     timestamp: 0
 };
 
-const CACHE_TTL_MS = 30 * 1000; // 30 Seconds
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 Minutes
 
 /**
  * Dashboard Routes - Metrics and Stats for the Admin Dashboard
@@ -19,11 +19,12 @@ module.exports = function (databases, config, Query) {
         sessionsCollectionId,
         messagesCollectionId,
         usersCollectionId,
-        ticketsCollectionId
+        ticketsCollectionId,
+        accuracyCollectionId = 'ai_accuracy'
     } = config;
 
     // AI Accuracy Collection ID (fallback if not in config)
-    const accuracyCollectionId = 'ai_accuracy';
+    // const accuracyCollectionId = 'ai_accuracy';
 
     router.get('/stats', async (req, res) => {
         if (!databases || !databaseId) {
