@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import UserRoleEditor from '../components/UserRoleEditor';
 import PaginationControls from '../components/common/PaginationControls';
-import { Card, TableContainer, Table, Thead, Th, Tbody, Tr, Td } from '../components/ui';
+import { Card, TableContainer } from '../components/ui';
+import DataTable from '../components/ui/DataTable';
+import { ColumnDef } from '@tanstack/react-table';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
 const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET || 'dev-secret-change-me';
@@ -25,7 +27,7 @@ export default function UsersPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newUser, setNewUser] = useState({ email: '', name: '', roles: [] as string[] });
   const [creatingUser, setCreatingUser] = useState(false);
-  
+
   // Pagination state
   const [limit, setLimit] = useState(20);
   const [offset, setOffset] = useState(0);
@@ -55,7 +57,7 @@ export default function UsersPage() {
         limit: limit.toString(),
         offset: offset.toString()
       });
-      
+
       const res = await fetch(`${API_BASE}/admin/users?${params}`, {
         headers: {
           'Authorization': `Bearer ${token || ADMIN_SECRET}`
@@ -169,6 +171,64 @@ export default function UsersPage() {
     }
   };
 
+  // Define columns for Users Table
+  const userColumns: ColumnDef<User>[] = [
+    {
+      accessorKey: 'name',
+      header: 'Name',
+      cell: info => <span className="font-medium text-gray-900 dark:text-gray-100">{String(info.getValue() || 'Unknown')}</span>,
+    },
+    {
+      accessorKey: 'email',
+      header: 'Email',
+      cell: info => <span className="text-gray-500 dark:text-gray-400">{String(info.getValue())}</span>,
+    },
+    {
+      accessorKey: 'roles',
+      header: 'Roles',
+      cell: info => (
+        <div className="flex flex-wrap gap-1">
+          {(info.getValue() as string[]).map((role) => (
+            <span
+              key={role}
+              className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300"
+            >
+              {role}
+            </span>
+          ))}
+        </div>
+      ),
+    },
+    {
+      accessorKey: 'createdAt',
+      header: 'Created',
+      cell: info => {
+        const val = info.getValue() as string | undefined;
+        return <span className="text-gray-500 dark:text-gray-400">{val ? new Date(val).toLocaleDateString() : '-'}</span>;
+      },
+    },
+    {
+      id: 'actions',
+      header: () => <div className="text-right">Actions</div>,
+      cell: ({ row }) => (
+        <div className="text-right">
+          <button
+            onClick={() => setEditingUser(row.original)}
+            className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 mr-4"
+          >
+            Edit Roles
+          </button>
+          <button
+            onClick={() => handleDelete(row.original.userId)}
+            className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300"
+          >
+            Delete
+          </button>
+        </div>
+      ),
+    },
+  ];
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="flex justify-between items-center mb-6">
@@ -187,97 +247,42 @@ export default function UsersPage() {
         </div>
       )}
 
-      {loading ? (
-        <div className="text-center py-8 text-gray-700 dark:text-gray-300">Loading users...</div>
-      ) : (
-        <Card className="overflow-hidden">
-          <TableContainer>
-            <Table>
-              <Thead>
-                <Tr>
-                  <Th>Name</Th>
-                  <Th>Email</Th>
-                  <Th>Roles</Th>
-                  <Th>Created</Th>
-                  <Th className="text-right">Actions</Th>
-                </Tr>
-              </Thead>
-              <Tbody>
-                {users.length === 0 ? (
-                  <Tr>
-                    <Td colSpan={5} className="text-center text-gray-500 dark:text-gray-400">
-                      No users found
-                    </Td>
-                  </Tr>
-                ) : (
-                  users.map((user) => (
-                    <Tr key={user.userId}>
-                      <Td className="font-medium">{user.name}</Td>
-                      <Td className="text-gray-500 dark:text-gray-400">{user.email}</Td>
-                      <Td>
-                        <div className="flex flex-wrap gap-1">
-                          {user.roles.map((role) => (
-                            <span
-                              key={role}
-                              className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300"
-                            >
-                              {role}
-                            </span>
-                          ))}
-                        </div>
-                      </Td>
-                      <Td className="text-gray-500 dark:text-gray-400">
-                        {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '-'}
-                      </Td>
-                      <Td className="text-right">
-                        <button
-                          onClick={() => setEditingUser(user)}
-                          className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 mr-4"
-                        >
-                          Edit Roles
-                        </button>
-                        <button
-                          onClick={() => handleDelete(user.userId)}
-                          className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300"
-                        >
-                          Delete
-                        </button>
-                      </Td>
-                    </Tr>
-                  ))
-                )}
-              </Tbody>
-            </Table>
-          </TableContainer>
-          
-          {/* Pagination */}
-          {!loading && users.length > 0 && (
-            <div className="bg-white dark:bg-gray-800 px-4 py-3 flex items-center justify-between border-t border-gray-200 dark:border-gray-700 sm:px-6">
-              <div className="flex items-center gap-4">
-                <label className="text-sm text-gray-700 dark:text-gray-300">Items per page:</label>
-                <select
-                  value={limit}
-                  onChange={(e) => {
-                    setLimit(Number(e.target.value));
-                    setOffset(0);
-                  }}
-                  className="border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                >
-                  <option value={20}>20</option>
-                  <option value={50}>50</option>
-                  <option value={100}>100</option>
-                </select>
-              </div>
-              <PaginationControls
-                total={total}
-                limit={limit}
-                offset={offset}
-                onPageChange={(newOffset) => setOffset(newOffset)}
-              />
+      <Card className="overflow-hidden p-0">
+        <DataTable
+          columns={userColumns}
+          data={users}
+          isLoading={loading}
+          showPagination={false}
+        />
+
+        {/* External Pagination Controls (Server-Side) */}
+        {!loading && users.length > 0 && (
+          <div className="bg-white dark:bg-gray-800 px-4 py-3 flex items-center justify-between border-t border-gray-200 dark:border-gray-700 sm:px-6">
+            <div className="flex items-center gap-4">
+              <label className="text-sm text-gray-700 dark:text-gray-300">Items per page:</label>
+              <select
+                value={limit}
+                onChange={(e) => {
+                  setLimit(Number(e.target.value));
+                  setOffset(0);
+                }}
+                className="border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              >
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
             </div>
-          )}
-        </Card>
-      )}
+            <PaginationControls
+              total={total}
+              limit={limit}
+              offset={offset}
+              onPageChange={(newOffset) => setOffset(newOffset)}
+            />
+          </div>
+        )}
+      </Card>
+
 
       {editingUser && (
         <UserRoleEditor
@@ -361,23 +366,23 @@ export default function UsersPage() {
                   <span className="flex items-center justify-center">
                     <span className="mr-2">Creating</span>
                     <span className="flex space-x-1">
-                      <span 
+                      <span
                         className="inline-block w-2 h-2 bg-white rounded-full"
-                        style={{ 
+                        style={{
                           animation: 'pulse 1.4s ease-in-out infinite',
                           animationDelay: '0s'
                         }}
                       ></span>
-                      <span 
+                      <span
                         className="inline-block w-2 h-2 bg-white rounded-full"
-                        style={{ 
+                        style={{
                           animation: 'pulse 1.4s ease-in-out infinite',
                           animationDelay: '0.2s'
                         }}
                       ></span>
-                      <span 
+                      <span
                         className="inline-block w-2 h-2 bg-white rounded-full"
-                        style={{ 
+                        style={{
                           animation: 'pulse 1.4s ease-in-out infinite',
                           animationDelay: '0.4s'
                         }}
