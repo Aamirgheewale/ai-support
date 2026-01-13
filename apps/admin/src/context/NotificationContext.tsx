@@ -312,7 +312,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 
         const newSocket = io(SOCKET_URL, {
             auth: { token },
-            transports: ['websocket', 'polling']
+            transports: ['websocket'] // Force WebSocket to prevent polling quota leak
         });
 
         // Socket event handlers
@@ -400,7 +400,8 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
             console.log('🔔 new_notification received:', data);
 
             // Filter out agent_connected/disconnected notifications (no longer supported)
-            if (data.type === 'agent_connected' || data.type === 'agent_disconnected') {
+            const type = data.type as string;
+            if (type === 'agent_connected' || type === 'agent_disconnected') {
                 console.log(`⏭️  Ignoring ${data.type} notification (agent status notifications removed)`);
                 return;
             }
