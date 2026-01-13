@@ -3,9 +3,10 @@ import { AuthProvider, useAuth, ProtectedRoute } from './hooks/useAuth'
 import { NotificationProvider, useNotifications } from './context/NotificationContext'
 import { SoundProvider } from './context/SoundContext'
 import { ThemeProvider, useTheme } from './context/ThemeContext'
-import { Shirt, Sun, Moon, ChevronRight, ChevronLeft, MessageSquare, Video, Users, FileText, Bell, BarChart3, CheckCircle, Lock, Check, LogOut } from 'lucide-react'
+import { Shirt, Sun, Moon, ChevronRight, ChevronLeft, MessageSquare, Video, Users, FileText, Bell, BarChart3, CheckCircle, Lock, Check, LogOut, LayoutDashboard } from 'lucide-react'
 import SessionsList from './pages/SessionsList'
 import ConversationView from './pages/ConversationView'
+import Dashboard from './pages/Dashboard'
 import AnalyticsPage from './pages/AnalyticsPage'
 import UsersPage from './pages/UsersPage'
 import AccuracyPage from './pages/AccuracyPage'
@@ -165,6 +166,24 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
 
         {/* Navigation Links */}
         <nav className={`flex-1 py-4 space-y-1 ${isSidebarCollapsed ? 'px-2 overflow-visible' : 'px-4 overflow-y-auto'}`}>
+          <Link
+            to="/dashboard"
+            className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/dashboard')
+              ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
+              : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
+              } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
+            title={isSidebarCollapsed ? 'Dashboard' : ''}
+          >
+            <LayoutDashboard className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
+            {!isSidebarCollapsed && <span>Dashboard</span>}
+            {/* Tooltip when collapsed */}
+            {isSidebarCollapsed && (
+              <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+                Dashboard
+              </span>
+            )}
+          </Link>
+
           <Link
             to="/sessions"
             className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/sessions')
@@ -648,6 +667,7 @@ function App() {
                   <Routes>
                     <Route path="/" element={<Navigate to="/auth" replace />} />
                     <Route path="/auth" element={<AuthPage />} />
+                    <Route path="/dashboard" element={<ProtectedRoute requiredRole={['admin']}><Dashboard /></ProtectedRoute>} />
                     <Route path="/sessions" element={<ProtectedRoute><SessionsList /></ProtectedRoute>} />
                     <Route path="/sessions/:sessionId" element={<ProtectedRoute><ConversationView /></ProtectedRoute>} />
                     <Route path="/live" element={<ProtectedRoute><LiveVisitors /></ProtectedRoute>} />
