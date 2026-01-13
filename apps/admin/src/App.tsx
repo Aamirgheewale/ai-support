@@ -122,8 +122,8 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
     };
 
     fetchPendingCount();
-    const interval = setInterval(fetchPendingCount, 30000);
-    return () => clearInterval(interval);
+    // const interval = setInterval(fetchPendingCount, 30000); // Polling Removed to prevent API quota leak
+    // return () => clearInterval(interval);
   }, [user]);
 
   // Don't show navigation on auth/signup pages
