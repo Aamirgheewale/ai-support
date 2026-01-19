@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { Navigate } from 'react-router-dom';
 import PermissionDeniedPage from '../pages/PermissionDeniedPage';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
@@ -65,6 +66,9 @@ interface User {
   email: string;
   name: string;
   roles: string[];
+  status?: string;        // "online" | "offline"
+  accountStatus?: string; // "active" | "pending" | "rejected"
+  permissions?: string[];
   createdAt?: string;
   lastSeen?: string;
   userMeta?: Record<string, any>;
@@ -196,7 +200,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const hasAgentRole = userData?.roles && userData.roles.includes('agent');
         const hasAdminRole = userData?.roles && userData.roles.includes('admin');
         const hasSuperAdminRole = userData?.roles && userData.roles.includes('super_admin');
-        
+
         if (userData && (hasAgentRole || hasAdminRole || hasSuperAdminRole) && typeof window !== 'undefined') {
           try {
             const { io } = await import('socket.io-client');
@@ -295,7 +299,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const hasAgentRole = userData.roles && userData.roles.includes('agent');
     const hasAdminRole = userData.roles && userData.roles.includes('admin');
     const hasSuperAdminRole = userData.roles && userData.roles.includes('super_admin');
-    
+
     if ((hasAgentRole || hasAdminRole || hasSuperAdminRole) && typeof window !== 'undefined') {
       try {
         const { io } = await import('socket.io-client');
@@ -540,26 +544,49 @@ export function useAuth() {
 interface ProtectedRouteProps {
   children: ReactNode;
   requiredRole?: string | string[];
+  requiredPermission?: string;
 }
 
-export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) {
-  const { user, loading, hasRole, hasAnyRole } = useAuth();
+export function ProtectedRoute({ children, requiredRole, requiredPermission }: ProtectedRouteProps) {
+  const { user, loading, hasRole, hasAnyRole, isAdmin } = useAuth();
   const [shouldRedirect, setShouldRedirect] = useState(false);
+  const [shouldRedirectToWaiting, setShouldRedirectToWaiting] = useState(false);
   const [showPermissionDenied, setShowPermissionDenied] = useState(false);
 
   useEffect(() => {
     if (!loading) {
       if (!user) {
         setShouldRedirect(true);
-      } else if (requiredRole) {
-        const roles = Array.isArray(requiredRole) ? requiredRole : [requiredRole];
-        if (!hasAnyRole(roles)) {
-          // Show permission denied page instead of redirecting
-          setShowPermissionDenied(true);
+      } else {
+        let accessGranted = true;
+
+        // Role Check
+        if (requiredRole) {
+          const roles = Array.isArray(requiredRole) ? requiredRole : [requiredRole];
+          if (!hasAnyRole(roles)) {
+            accessGranted = false;
+          }
+        }
+
+        // Permission Check (skip for admins)
+        if (requiredPermission && !isAdmin()) {
+          const userPerms = user.permissions || [];
+          if (!userPerms.includes(requiredPermission)) {
+            accessGranted = false;
+          }
+        }
+
+        if (!accessGranted) {
+          // If user has NO permissions and is not admin, likely they need to go to waiting page
+          if (!isAdmin() && (!user.permissions || user.permissions.length === 0)) {
+            setShouldRedirectToWaiting(true);
+          } else {
+            setShowPermissionDenied(true);
+          }
         }
       }
     }
-  }, [user, loading, requiredRole, hasRole, hasAnyRole]);
+  }, [user, loading, requiredRole, requiredPermission, hasRole, hasAnyRole, isAdmin]);
 
   if (loading) {
     return (
@@ -572,6 +599,10 @@ export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) 
   if (shouldRedirect) {
     window.location.href = '/auth';
     return null;
+  }
+
+  if (shouldRedirectToWaiting) {
+    return <Navigate to="/waiting-for-access" replace />;
   }
 
   if (showPermissionDenied) {
