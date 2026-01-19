@@ -5,6 +5,7 @@ import { useAuth } from '../hooks/useAuth'
 import ImageAnnotationModal from '../components/ImageAnnotationModal'
 import { useAppwriteUpload } from '../hooks/useAppwriteUpload'
 import { useTyping } from '../hooks/useTyping'
+import { ChevronDown, Circle, Check, User } from 'lucide-react'
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000'
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_API_BASE || 'http://localhost:4000'
@@ -34,6 +35,7 @@ export default function ConversationView() {
   const [onlineAgents, setOnlineAgents] = useState<Array<{ userId: string; name: string; email: string; isOnline?: boolean; status?: string }>>([])
   const [selectedAgentId, setSelectedAgentId] = useState<string>('')
   const [loadingAgents, setLoadingAgents] = useState(false)
+  const [showAgentDropdown, setShowAgentDropdown] = useState(false)
 
   // Check if current user can send messages (agent or admin)
   const canSendMessages = hasAnyRole(['agent', 'admin'])
@@ -85,10 +87,13 @@ export default function ConversationView() {
       if (showExportMenu && !target.closest('[data-export-menu]')) {
         setShowExportMenu(false)
       }
+      if (showAgentDropdown && !target.closest('[data-agent-dropdown]')) {
+        setShowAgentDropdown(false)
+      }
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [showExportMenu])
+  }, [showExportMenu, showAgentDropdown])
 
   // Fetch canned responses on mount
   useEffect(() => {
@@ -123,23 +128,23 @@ export default function ConversationView() {
   useEffect(() => {
     const cursorPos = textareaRef.current?.selectionStart ?? messageText.length
     const textBeforeCursor = messageText.substring(0, cursorPos)
-    
+
     // Check for slash at start or after space
     const slashAtStart = textBeforeCursor.match(/^\/\w*$/)
     const slashAfterSpace = textBeforeCursor.match(/\s\/\w*$/)
-    
+
     if (slashAtStart || slashAfterSpace) {
       const match = slashAtStart || slashAfterSpace
       if (match) {
         const searchTerm = match[0].replace(/^\s*\//, '').toLowerCase()
         const startPos = cursorPos - match[0].length
         const endPos = cursorPos
-        
+
         setSlashTrigger({ start: startPos, end: endPos, searchTerm })
-        
+
         // Filter suggestions - with safety check
         if (Array.isArray(cannedResponses) && cannedResponses.length > 0) {
-          const filtered = cannedResponses.filter(resp => 
+          const filtered = cannedResponses.filter(resp =>
             resp && resp.shortcut && resp.shortcut.toLowerCase().startsWith(searchTerm)
           )
           setSuggestions(filtered)
@@ -163,7 +168,7 @@ export default function ConversationView() {
       switch (e.key) {
         case 'ArrowDown':
           e.preventDefault()
-          setSelectedSuggestionIndex(prev => 
+          setSelectedSuggestionIndex(prev =>
             prev < suggestions.length - 1 ? prev + 1 : prev
           )
           return
@@ -190,7 +195,7 @@ export default function ConversationView() {
           return
       }
     }
-    
+
     // If no suggestions, handle Enter for sending (Shift+Enter for new line)
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -201,15 +206,15 @@ export default function ConversationView() {
   // Select a canned response and replace trigger text
   function selectCannedResponse(response: CannedResponse) {
     if (!slashTrigger) return
-    
+
     const beforeTrigger = messageText.substring(0, slashTrigger.start)
     const afterTrigger = messageText.substring(slashTrigger.end)
     const newText = beforeTrigger + response.content + afterTrigger
-    
+
     setMessageText(newText)
     setShowSuggestions(false)
     setSlashTrigger(null)
-    
+
     // Focus textarea and move cursor to end of inserted content
     setTimeout(() => {
       if (textareaRef.current) {
@@ -416,22 +421,63 @@ export default function ConversationView() {
     if (isAdmin) {
       sock.on('agent_connected', (data: any) => {
         console.log('📨 Received agent_connected:', data)
-        // Refresh the online agents list when an agent connects
         loadOnlineAgents()
       })
 
       sock.on('agent_disconnected', (data: any) => {
         console.log('📨 Received agent_disconnected:', data)
-        // Refresh the online agents list when an agent disconnects
         loadOnlineAgents()
       })
 
       sock.on('agent_status_changed', (data: any) => {
         console.log('📨 Received agent_status_changed:', data)
-        // Refresh the online agents list when agent status changes
         loadOnlineAgents()
       })
     }
+
+    // Listen for incoming User messages
+    sock.on('new_message', (data: any) => {
+      if (data.sessionId === sessionId) {
+        console.log('📨 Received new_message (user):', data)
+        setMessages(prev => {
+          // Prevent duplicates
+          const exists = prev.some(m =>
+            m.text === data.text &&
+            m.sender === 'user' &&
+            Math.abs(new Date(m.timestamp).getTime() - new Date(data.createdAt || Date.now()).getTime()) < 2000
+          );
+          if (exists) return prev;
+
+          return [...prev, {
+            sender: 'user',
+            text: data.text,
+            timestamp: data.createdAt || new Date().toISOString(),
+            agentId: null
+          }]
+        })
+      }
+    })
+
+    // Listen for incoming Bot messages
+    sock.on('bot_message', (data: any) => {
+      console.log('📨 Received bot_message:', data)
+      setMessages(prev => {
+        // Prevent duplicates
+        const exists = prev.some(m =>
+          m.text === data.text &&
+          m.sender === 'bot' &&
+          Math.abs(new Date(m.timestamp).getTime() - Date.now()) < 5000
+        );
+        if (exists) return prev;
+
+        return [...prev, {
+          sender: 'bot',
+          text: data.text,
+          timestamp: new Date().toISOString(),
+          agentId: null
+        }]
+      })
+    })
 
     setSocket(sock)
 
@@ -479,25 +525,18 @@ export default function ConversationView() {
         status: a.status
       })))
 
-      // Filter: Only show agents who are:
-      // 1. Currently online (have active socket connections) AND
-      // 2. Have status === 'online' (not 'away' or null)
-      const onlineAgentsFiltered = allAgents.filter((agent: any) => {
-        const hasSocketConnection = agent.isOnline === true
-        const hasOnlineStatus = agent.status === 'online'
+      // Filter: Show all agents (don't filter offline ones)
+      // We want to give admin ability to assign to anyone
+      const onlineAgentsFiltered = allAgents;
 
-        // Must have BOTH socket connection AND status === 'online'
-        const isOnline = hasSocketConnection && hasOnlineStatus
-
-        if (!isOnline) {
-          console.log(`   ⚠️  Filtering out agent: ${agent.userId} (${agent.email}) - isOnline=${hasSocketConnection}, status=${agent.status}`)
-        }
-
-        return isOnline
-      })
-
-      // Sort by name for easier selection
+      // Sort: Online agents first, then by name
       const sortedAgents = onlineAgentsFiltered.sort((a: any, b: any) => {
+        // Sort by online status first (just isOnline check)
+        const aOnline = a.isOnline === true;
+        const bOnline = b.isOnline === true;
+
+        if (aOnline && !bOnline) return -1;
+        if (!aOnline && bOnline) return 1;
         const nameA = (a.name || a.email || '').toLowerCase()
         const nameB = (b.name || b.email || '').toLowerCase()
         return nameA.localeCompare(nameB)
@@ -978,7 +1017,7 @@ export default function ConversationView() {
       <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <button
-            onClick={() => navigate('/')}
+            onClick={() => navigate('/sessions')}
             style={{
               padding: '8px 16px',
               marginRight: '10px',
@@ -1103,59 +1142,113 @@ export default function ConversationView() {
                 const shouldDisable = loadingAgents && onlineAgents.length === 0
 
                 return (
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginLeft: '10px' }}>
-                    <select
-                      key={`agent-select-${onlineAgents.length}`} // Force re-render when onlineAgents changes
-                      value={selectedAgentId || ''} // Ensure value is never null/undefined
-                      onChange={(e) => setSelectedAgentId(e.target.value)}
-                      onFocus={handleDropdownFocus}
-                      disabled={shouldDisable} // Only disable when loading AND no agents available
-                      style={{
-                        padding: '8px 12px',
-                        border: '1px solid #ddd',
-                        borderRadius: '4px',
-                        fontSize: '14px',
-                        minWidth: '200px',
-                        background: shouldDisable ? '#f5f5f5' : 'white',
-                        cursor: shouldDisable ? 'not-allowed' : 'pointer',
-                        opacity: shouldDisable ? 0.6 : 1
+                  <div className="flex items-center gap-2 ml-2.5 relative" data-agent-dropdown>
+                    {/* Custom Dropdown Trigger */}
+                    <button
+                      onClick={() => {
+                        if (!shouldDisable) {
+                          setShowAgentDropdown(!showAgentDropdown)
+                          if (!showAgentDropdown) handleDropdownFocus()
+                        }
                       }}
+                      disabled={shouldDisable}
+                      className={`
+                        flex items-center justify-between px-3 py-2 border rounded text-sm min-w-[200px] transition-colors
+                        ${shouldDisable
+                          ? 'bg-gray-100 dark:bg-gray-800 text-gray-500 cursor-not-allowed opacity-60'
+                          : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white cursor-pointer hover:border-gray-400 dark:hover:border-gray-500'}
+                      `}
                     >
-                      <option value="">Select an agent...</option>
-                      {onlineAgents.length === 0 ? (
-                        <option value="" disabled>
-                          {loadingAgents ? 'Loading agents...' : 'No agents online'}
-                        </option>
-                      ) : (
-                        // Display ONLY online agents (already filtered in loadOnlineAgents)
-                        onlineAgents.map((agent) => {
-                          const displayName = agent.name || agent.email || 'Unknown'
+                      <div className="flex items-center gap-2 overflow-hidden">
+                        {(() => {
+                          // Use selectedAgentId to find agent
+                          const selectedAgent = onlineAgents.find(a => a.userId === selectedAgentId)
+                          const selectedDisplayName = selectedAgent
+                            ? (selectedAgent.name || selectedAgent.email || 'Unknown')
+                            : 'Select an agent...'
 
-                          // Double-check: log if somehow a non-online agent got through
-                          if (agent.isOnline !== true || agent.status !== 'online') {
-                            console.warn(`⚠️  WARNING: Rendering non-online agent in dropdown: ${agent.userId} (isOnline=${agent.isOnline}, status=${agent.status})`)
+                          // Allow selecting any agent who is connected via socket (isOnline)
+                          const selectedIsOnline = selectedAgent?.isOnline === true
+
+                          if (selectedAgent) {
+                            return (
+                              <>
+                                <Circle className={`w-3 h-3 flex-shrink-0 ${selectedIsOnline ? 'fill-green-500 text-green-500' : 'text-gray-400'}`} />
+                                <span className="truncate">{selectedDisplayName}</span>
+                              </>
+                            )
+                          } else {
+                            return <span className="text-gray-500 dark:text-gray-400">{loadingAgents && onlineAgents.length === 0 ? 'Loading agents...' : 'Select an agent...'}</span>
                           }
+                        })()}
+                      </div>
+                      <ChevronDown className="w-4 h-4 opacity-50 ml-2 flex-shrink-0" />
+                    </button>
 
-                          return (
-                            <option key={agent.userId} value={agent.userId}>
-                              🟢 {displayName}
-                            </option>
-                          )
-                        })
-                      )}
-                    </select>
+                    {/* Custom Dropdown Menu */}
+                    {showAgentDropdown && (
+                      <div className="absolute top-full left-0 mt-1 w-full min-w-[240px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 max-h-[300px] overflow-y-auto">
+                        {onlineAgents.length === 0 ? (
+                          <div className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 text-center">
+                            {loadingAgents ? 'Loading agents...' : 'No agents found'}
+                          </div>
+                        ) : (
+                          <div className="py-1">
+                            {onlineAgents.map((agent) => {
+                              const displayName = agent.name || agent.email || 'Unknown'
+                              // Allow selecting any agent who is connected via socket (isOnline)
+                              const isOnline = agent.isOnline === true
+                              const isSelected = selectedAgentId === agent.userId
+
+                              return (
+                                <button
+                                  key={agent.userId}
+                                  onClick={() => {
+                                    if (isOnline) {
+                                      setSelectedAgentId(agent.userId)
+                                      setShowAgentDropdown(false)
+                                    }
+                                  }}
+                                  disabled={!isOnline}
+                                  className={`
+                                    w-full text-left px-3 py-2 text-sm flex items-center justify-between transition-colors
+                                    ${!isOnline
+                                      ? 'bg-gray-50 dark:bg-gray-800 text-gray-400 cursor-not-allowed opacity-70'
+                                      : 'hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-gray-900 dark:text-gray-100'}
+                                    ${isSelected ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400' : ''}
+                                  `}
+                                >
+                                  <div className="flex items-center gap-2.5 overflow-hidden">
+                                    <div className="flex-shrink-0 relative">
+                                      <User className={`w-4 h-4 ${!isOnline ? 'opacity-40' : 'opacity-70'}`} />
+                                      <div className="absolute -bottom-0.5 -right-0.5 bg-white dark:bg-gray-800 rounded-full p-[1px]">
+                                        <Circle className={`w-2.5 h-2.5 ${isOnline ? 'fill-green-500 text-green-500' : 'text-gray-300 dark:text-gray-600'}`} />
+                                      </div>
+                                    </div>
+                                    <div className="flex flex-col truncate">
+                                      <span className={`font-medium truncate ${!isOnline ? 'text-gray-400' : ''}`}>{displayName}</span>
+                                      {!isOnline && (
+                                        <span className="text-[10px] text-gray-400 capitalize">{agent.status || 'Offline'}</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  {isSelected && <Check className="w-4 h-4 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
                     <button
                       onClick={assignToSelectedAgent}
                       disabled={!selectedAgentId || loadingAgents}
-                      style={{
-                        padding: '8px 16px',
-                        background: selectedAgentId && !loadingAgents ? '#28a745' : '#ccc',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '4px',
-                        cursor: selectedAgentId && !loadingAgents ? 'pointer' : 'not-allowed',
-                        fontSize: '14px'
-                      }}
+                      className={`
+                        px-4 py-2 border-none rounded text-sm text-white transition-colors
+                        ${(!selectedAgentId || loadingAgents)
+                          ? 'bg-gray-400 cursor-not-allowed'
+                          : 'bg-green-600 hover:bg-green-700 cursor-pointer'}
+                      `}
                     >
                       Assign
                     </button>
@@ -1164,31 +1257,40 @@ export default function ConversationView() {
               })()}
               {assignedAgentId && canSendMessages && sessionStatus === 'agent_assigned' ? (
                 <>
-                  <button onClick={closeConversation} style={{ padding: '8px 16px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', marginLeft: '10px' }}>
+                  <button
+                    onClick={closeConversation}
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm ml-2.5 transition-colors"
+                  >
                     Close Conversation
                   </button>
                   {assignedAgentId === agentId && (
-                    <span style={{ fontSize: '13px', color: '#28a745', fontWeight: '500', marginLeft: '10px' }}>✓ Assigned</span>
+                    <span className="text-sm text-green-600 dark:text-green-400 font-medium ml-2.5">✓ Assigned</span>
                   )}
                 </>
               ) : assignedAgentId ? (
                 <>
-                  <span style={{ fontSize: '13px', color: '#6c757d', marginLeft: '10px' }}>
+                  <span className="text-sm text-gray-500 dark:text-gray-400 ml-2.5">
                     Assigned to: {assignedAgentId}
                   </span>
                   {/* Only show reassign button if current user is NOT the assigned agent */}
                   {user?.userId !== assignedAgentId && (
-                    <button onClick={assignToMe} style={{ padding: '8px 16px', background: '#ffc107', color: '#333', border: 'none', borderRadius: '4px', cursor: 'pointer', marginLeft: '10px' }}>
+                    <button
+                      onClick={assignToMe}
+                      className="px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-gray-900 rounded text-sm ml-2.5 transition-colors font-medium"
+                    >
                       Reassign to Me
                     </button>
                   )}
                   {/* If current user IS the assigned agent, show they're assigned */}
                   {user?.userId === assignedAgentId && (
-                    <span style={{ fontSize: '13px', color: '#28a745', fontWeight: '500', marginLeft: '10px' }}>✓ You are assigned</span>
+                    <span className="text-sm text-green-600 dark:text-green-400 font-medium ml-2.5">✓ You are assigned</span>
                   )}
                 </>
               ) : (
-                <button onClick={assignToMe} style={{ padding: '8px 16px', background: '#28a745', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', marginLeft: '10px' }}>
+                <button
+                  onClick={assignToMe}
+                  className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded text-sm ml-2.5 transition-colors"
+                >
                   Assign to Me
                 </button>
               )}
@@ -1227,7 +1329,7 @@ export default function ConversationView() {
               const getBubbleStyles = () => {
                 const baseStyles = 'px-3.5 py-2.5 rounded-lg max-w-[70%]'
                 const alignment = msg.sender === 'user' ? 'self-end' : 'self-start'
-                
+
                 switch (msg.sender) {
                   case 'user':
                     return `${baseStyles} ${alignment} bg-indigo-500 dark:bg-indigo-600 text-white`
@@ -1243,144 +1345,144 @@ export default function ConversationView() {
                     return `${baseStyles} ${alignment} bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100`
                 }
               }
-              
+
               return (
-              <div
-                key={i}
-                className={getBubbleStyles()}
-              >
-                <div className="text-xs opacity-80 mb-1 font-medium text-current">
-                  {msg.sender === 'bot' ? '🤖 Bot' :
-                    msg.sender === 'agent' ? `👤 Agent${msg.agentId ? ` (${msg.agentId})` : ''}` :
-                      msg.sender === 'internal' ? '🔒 Private Note' :
-                        msg.sender === 'system' ? 'ℹ️ System' :
-                          '👤 User'}
-                </div>
-                {/* Image Attachment Rendering */}
-                {msg.type === 'image' && msg.attachmentUrl ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div
-                      style={{
-                        position: 'relative',
-                        maxWidth: '250px',
-                        display: 'inline-block'
-                      }}
-                      onMouseEnter={() => msg.sender === 'user' && setHoveredImageUrl(msg.attachmentUrl!)}
-                      onMouseLeave={() => setHoveredImageUrl(null)}
-                    >
+                <div
+                  key={i}
+                  className={getBubbleStyles()}
+                >
+                  <div className="text-xs opacity-80 mb-1 font-medium text-current">
+                    {msg.sender === 'bot' ? '🤖 Bot' :
+                      msg.sender === 'agent' ? `👤 Agent${msg.agentId ? ` (${msg.agentId})` : ''}` :
+                        msg.sender === 'internal' ? '🔒 Private Note' :
+                          msg.sender === 'system' ? 'ℹ️ System' :
+                            '👤 User'}
+                  </div>
+                  {/* Image Attachment Rendering */}
+                  {msg.type === 'image' && msg.attachmentUrl ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                       <div
-                        onClick={() => {
-                          setImageToView(msg.attachmentUrl!);
-                          setShowImageViewer(true);
-                        }}
                         style={{
-                          display: 'block',
-                          cursor: 'pointer',
-                          textDecoration: 'none',
-                          position: 'relative'
+                          position: 'relative',
+                          maxWidth: '250px',
+                          display: 'inline-block'
                         }}
+                        onMouseEnter={() => msg.sender === 'user' && setHoveredImageUrl(msg.attachmentUrl!)}
+                        onMouseLeave={() => setHoveredImageUrl(null)}
                       >
-                        <img
-                          src={msg.attachmentUrl}
-                          alt="User attachment"
-                          style={{
-                            width: '100%',
-                            maxWidth: '250px',
-                            height: 'auto',
-                            borderRadius: '8px',
-                            border: '1px solid rgba(0, 0, 0, 0.1)',
-                            boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
-                          }}
-                        />
-                      </div>
-                      {/* Hover Overlay for User Images */}
-                      {msg.sender === 'user' && hoveredImageUrl === msg.attachmentUrl && canSendMessages && (
                         <div
-                          style={{
-                            position: 'absolute',
-                            top: 0,
-                            left: 0,
-                            right: 0,
-                            bottom: 0,
-                            backgroundColor: 'rgba(0, 0, 0, 0.6)',
-                            borderRadius: '8px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            cursor: 'pointer',
-                            zIndex: 10
+                          onClick={() => {
+                            setImageToView(msg.attachmentUrl!);
+                            setShowImageViewer(true);
                           }}
-                          onClick={(e) => {
-                            e.stopPropagation();
+                          style={{
+                            display: 'block',
+                            cursor: 'pointer',
+                            textDecoration: 'none',
+                            position: 'relative'
                           }}
                         >
-                          <div style={{ display: 'flex', gap: '10px' }}>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setImageToView(msg.attachmentUrl!);
-                                setShowImageViewer(true);
-                              }}
-                              style={{
-                                padding: '10px 15px',
-                                backgroundColor: '#2196F3',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '6px',
-                                fontSize: '14px',
-                                fontWeight: 'bold',
-                                cursor: 'pointer',
-                                boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '5px'
-                              }}
-                            >
-                              👁️ View
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setImageToAnnotate(msg.attachmentUrl!);
-                                setShowAnnotationModal(true);
-                              }}
-                              style={{
-                                padding: '10px 15px',
-                                backgroundColor: '#4CAF50',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '6px',
-                                fontSize: '14px',
-                                fontWeight: 'bold',
-                                cursor: 'pointer',
-                                boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '5px'
-                              }}
-                            >
-                              ✏️ Reply
-                            </button>
+                          <img
+                            src={msg.attachmentUrl}
+                            alt="User attachment"
+                            style={{
+                              width: '100%',
+                              maxWidth: '250px',
+                              height: 'auto',
+                              borderRadius: '8px',
+                              border: '1px solid rgba(0, 0, 0, 0.1)',
+                              boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
+                            }}
+                          />
+                        </div>
+                        {/* Hover Overlay for User Images */}
+                        {msg.sender === 'user' && hoveredImageUrl === msg.attachmentUrl && canSendMessages && (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              top: 0,
+                              left: 0,
+                              right: 0,
+                              bottom: 0,
+                              backgroundColor: 'rgba(0, 0, 0, 0.6)',
+                              borderRadius: '8px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              cursor: 'pointer',
+                              zIndex: 10
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                            }}
+                          >
+                            <div style={{ display: 'flex', gap: '10px' }}>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setImageToView(msg.attachmentUrl!);
+                                  setShowImageViewer(true);
+                                }}
+                                style={{
+                                  padding: '10px 15px',
+                                  backgroundColor: '#2196F3',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  fontSize: '14px',
+                                  fontWeight: 'bold',
+                                  cursor: 'pointer',
+                                  boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '5px'
+                                }}
+                              >
+                                👁️ View
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setImageToAnnotate(msg.attachmentUrl!);
+                                  setShowAnnotationModal(true);
+                                }}
+                                style={{
+                                  padding: '10px 15px',
+                                  backgroundColor: '#4CAF50',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  fontSize: '14px',
+                                  fontWeight: 'bold',
+                                  cursor: 'pointer',
+                                  boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '5px'
+                                }}
+                              >
+                                ✏️ Reply
+                              </button>
+                            </div>
                           </div>
+                        )}
+                      </div>
+                      {msg.text && msg.text !== 'Image' && (
+                        <div className="text-[13px] leading-relaxed break-words text-current">
+                          {msg.text}
                         </div>
                       )}
                     </div>
-                    {msg.text && msg.text !== 'Image' && (
-                      <div className="text-[13px] leading-relaxed break-words text-current">
-                        {msg.text}
-                      </div>
-                    )}
+                  ) : (
+                    <div className="whitespace-pre-wrap break-words text-current">{msg.text}</div>
+                  )}
+                  <div className="text-[11px] opacity-70 mt-1 text-current">
+                    {new Date(msg.timestamp).toLocaleString()}
                   </div>
-                ) : (
-                  <div className="whitespace-pre-wrap break-words text-current">{msg.text}</div>
-                )}
-                <div className="text-[11px] opacity-70 mt-1 text-current">
-                  {new Date(msg.timestamp).toLocaleString()}
                 </div>
-              </div>
               )
             })}
-            
+
             {/* Typing Indicator - Inside message list */}
             {remoteTypingUser && (
               <div className="flex items-center gap-2 p-4 text-xs text-gray-500 dark:text-gray-400 animate-pulse">
@@ -1414,13 +1516,11 @@ export default function ConversationView() {
                   <div
                     key={resp.$id}
                     onClick={() => selectCannedResponse(resp)}
-                    className={`px-3 py-2.5 cursor-pointer transition-colors ${
-                      index === selectedSuggestionIndex 
-                        ? 'bg-blue-600 dark:bg-blue-900/50 text-white dark:text-gray-100' 
-                        : 'bg-transparent hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100'
-                    } ${
-                      index < suggestions.length - 1 ? 'border-b border-gray-200 dark:border-gray-700' : ''
-                    }`}
+                    className={`px-3 py-2.5 cursor-pointer transition-colors ${index === selectedSuggestionIndex
+                      ? 'bg-blue-600 dark:bg-blue-900/50 text-white dark:text-gray-100'
+                      : 'bg-transparent hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100'
+                      } ${index < suggestions.length - 1 ? 'border-b border-gray-200 dark:border-gray-700' : ''
+                      }`}
                     onMouseEnter={() => setSelectedSuggestionIndex(index)}
                   >
                     <div className="flex items-center justify-between mb-1">
@@ -1429,28 +1529,26 @@ export default function ConversationView() {
                       </span>
                       {resp.category && (
                         <span
-                          className={`text-[11px] px-1.5 py-0.5 rounded ${
-                            index === selectedSuggestionIndex
-                              ? 'bg-white/20 dark:bg-white/10 text-white dark:text-gray-200'
-                              : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
-                          }`}
+                          className={`text-[11px] px-1.5 py-0.5 rounded ${index === selectedSuggestionIndex
+                            ? 'bg-white/20 dark:bg-white/10 text-white dark:text-gray-200'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+                            }`}
                         >
                           {resp.category}
                         </span>
                       )}
                     </div>
-                    <div className={`text-xs ${
-                      index === selectedSuggestionIndex 
-                        ? 'text-white/90 dark:text-gray-200' 
-                        : 'text-gray-600 dark:text-gray-400'
-                    } overflow-hidden text-ellipsis whitespace-nowrap`}>
+                    <div className={`text-xs ${index === selectedSuggestionIndex
+                      ? 'text-white/90 dark:text-gray-200'
+                      : 'text-gray-600 dark:text-gray-400'
+                      } overflow-hidden text-ellipsis whitespace-nowrap`}>
                       {resp.content.length > 50 ? resp.content.substring(0, 50) + '...' : resp.content}
                     </div>
                   </div>
                 ))}
               </div>
             )}
-            
+
             <textarea
               ref={textareaRef}
               placeholder="Type your message... (Use / for canned responses)"
