@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { useAuth } from '../hooks/useAuth';
 import { useSoundContext } from './SoundContext';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
@@ -35,6 +36,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     const [socket, setSocket] = useState<Socket | null>(null);
     const [token, setToken] = useState<string | null>(null);
     const { playRing } = useSoundContext();
+    const { user, isAdmin } = useAuth(); // Access user to check permissions
 
     // CRITICAL: Deduplication tracking - tracks all processed notification IDs
     const processedIds = useRef<Set<string>>(new Set());
@@ -104,6 +106,16 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         try {
             const currentToken = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
             if (!currentToken) return;
+
+            // Fetch permissions check
+            const hasPermissions = user?.permissions && user.permissions.length > 0;
+            const isUserAdmin = isAdmin();
+
+            // If user has no permissions and is not admin, DO NOT fetch or connect
+            if (!isUserAdmin && !hasPermissions) {
+                console.log('🚫 NotificationContext: User has no permissions, skipping fetch');
+                return;
+            }
 
             // Fetch all notifications (not just unread) for inbox view
             const response = await fetch(`${API_BASE}/api/notifications?unreadOnly=false`, {
@@ -308,6 +320,16 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
             return;
         }
 
+        // Fetch permissions check
+        const hasPermissions = user?.permissions && user.permissions.length > 0;
+        const isUserAdmin = isAdmin();
+
+        // If user has no permissions and is not admin, DO NOT connect socket
+        if (!isUserAdmin && !hasPermissions) {
+            console.log('🚫 NotificationContext: User has no permissions, skipping socket connection');
+            return;
+        }
+
         console.log('🔌 NotificationContext: Token found, initializing socket connection to:', SOCKET_URL);
 
         const newSocket = io(SOCKET_URL, {
@@ -451,7 +473,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
             newSocket.off('connect_error', handleConnectError);
             newSocket.disconnect();
         };
-    }, [token]);
+    }, [token, user]);
 
     // Request browser notification permission on mount
     useEffect(() => {
