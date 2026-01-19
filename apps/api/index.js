@@ -8,6 +8,7 @@ const cookieParser = require('cookie-parser');
 const {
   awDatabases,
   geminiClient,
+  chatService,
   config
 } = require('./config/clients');
 
@@ -89,6 +90,12 @@ app.set('io', io);
 
 // Initialize Socket Handlers
 initSocketHandlers(io);
+
+// Pass IO to Chat Service for real-time notifications
+if (chatService) {
+  chatService.setIo(io);
+  console.log('✅ Socket.IO instance injected into Chat Service');
+}
 
 const PORT = process.env.PORT || 4000;
 const FORCE_TLS = process.env.FORCE_TLS === 'true';
