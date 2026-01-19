@@ -21,8 +21,16 @@ function createChatService(dependencies) {
     databaseId,
     sessionsCollectionId,
     messagesCollectionId,
-    sessionAssignments = null // Optional, only needed for assignAgentToSession
+    sessionAssignments = null, // Optional, only needed for assignAgentToSession
+    agentSockets = null // Optional, for real-time notifications
   } = dependencies;
+
+  // IO instance (set later via setIo)
+  let io = dependencies.io || null;
+
+  function setIo(socketIo) {
+    io = socketIo;
+  }
 
   /**
    * Get session document from Appwrite
@@ -615,6 +623,17 @@ function createChatService(dependencies) {
         );
 
         console.log(`✅ Created assignment notification for agent ${agentId} on session ${sessionId}`);
+
+        // Emit real-time notification to specific agent
+        if (io && agentSockets) {
+          const socketId = agentSockets.get(agentId);
+          if (socketId) {
+            io.to(socketId).emit('new_notification', notificationData);
+            console.log(`📡 Emitted real-time notification to agent ${agentId} (socket: ${socketId})`);
+          } else {
+            console.log(`⚠️ Agent ${agentId} not connected to socket, notification saved to DB only`);
+          }
+        }
       } catch (notifErr) {
         console.warn(`⚠️  Failed to create assignment notification:`, notifErr?.message || notifErr);
         // Don't throw - notification failure shouldn't break assignment
@@ -634,7 +653,10 @@ function createChatService(dependencies) {
     ensureSessionInAppwrite,
     saveMessageToAppwrite,
     markSessionNeedsHuman,
-    assignAgentToSession
+    saveMessageToAppwrite,
+    markSessionNeedsHuman,
+    assignAgentToSession,
+    setIo
   };
 }
 
