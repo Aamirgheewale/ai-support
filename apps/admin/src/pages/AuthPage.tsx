@@ -14,27 +14,27 @@ export default function AuthPage() {
   const navigate = useNavigate()
   const { signin, signup, user, loading } = useAuth()
   const [activeTab, setActiveTab] = useState<'signup' | 'signin'>('signin')
-  
+
   // Sign Up state
   const [signupName, setSignupName] = useState('')
   const [signupEmail, setSignupEmail] = useState('')
   const [signupRole, setSignupRole] = useState('agent')
   const [signupErrors, setSignupErrors] = useState<Record<string, string>>({})
   const [signupLoading, setSignupLoading] = useState(false)
-  
+
   // Sign In state
   const [signinEmail, setSigninEmail] = useState('')
   const [rememberMe, setRememberMe] = useState(false)
   const [signinErrors, setSigninErrors] = useState<Record<string, string>>({})
   const [signinLoading, setSigninLoading] = useState(false)
-  
+
   // Toast state
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
   const [showProfileModal, setShowProfileModal] = useState(false)
-  
+
   // Always show role dropdown for new users to choose their role
   const showRoleDropdown = true
-  
+
   // Redirect if already authenticated (but only after loading is complete)
   // Don't redirect if user is the dev-admin fallback and we're intentionally on auth page
   useEffect(() => {
@@ -42,18 +42,18 @@ export default function AuthPage() {
     if (loading) {
       return
     }
-    
+
     // Only redirect if user exists AND user is not the default dev-admin (which gets auto-created)
     // AND user has a real token (not just the fallback)
     if (user && user.userId !== 'dev-admin' && user.email !== 'dev@admin.local') {
       // Check if we have a real auth token (not just dev fallback)
       const hasToken = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token')
       if (hasToken) {
-        navigate('/sessions')
+        navigate('/')
       }
     }
   }, [user, loading, navigate])
-  
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
@@ -69,15 +69,15 @@ export default function AuthPage() {
     window.addEventListener('keydown', handleKeyPress)
     return () => window.removeEventListener('keydown', handleKeyPress)
   }, [])
-  
+
   const validateEmail = (email: string): boolean => {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
   }
-  
+
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
     setSignupErrors({})
-    
+
     // Validation
     const errors: Record<string, string> = {}
     if (!signupName.trim()) {
@@ -88,12 +88,12 @@ export default function AuthPage() {
     } else if (!validateEmail(signupEmail)) {
       errors.email = 'Invalid email format'
     }
-    
+
     if (Object.keys(errors).length > 0) {
       setSignupErrors(errors)
       return
     }
-    
+
     setSignupLoading(true)
     try {
       const signupData: any = {
@@ -101,17 +101,17 @@ export default function AuthPage() {
         email: signupEmail.trim(),
         role: signupRole || 'agent' // Always include role selection, default to agent if empty
       }
-      
+
       console.log('📤 Signup data being sent:', signupData)
       console.log('📤 Selected role:', signupRole)
-      
+
       await signup(signupData)
-      
+
       setToast({ message: 'Account created successfully! Please sign in.', type: 'success' })
       setSignupName('')
       setSignupEmail('')
       setSignupRole('agent')
-      
+
       // Switch to sign in tab after 1 second
       setTimeout(() => {
         setActiveTab('signin')
@@ -123,11 +123,11 @@ export default function AuthPage() {
       setSignupLoading(false)
     }
   }
-  
+
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
     setSigninErrors({})
-    
+
     // Validation
     const errors: Record<string, string> = {}
     if (!signinEmail.trim()) {
@@ -135,25 +135,25 @@ export default function AuthPage() {
     } else if (!validateEmail(signinEmail)) {
       errors.email = 'Invalid email format'
     }
-    
+
     if (Object.keys(errors).length > 0) {
       setSigninErrors(errors)
       return
     }
-    
+
     setSigninLoading(true)
     try {
       await signin({
         email: signinEmail.trim(),
         remember: rememberMe
       })
-      
+
       setToast({ message: 'Signed in successfully!', type: 'success' })
       // Open profile modal automatically after login
       setShowProfileModal(true)
       // Navigate after a short delay to allow modal to show
       setTimeout(() => {
-        navigate('/sessions')
+        navigate('/')
       }, 2000)
     } catch (err: any) {
       setToast({ message: err?.message || 'User not found', type: 'error' })
@@ -161,7 +161,7 @@ export default function AuthPage() {
       setSigninLoading(false)
     }
   }
-  
+
   return (
     <div className="fixed inset-0 bg-white flex items-center justify-center px-4 py-12 z-50">
       {toast && (
@@ -172,7 +172,7 @@ export default function AuthPage() {
         />
       )}
       <UserProfileModal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)} />
-      
+
       <div className="w-full max-w-md">
         <Card className="rounded-2xl overflow-hidden shadow-2xl">
           {/* Tab Navigation */}
@@ -180,11 +180,10 @@ export default function AuthPage() {
             <button
               type="button"
               onClick={() => setActiveTab('signup')}
-              className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${
-                activeTab === 'signup'
-                  ? 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400 bg-indigo-50 dark:bg-indigo-900/20'
-                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
-              }`}
+              className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${activeTab === 'signup'
+                ? 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400 bg-indigo-50 dark:bg-indigo-900/20'
+                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
+                }`}
               aria-selected={activeTab === 'signup'}
               role="tab"
             >
@@ -193,18 +192,17 @@ export default function AuthPage() {
             <button
               type="button"
               onClick={() => setActiveTab('signin')}
-              className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${
-                activeTab === 'signin'
-                  ? 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400 bg-indigo-50 dark:bg-indigo-900/20'
-                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
-              }`}
+              className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${activeTab === 'signin'
+                ? 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400 bg-indigo-50 dark:bg-indigo-900/20'
+                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
+                }`}
               aria-selected={activeTab === 'signin'}
               role="tab"
             >
               Sign In
             </button>
           </div>
-          
+
           {/* Tab Content */}
           <div className="p-8">
             {/* Sign Up Tab */}
@@ -219,9 +217,8 @@ export default function AuthPage() {
                     type="text"
                     value={signupName}
                     onChange={(e) => setSignupName(e.target.value)}
-                    className={`w-full border rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 ${
-                      signupErrors.name ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
-                    }`}
+                    className={`w-full border rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 ${signupErrors.name ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
+                      }`}
                     placeholder="John Doe"
                     required
                   />
@@ -229,7 +226,7 @@ export default function AuthPage() {
                     <p className="mt-1 text-sm text-red-600 dark:text-red-400">{signupErrors.name}</p>
                   )}
                 </div>
-                
+
                 <div>
                   <label htmlFor="signup-email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Email <span className="text-red-500 dark:text-red-400">*</span>
@@ -239,9 +236,8 @@ export default function AuthPage() {
                     type="email"
                     value={signupEmail}
                     onChange={(e) => setSignupEmail(e.target.value)}
-                    className={`w-full border rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 ${
-                      signupErrors.email ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
-                    }`}
+                    className={`w-full border rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 ${signupErrors.email ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
+                      }`}
                     placeholder="user@example.com"
                     required
                   />
@@ -249,7 +245,7 @@ export default function AuthPage() {
                     <p className="mt-1 text-sm text-red-600 dark:text-red-400">{signupErrors.email}</p>
                   )}
                 </div>
-                
+
                 {showRoleDropdown && (
                   <RoleDropdown
                     value={signupRole}
@@ -257,7 +253,7 @@ export default function AuthPage() {
                     showLabel={true}
                   />
                 )}
-                
+
                 <button
                   type="submit"
                   disabled={signupLoading}
@@ -267,7 +263,7 @@ export default function AuthPage() {
                 </button>
               </form>
             )}
-            
+
             {/* Sign In Tab */}
             {activeTab === 'signin' && (
               <form onSubmit={handleSignIn} className="space-y-5">
@@ -280,9 +276,8 @@ export default function AuthPage() {
                     type="email"
                     value={signinEmail}
                     onChange={(e) => setSigninEmail(e.target.value)}
-                    className={`w-full border rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 ${
-                      signinErrors.email ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
-                    }`}
+                    className={`w-full border rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 ${signinErrors.email ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
+                      }`}
                     placeholder="user@example.com"
                     required
                   />
@@ -290,7 +285,7 @@ export default function AuthPage() {
                     <p className="mt-1 text-sm text-red-600 dark:text-red-400">{signinErrors.email}</p>
                   )}
                 </div>
-                
+
                 <div className="flex items-center">
                   <input
                     id="remember-me"
@@ -303,7 +298,7 @@ export default function AuthPage() {
                     Remember me
                   </label>
                 </div>
-                
+
                 <button
                   type="submit"
                   disabled={signinLoading}
@@ -313,7 +308,7 @@ export default function AuthPage() {
                 </button>
               </form>
             )}
-            
+
             {/* Social/SSO Placeholders */}
             <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
               <p className="text-center text-sm text-gray-500 dark:text-gray-400 mb-4">Or continue with</p>
