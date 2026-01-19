@@ -131,7 +131,8 @@ async function createUserRow(payload) {
             userId: payload.userId,
             email: payload.email,
             name: payload.name,
-            roles: payload.roles
+            roles: payload.roles,
+            accountStatus: payload.accountStatus || 'pending'
         };
 
         const result = await awDatabases.createDocument(
@@ -174,7 +175,7 @@ async function createUserRow(payload) {
     }
 }
 
-async function ensureUserRecord(requestedUserId, { email, name }) {
+async function ensureUserRecord(requestedUserId, { email, name, roles, accountStatus }) {
     if (!awDatabases || !APPWRITE_DATABASE_ID) {
         console.warn('⚠️  Appwrite not configured, cannot ensure user record');
         return null;
@@ -243,8 +244,14 @@ async function ensureUserRecord(requestedUserId, { email, name }) {
                     userId: targetUserId,
                     email,
                     name: name || email,
-                    roles: []
+                    roles: roles || [],
+                    accountStatus: accountStatus || 'pending'
                 });
+
+                // Prime the cache immediately to prevent 404s due to cached nulls
+                userCache.set(targetUserId, result);
+                if (email) userCache.set(email, result);
+
                 return result;
             } catch (e) {
                 if (e.code === 409 || e.message?.includes('already exists')) {
@@ -276,6 +283,11 @@ async function setUserRoles(userId, rolesArray) {
             user.$id,
             { roles: newRoles }
         );
+
+        // Update cache
+        const updatedUser = { ...user, roles: newRoles };
+        userCache.set(userId, updatedUser);
+        if (user.email) userCache.set(user.email, updatedUser);
 
         await logRoleChange(userId, 'system', oldRoles, newRoles);
         return true;
@@ -370,7 +382,8 @@ async function requireAuth(req, res, next) {
             req.user = {
                 userId: user.userId,
                 email: user.email,
-                roles: Array.isArray(user.roles) ? user.roles : []
+                roles: Array.isArray(user.roles) ? user.roles : [],
+                permissions: Array.isArray(user.permissions) ? user.permissions : []
             };
             return next();
         }
@@ -400,6 +413,32 @@ function requireRole(allowedRoles) {
         } catch (e) { }
 
         return res.status(403).json({ error: 'Insufficient permissions' });
+    };
+}
+
+function requirePermission(permission) {
+    return async (req, res, next) => {
+        if (!req.user || !req.user.userId) {
+            return res.status(401).json({ error: 'Authentication required' });
+        }
+
+        // 1. Admins have access to everything
+        if (req.user.roles && req.user.roles.includes('admin')) {
+            return next();
+        }
+
+        // 2. Check specific permission
+        const userPerms = req.user.permissions || [];
+        // Handle case where permissions might be a string (legacy/bug) although we fixed it in usage,
+        // it's good to be safe.
+        // But req.user is hydrated from `getUserById` which returns raw Appwrite doc.
+        // Appwrite array attributes come as arrays.
+
+        if (userPerms.includes(permission)) {
+            return next();
+        }
+
+        return res.status(403).json({ error: `Missing required permission: ${permission}` });
     };
 }
 
@@ -440,7 +479,9 @@ const signup = async (req, res) => {
             userId,
             email,
             name: name || email,
-            roles: [assignedRole]
+            roles: [assignedRole],
+            status: 'pending', // Default to pending for new signups
+            permissions: [] // Default no permissions
         });
 
         await setUserRoles(userDoc.userId || userId, [assignedRole]);
@@ -449,7 +490,9 @@ const signup = async (req, res) => {
         // because getUserByEmail(email) above might have cached 'null'
         const newUserObj = {
             ...userDoc,
-            roles: [assignedRole]
+            roles: [assignedRole],
+            status: 'pending',
+            permissions: []
         };
         userCache.set(email, newUserObj);
         userCache.set(userDoc.userId || userId, newUserObj);
@@ -458,7 +501,9 @@ const signup = async (req, res) => {
             userId: userDoc.userId || userId,
             email: userDoc.email || email,
             name: userDoc.name || name || email,
-            roles: [assignedRole]
+            roles: [assignedRole],
+            accountStatus: 'pending', // Default to pending for new signups
+            permissions: []
         });
 
     } catch (err) {
@@ -474,6 +519,23 @@ const login = async (req, res) => {
 
         const user = await getUserByEmail(email);
         if (!user) return res.status(401).json({ error: 'User not found with this email' });
+
+        // RBAC: Strict Account Status Check
+        // Only allow login if accountStatus is EXPLICITLY 'active'
+        // Exception: Admins can always login (bypass status check)
+        const isAdmin = Array.isArray(user.roles) && user.roles.includes('admin');
+        const isStrictlyActive = user.accountStatus === 'active';
+
+        if (!isStrictlyActive && !isAdmin) {
+            if (user.accountStatus === 'pending') {
+                return res.status(403).json({ error: 'Your sign up request is in process...!' });
+            }
+            if (user.accountStatus === 'rejected') {
+                return res.status(403).json({ error: 'Your sign up request has been rejected.' });
+            }
+            // Fallback for legacy users (null status) or suspended users
+            return res.status(403).json({ error: 'Account not active. Please contact an administrator.' });
+        }
 
         // Update lastSeen
         try {
@@ -501,7 +563,11 @@ const login = async (req, res) => {
                 userId: user.userId,
                 email: user.email,
                 name: user.name,
-                roles: Array.isArray(user.roles) ? user.roles : []
+                email: user.email,
+                name: user.name,
+                roles: Array.isArray(user.roles) ? user.roles : [],
+                permissions: Array.isArray(user.permissions) ? user.permissions : [],
+                status: user.status || 'active'
             }
         });
     } catch (err) {
@@ -539,6 +605,9 @@ const getProfile = async (req, res) => {
             email: user.email,
             name: user.name,
             roles: Array.isArray(user.roles) ? user.roles : [],
+            status: user.status || 'offline', // Online/Offline status
+            accountStatus: user.accountStatus || 'active', // Approval status
+            permissions: Array.isArray(user.permissions) ? user.permissions : [],
             createdAt: user.createdAt || user.$createdAt,
             lastSeen: user.lastSeen,
             userMeta: user.userMeta ? (typeof user.userMeta === 'string' ? JSON.parse(user.userMeta) : user.userMeta) : {}
@@ -601,6 +670,55 @@ const updatePrefs = async (req, res) => {
         res.json({ success: true, prefs: merged });
     } catch (e) {
         res.status(500).json({ error: 'Failed' });
+    }
+};
+
+const updateUserAccess = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { accountStatus, permissions, roles } = req.body;
+        // accountStatus: 'active' | 'pending' | 'rejected'
+        // permissions: string[]
+        // roles: string[]
+
+        console.log(`🛡️ Admin updating access for ${userId}:`, { accountStatus, permissions, roles });
+
+        const user = await getUserById(userId);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        const updates = {};
+        if (accountStatus) {
+            if (!['active', 'pending', 'rejected'].includes(accountStatus)) {
+                return res.status(400).json({ error: 'Invalid accountStatus' });
+            }
+            updates.accountStatus = accountStatus;
+        }
+        if (permissions) {
+            updates.permissions = Array.isArray(permissions) ? permissions : [];
+        }
+        if (roles) {
+            updates.roles = Array.isArray(roles) ? roles : [];
+            await logRoleChange(userId, req.user.userId, user.roles, roles);
+        }
+
+        if (Object.keys(updates).length > 0) {
+            await awDatabases.updateDocument(
+                APPWRITE_DATABASE_ID,
+                APPWRITE_USERS_COLLECTION_ID,
+                user.$id,
+                updates
+            );
+
+            // Invalidate/Update Cache
+            const merged = { ...user, ...updates };
+            userCache.set(user.email, merged);
+            userCache.set(user.userId, merged);
+        }
+
+        res.json({ success: true, message: 'User access updated successfully' });
+    } catch (err) {
+        console.error('Error updating user access:', err);
+        res.status(500).json({ error: 'Failed to update user access' });
     }
 };
 
@@ -698,6 +816,10 @@ const adminListUsers = async (req, res) => {
         const queries = [];
         if (Query) {
             queries.push(Query.orderDesc('$createdAt'));
+            if (req.query.accountStatus) {
+                const statuses = req.query.accountStatus.split(',');
+                queries.push(Query.equal('accountStatus', statuses));
+            }
         }
 
         const result = await awDatabases.listDocuments(
@@ -713,6 +835,9 @@ const adminListUsers = async (req, res) => {
             email: doc.email,
             name: doc.name,
             roles: Array.isArray(doc.roles) ? doc.roles : [],
+            permissions: doc.permissions, // Include permissions for count display
+            accountStatus: doc.accountStatus || 'active', // Should default to active for legacy users? or pending? Let's say active for legacy.
+            status: doc.status || 'offline',
             createdAt: doc.createdAt || doc.$createdAt,
             updatedAt: doc.updatedAt || doc.$updatedAt
         }));
@@ -739,7 +864,7 @@ const adminCreateUser = async (req, res) => {
             return res.status(503).json({ error: 'Appwrite not configured' });
         }
 
-        const { email, name, roles } = req.body;
+        const { email, name, roles, accountStatus } = req.body;
         if (!email) {
             return res.status(400).json({ error: 'email is required' });
         }
@@ -750,7 +875,7 @@ const adminCreateUser = async (req, res) => {
         }
 
         const userId = req.body.userId || email.split('@')[0] + '_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
-        const user = await ensureUserRecord(userId, { email, name: name || email });
+        const user = await ensureUserRecord(userId, { email, name: name || email, roles, accountStatus });
 
         const effectiveUserId = user ? user.userId : userId;
 
@@ -762,7 +887,8 @@ const adminCreateUser = async (req, res) => {
                     userId: updated.userId,
                     email: updated.email,
                     name: updated.name,
-                    roles: Array.isArray(updated.roles) ? updated.roles : []
+                    roles: Array.isArray(updated.roles) ? updated.roles : [],
+                    permissions: updated.permissions || []
                 });
             }
         }
@@ -772,7 +898,8 @@ const adminCreateUser = async (req, res) => {
                 userId: user.userId,
                 email: user.email,
                 name: user.name,
-                roles: Array.isArray(user.roles) ? user.roles : []
+                roles: Array.isArray(user.roles) ? user.roles : [],
+                permissions: user.permissions || []
             });
         } else {
             // Fallback
@@ -835,6 +962,11 @@ const adminDeleteUser = async (req, res) => {
             user.$id
         );
 
+        // Clear cache
+        if (userCache.has(userId)) userCache.delete(userId);
+        if (userCache.has(user.email)) userCache.delete(user.email);
+        console.log(`🗑️ Cleared cache for deleted user: ${userId} (${user.email})`);
+
         res.json({ message: 'User deleted successfully' });
     } catch (err) {
         console.error('Error deleting user:', err);
@@ -861,7 +993,8 @@ const listAgents = async (req, res) => {
         const agents = allUsers.documents
             .filter(doc => {
                 const roles = Array.isArray(doc.roles) ? doc.roles : [];
-                return roles.includes('agent');
+                const accountStatus = doc.accountStatus || 'active'; // Default to active for legacy
+                return roles.includes('agent') && accountStatus === 'active';
             })
             .map(doc => {
                 const userId = doc.userId;
@@ -915,6 +1048,7 @@ const listAgents = async (req, res) => {
 module.exports = {
     requireAuth,
     requireRole,
+    requirePermission, // Added requirePermission
     requireAdminAuth,
     authorizeSocketToken,
     isUserInRole,
@@ -926,6 +1060,7 @@ module.exports = {
     updateStatus,
     getPrefs,
     updatePrefs,
+    updateUserAccess, // Export new function
     getUserProfilePublic,
     updateUserProfile,
     adminListUsers,
