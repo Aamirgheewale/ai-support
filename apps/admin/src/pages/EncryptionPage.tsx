@@ -49,7 +49,7 @@ export default function EncryptionPage() {
     if (authLoading) {
       return;
     }
-    
+
     if (hasRole('admin')) {
       loadStatus();
       loadAuditLogs();
@@ -68,11 +68,11 @@ export default function EncryptionPage() {
           'Authorization': `Bearer ${ADMIN_SECRET}`
         }
       });
-      
+
       if (!res.ok) {
         throw new Error('Failed to load encryption status');
       }
-      
+
       const data = await res.json();
       setStatus(data);
     } catch (err: any) {
@@ -89,7 +89,7 @@ export default function EncryptionPage() {
           'Authorization': `Bearer ${ADMIN_SECRET}`
         }
       });
-      
+
       if (res.ok) {
         const data = await res.json();
         setAuditLogs(data.logs || []);
@@ -115,7 +115,7 @@ export default function EncryptionPage() {
     if (!confirm('⚠️  This will encrypt all existing plaintext data. Continue?')) {
       return;
     }
-    
+
     addLog('Starting full migration...');
     addLog('⚠️  Run the migration script manually:');
     addLog('  MASTER_KEY_BASE64="<key>" node apps/api/migrations/migrate_encrypt_existing_data.js');
@@ -127,11 +127,11 @@ export default function EncryptionPage() {
       alert('Please enter the new master key (base64)');
       return;
     }
-    
+
     if (!confirm('⚠️  Key rotation should be done via migration script. Continue with API request?')) {
       return;
     }
-    
+
     addLog('Requesting key rotation...');
     try {
       const res = await fetch(`${API_BASE}/admin/encryption/reencrypt`, {
@@ -142,7 +142,7 @@ export default function EncryptionPage() {
         },
         body: JSON.stringify({ newMasterKeyBase64: newMasterKey })
       });
-      
+
       const data = await res.json();
       if (res.ok || res.status === 202) {
         addLog('✅ Rotation request received');
@@ -154,7 +154,7 @@ export default function EncryptionPage() {
     } catch (err: any) {
       addLog(`❌ Error: ${err.message}`);
     }
-    
+
     setShowRotationModal(false);
     setNewMasterKey('');
   };
@@ -163,7 +163,7 @@ export default function EncryptionPage() {
     if (!confirm('⚠️  This will remove plaintext backup fields. Continue?')) {
       return;
     }
-    
+
     addLog('Requesting cleanup...');
     try {
       const res = await fetch(`${API_BASE}/admin/encryption/cleanup-plaintext`, {
@@ -174,7 +174,7 @@ export default function EncryptionPage() {
         },
         body: JSON.stringify({ confirm: 'yes' })
       });
-      
+
       const data = await res.json();
       if (res.ok) {
         addLog('✅ Cleanup request received');
@@ -189,18 +189,7 @@ export default function EncryptionPage() {
     }
   };
 
-  // Check if user has admin role (after all hooks)
-  if (!hasRole('admin')) {
-    return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
-          <p className="text-red-800 dark:text-red-200">
-            Access denied. Super admin role required to manage encryption.
-          </p>
-        </div>
-      </div>
-    );
-  }
+
 
   if (loading) {
     return (
