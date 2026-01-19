@@ -3,7 +3,7 @@ import { AuthProvider, useAuth, ProtectedRoute } from './hooks/useAuth'
 import { NotificationProvider, useNotifications } from './context/NotificationContext'
 import { SoundProvider } from './context/SoundContext'
 import { ThemeProvider, useTheme } from './context/ThemeContext'
-import { Shirt, Sun, Moon, ChevronRight, ChevronLeft, MessageSquare, Video, Users, FileText, Bell, BarChart3, CheckCircle, Lock, Check, LogOut, LayoutDashboard } from 'lucide-react'
+import { Shirt, Sun, Moon, ChevronRight, ChevronLeft, MessageSquare, Video, Users, User, FileText, Bell, BarChart3, CheckCircle, Lock, Check, LogOut, LayoutDashboard } from 'lucide-react'
 import SessionsList from './pages/SessionsList'
 import ConversationView from './pages/ConversationView'
 import Dashboard from './pages/Dashboard'
@@ -21,6 +21,7 @@ import NotificationsPage from './pages/NotificationsPage'
 import AudioNotifications from './components/common/AudioNotifications'
 import SidebarHeader from './components/sidebar/SidebarHeader'
 import StopRingButton from './components/sidebar/StopRingButton'
+import WaitingForAccess from './pages/WaitingForAccess'
 import { useState, useEffect, useRef } from 'react'
 
 interface NavigationProps {
@@ -144,6 +145,12 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
     return location.pathname === path
   }
 
+  // Helper to check granular permissions
+  const hasPermission = (perm: string) => {
+    if (isAdmin()) return true;
+    return user?.permissions?.includes(perm) || false;
+  };
+
   return (
     <>
       {/* Sidebar */}
@@ -166,62 +173,68 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
 
         {/* Navigation Links */}
         <nav className={`flex-1 py-4 space-y-1 ${isSidebarCollapsed ? 'px-2 overflow-visible' : 'px-4 overflow-y-auto'}`}>
-          <Link
-            to="/dashboard"
-            className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/dashboard')
-              ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
-              : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
-              } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
-            title={isSidebarCollapsed ? 'Dashboard' : ''}
-          >
-            <LayoutDashboard className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
-            {!isSidebarCollapsed && <span>Dashboard</span>}
-            {/* Tooltip when collapsed */}
-            {isSidebarCollapsed && (
-              <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
-                Dashboard
-              </span>
-            )}
-          </Link>
 
-          <Link
-            to="/sessions"
-            className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/sessions')
-              ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
-              : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
-              } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
-            title={isSidebarCollapsed ? 'Sessions' : ''}
-          >
-            <MessageSquare className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
-            {!isSidebarCollapsed && <span>Sessions</span>}
-            {/* Tooltip when collapsed */}
-            {isSidebarCollapsed && (
-              <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
-                Sessions
-              </span>
-            )}
-          </Link>
 
-          <Link
-            to="/live"
-            className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/live')
-              ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
-              : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
-              } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
-            title={isSidebarCollapsed ? 'Live View' : ''}
-          >
-            <Video className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
-            {!isSidebarCollapsed && <span>Live View</span>}
-            {/* Tooltip when collapsed */}
-            {isSidebarCollapsed && (
-              <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
-                Live View
-              </span>
-            )}
-          </Link>
 
-          {/* Users link - visible to admin only (hidden for agent) */}
-          {hasRole('admin') && (
+          {hasPermission('dashboard') && (
+            <Link
+              to="/dashboard"
+              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/dashboard')
+                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
+                : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
+                } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
+              title={isSidebarCollapsed ? 'Dashboard' : ''}
+            >
+              <LayoutDashboard className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
+              {!isSidebarCollapsed && <span>Dashboard</span>}
+              {isSidebarCollapsed && (
+                <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+                  Dashboard
+                </span>
+              )}
+            </Link>
+          )}
+
+          {hasPermission('sessions') && (
+            <Link
+              to="/sessions"
+              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/sessions')
+                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
+                : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
+                } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
+              title={isSidebarCollapsed ? 'Sessions' : ''}
+            >
+              <MessageSquare className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
+              {!isSidebarCollapsed && <span>Sessions</span>}
+              {isSidebarCollapsed && (
+                <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+                  Sessions
+                </span>
+              )}
+            </Link>
+          )}
+
+          {hasPermission('live') && (
+            <Link
+              to="/live"
+              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/live')
+                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
+                : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
+                } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
+              title={isSidebarCollapsed ? 'Live View' : ''}
+            >
+              <Video className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
+              {!isSidebarCollapsed && <span>Live View</span>}
+              {isSidebarCollapsed && (
+                <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+                  Live View
+                </span>
+              )}
+            </Link>
+          )}
+
+          {/* Users link - visible if has 'users' permission (previously admin only) */}
+          {hasPermission('users') && (
             <Link
               to="/users"
               className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/users')
@@ -232,7 +245,6 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
             >
               <Users className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
               {!isSidebarCollapsed && <span>Users</span>}
-              {/* Tooltip when collapsed */}
               {isSidebarCollapsed && (
                 <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
                   Users
@@ -242,7 +254,7 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
           )}
 
           {/* Agents Online link - visible to admin/agent */}
-          {(hasRole('admin') || hasRole('agent')) && (
+          {hasPermission('agents_online') && (
             <Link
               to="/agents-online"
               className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/agents-online')
@@ -253,7 +265,6 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
             >
               <Users className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
               {!isSidebarCollapsed && <span>Agents Online</span>}
-              {/* Tooltip when collapsed */}
               {isSidebarCollapsed && (
                 <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
                   Agents Online
@@ -262,16 +273,14 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
             </Link>
           )}
 
-          {/* Pending Queries accordion - visible to admin/agent */}
-          {(hasRole('admin') || hasRole('agent')) && (
+          {/* Pending Queries - permission 'sessions' or basic agent access */}
+          {hasPermission('pending_queries') && (
             <div>
               <button
                 onClick={() => {
                   if (isPendingQueriesOpen) {
-                    // If already open, just collapse it
                     setIsPendingQueriesOpen(false);
                   } else {
-                    // If closed, open it and navigate to pending
                     setIsPendingQueriesOpen(true);
                     navigate('/pending-queries?status=pending');
                   }
@@ -285,7 +294,6 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
                 <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center relative' : 'flex-1 min-w-0'}`}>
                   <div className="relative flex-shrink-0">
                     <FileText className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
-                    {/* Slack-style badge at top-right corner when collapsed */}
                     {isSidebarCollapsed && pendingCount > 0 && (
                       <span className="absolute top-0 right-0 -translate-y-1/2 translate-x-1/2 bg-red-500 text-white rounded-full flex items-center justify-center shadow-md border-2 border-white min-w-[16px] h-4 px-1 text-[10px] font-bold leading-tight">
                         {pendingCount > 9 ? '9+' : pendingCount}
@@ -295,7 +303,6 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
                   {!isSidebarCollapsed && (
                     <div className="flex items-center flex-1 min-w-0">
                       <span className="whitespace-nowrap">Pending Queries</span>
-                      {/* Pending count badge */}
                       {pendingCount > 0 && (
                         <span className="ml-2 bg-red-500 text-white text-xs font-semibold rounded-full px-2 py-0.5 min-w-[20px] text-center flex-shrink-0">
                           {pendingCount}
@@ -308,15 +315,6 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
                   <ChevronRight
                     className={`w-4 h-4 transition-transform duration-200 flex-shrink-0 ${isPendingQueriesOpen ? 'transform rotate-90' : ''}`}
                   />
-                )}
-                {/* Enhanced tooltip when collapsed - exact same styling as profile tooltip */}
-                {isSidebarCollapsed && (
-                  <span className="absolute left-full ml-3 px-3 py-1.5 text-xs font-medium text-white bg-gray-900 rounded-lg shadow-lg whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-all duration-200 pointer-events-none z-50 border border-gray-700">
-                    <span className="font-semibold text-white">Pending Queries</span>
-                    {pendingCount > 0 && (
-                      <span className="ml-1.5 text-red-400 font-bold">{pendingCount} unread</span>
-                    )}
-                  </span>
                 )}
               </button>
               {isPendingQueriesOpen && !isSidebarCollapsed && (
@@ -344,8 +342,8 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
             </div>
           )}
 
-          {/* Notifications link - visible to admin/agent */}
-          {(hasRole('admin') || hasRole('agent')) && (
+          {/* Notifications link */}
+          {hasPermission('notifications') && (
             <Link
               to="/notifications"
               className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'justify-between px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/notifications')
@@ -357,7 +355,6 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
               <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center relative' : ''}`}>
                 <div className="relative">
                   <Bell className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
-                  {/* Slack-style badge at top-right corner when collapsed */}
                   {isSidebarCollapsed && unreadCount > 0 && (
                     <span className="absolute top-0 right-0 -translate-y-1/2 translate-x-1/2 bg-blue-500 text-white rounded-full flex items-center justify-center shadow-md border-2 border-white min-w-[16px] h-4 px-1 text-[10px] font-bold leading-tight">
                       {unreadCount > 9 ? '9+' : unreadCount}
@@ -366,26 +363,16 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
                 </div>
                 {!isSidebarCollapsed && <span>Notifications</span>}
               </div>
-              {/* Notification Badge - shows count when > 0 (expanded state) */}
               {!isSidebarCollapsed && unreadCount > 0 && (
                 <span className="ml-auto bg-blue-500 text-white text-xs font-semibold rounded-full px-2 py-0.5 min-w-[20px] text-center">
                   {unreadCount}
                 </span>
               )}
-              {/* Enhanced tooltip when collapsed - exact same styling as profile tooltip */}
-              {isSidebarCollapsed && (
-                <span className="absolute left-full ml-3 px-3 py-1.5 text-xs font-medium text-white bg-gray-900 rounded-lg shadow-lg whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-all duration-200 pointer-events-none z-50 border border-gray-700">
-                  <span className="font-semibold text-white">Notifications</span>
-                  {unreadCount > 0 && (
-                    <span className="ml-1.5 text-blue-400 font-bold">{unreadCount} unread</span>
-                  )}
-                </span>
-              )}
             </Link>
           )}
 
-          {/* Analytics link - visible to admin */}
-          {hasRole('admin') && (
+          {/* Analytics link */}
+          {hasPermission('analytics') && (
             <Link
               to="/analytics"
               className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/analytics')
@@ -396,7 +383,6 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
             >
               <BarChart3 className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
               {!isSidebarCollapsed && <span>Analytics</span>}
-              {/* Tooltip when collapsed */}
               {isSidebarCollapsed && (
                 <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
                   Analytics
@@ -405,8 +391,8 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
             </Link>
           )}
 
-          {/* Accuracy link - visible to admin */}
-          {hasRole('admin') && (
+          {/* Accuracy link */}
+          {hasPermission('accuracy') && (
             <Link
               to="/accuracy"
               className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/accuracy')
@@ -417,7 +403,6 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
             >
               <CheckCircle className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
               {!isSidebarCollapsed && <span>Accuracy</span>}
-              {/* Tooltip when collapsed */}
               {isSidebarCollapsed && (
                 <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
                   Accuracy
@@ -426,8 +411,8 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
             </Link>
           )}
 
-          {/* Encryption link - visible to admin */}
-          {hasRole('admin') && (
+          {/* Encryption link */}
+          {hasPermission('encryption') && (
             <Link
               to="/encryption"
               className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/encryption')
@@ -438,7 +423,6 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
             >
               <Lock className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
               {!isSidebarCollapsed && <span>Encryption</span>}
-              {/* Tooltip when collapsed */}
               {isSidebarCollapsed && (
                 <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
                   Encryption
@@ -625,17 +609,25 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
   )
 }
 
-// Users route wrapper that checks permissions
-function UsersRoute() {
-  const { isAdmin } = useAuth()
-  const location = useLocation()
+function RootRedirect() {
+  const { user, isAdmin } = useAuth()
 
-  // Check if access was denied via query param
-  if (location.search.includes('denied=true') || !isAdmin()) {
-    return <PermissionDeniedPage />
-  }
+  if (!user) return <Navigate to="/auth" replace />
 
-  return <UsersPage />
+  // Admins go to Dashboard by default
+  if (isAdmin()) return <Navigate to="/dashboard" replace />
+
+  // Agents go to first allowed route
+  const p = user.permissions || []
+  if (p.includes('dashboard')) return <Navigate to="/dashboard" replace />
+  if (p.includes('sessions')) return <Navigate to="/sessions" replace />
+  if (p.includes('live')) return <Navigate to="/live" replace />
+  if (p.includes('users')) return <Navigate to="/users" replace />
+  if (p.includes('agents_online')) return <Navigate to="/agents-online" replace />
+  if (p.includes('pending_queries')) return <Navigate to="/pending-queries" replace />
+
+  // If no permissions (and not admin), go to Waiting page
+  return <Navigate to="/waiting-for-access" replace />
 }
 
 function App() {
@@ -665,20 +657,23 @@ function App() {
                 {/* Main Content Area */}
                 <main className={`min-h-screen transition-all duration-300 text-gray-900 dark:text-white ${isSidebarCollapsed ? 'lg:ml-20' : 'lg:ml-64'}`}>
                   <Routes>
-                    <Route path="/" element={<Navigate to="/auth" replace />} />
+                    <Route path="/" element={<RootRedirect />} />
                     <Route path="/auth" element={<AuthPage />} />
-                    <Route path="/dashboard" element={<ProtectedRoute requiredRole={['admin']}><Dashboard /></ProtectedRoute>} />
-                    <Route path="/sessions" element={<ProtectedRoute><SessionsList /></ProtectedRoute>} />
-                    <Route path="/sessions/:sessionId" element={<ProtectedRoute><ConversationView /></ProtectedRoute>} />
-                    <Route path="/live" element={<ProtectedRoute><LiveVisitors /></ProtectedRoute>} />
-                    <Route path="/pending-queries" element={<ProtectedRoute requiredRole={['admin', 'agent']}><PendingQueries /></ProtectedRoute>} />
-                    <Route path="/analytics" element={<ProtectedRoute requiredRole="admin"><AnalyticsPage /></ProtectedRoute>} />
-                    <Route path="/accuracy" element={<ProtectedRoute requiredRole="admin"><AccuracyPage /></ProtectedRoute>} />
-                    <Route path="/users" element={<ProtectedRoute><UsersRoute /></ProtectedRoute>} />
-                    <Route path="/agents-online" element={<ProtectedRoute requiredRole={['admin', 'agent']}><AgentsOnline /></ProtectedRoute>} />
+                    <Route path="/waiting-for-access" element={<ProtectedRoute><WaitingForAccess /></ProtectedRoute>} />
+
+                    <Route path="/dashboard" element={<ProtectedRoute requiredPermission="dashboard"><Dashboard /></ProtectedRoute>} />
+                    <Route path="/sessions" element={<ProtectedRoute requiredPermission="sessions"><SessionsList /></ProtectedRoute>} />
+                    <Route path="/sessions/:sessionId" element={<ProtectedRoute requiredPermission="sessions"><ConversationView /></ProtectedRoute>} />
+                    <Route path="/live" element={<ProtectedRoute requiredPermission="live"><LiveVisitors /></ProtectedRoute>} />
+                    <Route path="/pending-queries" element={<ProtectedRoute requiredRole={['admin', 'agent']} requiredPermission="pending_queries"><PendingQueries /></ProtectedRoute>} />
+
+                    <Route path="/analytics" element={<ProtectedRoute requiredPermission="analytics"><AnalyticsPage /></ProtectedRoute>} />
+                    <Route path="/accuracy" element={<ProtectedRoute requiredPermission="accuracy"><AccuracyPage /></ProtectedRoute>} />
+                    <Route path="/users" element={<ProtectedRoute requiredPermission="users"><UsersPage /></ProtectedRoute>} />
+                    <Route path="/agents-online" element={<ProtectedRoute requiredRole={['admin', 'agent']} requiredPermission="agents_online"><AgentsOnline /></ProtectedRoute>} />
                     <Route path="/signup" element={<ProtectedRoute requiredRole="admin"><SignupPage /></ProtectedRoute>} />
-                    <Route path="/encryption" element={<ProtectedRoute requiredRole="admin"><EncryptionPage /></ProtectedRoute>} />
-                    <Route path="/notifications" element={<ProtectedRoute requiredRole={['admin', 'agent']}><NotificationsPage /></ProtectedRoute>} />
+                    <Route path="/encryption" element={<ProtectedRoute requiredPermission="encryption"><EncryptionPage /></ProtectedRoute>} />
+                    <Route path="/notifications" element={<ProtectedRoute requiredPermission="notifications"><NotificationsPage /></ProtectedRoute>} />
                   </Routes>
                 </main>
               </div>
