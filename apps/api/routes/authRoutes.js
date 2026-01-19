@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
-const { requireAuth, requireRole } = authController;
+const { requireAuth, requireRole, requirePermission } = authController;
 
 // Auth Routes (Mounted at /)
 // Note: URLs must remain exactly as they were in index.js
@@ -23,9 +23,10 @@ router.patch('/users/:userId/profile', requireAuth, authController.updateUserPro
 
 // Admin User Management
 router.get('/admin/users/agents', requireAuth, requireRole(['admin', 'agent']), authController.listAgents);
-router.get('/admin/users', requireAuth, requireRole(['admin']), authController.adminListUsers);
-router.post('/admin/users', requireAuth, requireRole(['admin']), authController.adminCreateUser);
-router.put('/admin/users/:userId/roles', requireAuth, requireRole(['admin']), authController.adminUpdateUserRoles);
-router.delete('/admin/users/:userId', requireAuth, requireRole(['admin']), authController.adminDeleteUser);
+router.get('/admin/users', requireAuth, requirePermission('users'), authController.adminListUsers);
+router.post('/admin/users', requireAuth, requirePermission('users'), authController.adminCreateUser);
+router.put('/admin/users/:userId/roles', requireAuth, requirePermission('users'), authController.adminUpdateUserRoles);
+router.patch('/admin/users/:userId/access', requireAuth, requirePermission('users'), authController.updateUserAccess);
+router.delete('/admin/users/:userId', requireAuth, requirePermission('users'), authController.adminDeleteUser);
 
 module.exports = router;
