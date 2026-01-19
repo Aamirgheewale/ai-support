@@ -133,7 +133,9 @@ if (awDatabases && APPWRITE_DATABASE_ID) {
         databaseId: APPWRITE_DATABASE_ID,
         sessionsCollectionId: APPWRITE_SESSIONS_COLLECTION_ID,
         messagesCollectionId: APPWRITE_MESSAGES_COLLECTION_ID,
-        sessionAssignments: sessionAssignments
+        messagesCollectionId: APPWRITE_MESSAGES_COLLECTION_ID,
+        sessionAssignments: sessionAssignments,
+        agentSockets: require('./state').agentSockets
     });
     console.log('✅ Chat Service initialized');
 } else {
