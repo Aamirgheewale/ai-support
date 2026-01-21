@@ -28,6 +28,7 @@ const APPWRITE_USERS_COLLECTION_ID = 'users'; // Collection name (not ID)
 const APPWRITE_ROLE_CHANGES_COLLECTION_ID = 'roleChanges'; // Collection name
 const APPWRITE_AI_ACCURACY_COLLECTION_ID = 'ai_accuracy'; // Collection name
 const APPWRITE_ACCURACY_AUDIT_COLLECTION_ID = 'accuracy_audit'; // Collection name
+const APPWRITE_LLM_SETTINGS_COLLECTION_ID = process.env.APPWRITE_LLM_SETTINGS_COLLECTION_ID || 'llm_settings';
 
 // Accuracy logging configuration
 const ACCURACY_RETENTION_DAYS = parseInt(process.env.ACCURACY_RETENTION_DAYS || '365', 10);
@@ -150,7 +151,19 @@ module.exports = {
     geminiClient,
     geminiModel,
     geminiModelName,
-    encryption,
+    encryption: ENCRYPTION_ENABLED ? {
+        encrypt: (text) => {
+            const payload = encryption.encryptPayload(text, MASTER_KEY_BASE64);
+            const storage = encryption.formatForStorage(payload);
+            return JSON.stringify(storage);
+        },
+        decrypt: (text) => {
+            const storage = JSON.parse(text);
+            const parsed = encryption.parseFromStorage(storage);
+            return encryption.decryptPayload(parsed, MASTER_KEY_BASE64);
+        },
+        ...encryption
+    } : null,
     chatService,
     config: {
         APPWRITE_ENDPOINT,
@@ -164,7 +177,9 @@ module.exports = {
         APPWRITE_TICKETS_COLLECTION_ID,
         APPWRITE_ROLE_CHANGES_COLLECTION_ID,
         APPWRITE_AI_ACCURACY_COLLECTION_ID,
+        APPWRITE_AI_ACCURACY_COLLECTION_ID,
         APPWRITE_ACCURACY_AUDIT_COLLECTION_ID,
+        APPWRITE_LLM_SETTINGS_COLLECTION_ID,
         ACCURACY_RETENTION_DAYS,
         ACCURACY_MAX_SCAN_ROWS,
         REDACT_PII,

@@ -3,7 +3,9 @@ import { useAuth } from '../../hooks/useAuth'
 import { useNotifications } from '../../context/NotificationContext'
 import { ChevronDown } from 'lucide-react'
 import NotificationBell from './NotificationBell'
+
 import UserProfileMenu from './UserProfileMenu'
+import LLMSettingsModal from '../modals/LLMSettingsModal'
 
 type UserStatus = 'online' | 'away'
 
@@ -19,7 +21,9 @@ interface SidebarHeaderProps {
 export default function SidebarHeader({ isCollapsed = false }: SidebarHeaderProps) {
   const { user } = useAuth()
   const { unreadCount } = useNotifications()
+
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false)
+  const [isLLMSettingsOpen, setIsLLMSettingsOpen] = useState(false)
   const [hasOpenModal, setHasOpenModal] = useState(false)
   const [userStatus, setUserStatus] = useState<UserStatus>('online')
   const profileMenuRef = useRef<HTMLDivElement>(null)
@@ -124,10 +128,9 @@ export default function SidebarHeader({ isCollapsed = false }: SidebarHeaderProp
               {initials}
             </div>
             {/* Status Indicator Dot - Floating half outside avatar */}
-            <span 
-              className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white dark:border-gray-800 ${
-                userStatus === 'away' ? 'bg-yellow-500' : 'bg-green-500'
-              }`}
+            <span
+              className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white dark:border-gray-800 ${userStatus === 'away' ? 'bg-yellow-500' : 'bg-green-500'
+                }`}
               aria-label={userStatus === 'away' ? 'Away' : 'Online'}
             />
           </div>
@@ -138,7 +141,7 @@ export default function SidebarHeader({ isCollapsed = false }: SidebarHeaderProp
                 {firstName}
               </span>
               {/* Chevron */}
-              <ChevronDown 
+              <ChevronDown
                 className={`w-4 h-4 text-gray-400 dark:text-gray-500 group-hover:text-gray-600 dark:group-hover:text-gray-300 transition-transform duration-200 ${isProfileMenuOpen ? 'rotate-180' : ''}`}
               />
             </>
@@ -155,8 +158,8 @@ export default function SidebarHeader({ isCollapsed = false }: SidebarHeaderProp
         </button>
 
         {/* Notification Bell - Right (Hidden when collapsed) */}
-        {!isCollapsed && <NotificationBell />}
-        
+        {!isCollapsed && <NotificationBell onOpenLLMSettings={() => setIsLLMSettingsOpen(true)} />}
+
         {/* Notification Badge when collapsed - Show on avatar (Slack-style at top-right corner) */}
         {isCollapsed && unreadCount > 0 && (
           <div className="absolute top-1 right-1">
@@ -170,7 +173,7 @@ export default function SidebarHeader({ isCollapsed = false }: SidebarHeaderProp
       {/* Backdrop with blur effect - only show when profile menu is open */}
       {/* Note: Profile menu stays visible even when modals are open */}
       {isProfileMenuOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/20 backdrop-blur-sm z-[9998]"
           onClick={() => setIsProfileMenuOpen(false)}
           aria-hidden="true"
@@ -179,9 +182,18 @@ export default function SidebarHeader({ isCollapsed = false }: SidebarHeaderProp
 
       {/* User Profile Menu Popover */}
       {isProfileMenuOpen && (
-        <UserProfileMenu 
-          onClose={() => setIsProfileMenuOpen(false)} 
+        <UserProfileMenu
+          onClose={() => setIsProfileMenuOpen(false)}
           onModalStateChange={setHasOpenModal}
+          onOpenLLMSettings={() => setIsLLMSettingsOpen(true)}
+        />
+      )}
+
+      {/* Global Modals */}
+      {isLLMSettingsOpen && (
+        <LLMSettingsModal
+          isOpen={isLLMSettingsOpen}
+          onClose={() => setIsLLMSettingsOpen(false)}
         />
       )}
     </div>

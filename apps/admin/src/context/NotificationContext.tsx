@@ -6,16 +6,17 @@ import { useSoundContext } from './SoundContext';
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || API_BASE;
 
-interface Notification {
+export interface Notification {
     $id: string;
     title?: string;
-    type: 'request_agent' | 'assignment' | 'ticket_created' | 'session_timeout_warning';
+    type: 'request_agent' | 'assignment' | 'ticket_created' | 'session_timeout_warning' | 'system';
     content: string;
     sessionId: string;
     targetUserId: string | null;
     isRead: boolean;
     createdAt?: string;
     $createdAt?: string;
+    severity?: 'info' | 'warning' | 'critical';
 }
 
 type NotificationChannel = 'A' | 'B' | 'C';

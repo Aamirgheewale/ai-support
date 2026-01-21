@@ -181,6 +181,38 @@ function createChatService(dependencies) {
   }
 
   /**
+   * Update session status in Appwrite
+   * @param {string} sessionId - Session identifier
+   * @param {string} status - New status (e.g. 'closed', 'active')
+   * @param {Object} additionalUpdates - Additional fields to update (optional)
+   * @returns {Promise<boolean>} True if successful
+   */
+  async function updateSessionStatus(sessionId, status, additionalUpdates = {}) {
+    if (!databases || !databaseId || !sessionsCollectionId) {
+      return false;
+    }
+
+    try {
+      const updateData = {
+        status,
+        ...additionalUpdates
+      };
+
+      await databases.updateDocument(
+        databaseId,
+        sessionsCollectionId,
+        sessionId,
+        updateData
+      );
+      console.log(`✅ Updated session status to '${status}' with fields: ${Object.keys(additionalUpdates).join(', ')}`);
+      return true;
+    } catch (err) {
+      console.error(`❌ Failed to update session status [${sessionId}]:`, err?.message);
+      return false;
+    }
+  }
+
+  /**
    * Ensure session exists in Appwrite (create if not exists, update lastSeen if exists)
    * @param {string} sessionId - Session identifier
    * @param {Object} userMeta - User metadata object
@@ -515,6 +547,76 @@ function createChatService(dependencies) {
   }
 
   /**
+   * Set session resolution (close status and attribution)
+   * @param {string} sessionId - Session identifier
+   * @param {string} resolutionText - Text for assignedAgent field (e.g. "Solved by AI (Gemini)")
+   * @returns {Promise<boolean>} True if successful
+   */
+  async function setSessionResolution(sessionId, resolutionText) {
+    if (!databases || !databaseId || !sessionsCollectionId) return false;
+
+    try {
+      // Get current session to preserve userMeta
+      const session = await getSessionDoc(sessionId);
+      if (!session) return false;
+
+      // Parse userMeta
+      let userMeta = {};
+      try {
+        userMeta = typeof session.userMeta === 'string'
+          ? JSON.parse(session.userMeta || '{}')
+          : (session.userMeta || {});
+      } catch (e) {
+        userMeta = {};
+      }
+
+      // Update in userMeta
+      userMeta.assignedAgent = resolutionText;
+
+      // Prepare update payload
+      const updateDoc = {
+        status: 'closed',
+        lastSeen: new Date().toISOString(),
+        userMeta: JSON.stringify(userMeta)
+      };
+
+      // Try adding assignedAgent as top-level field if supported
+      updateDoc.assignedAgent = resolutionText;
+
+      try {
+        await databases.updateDocument(
+          databaseId,
+          sessionsCollectionId,
+          sessionId,
+          updateDoc
+        );
+        console.log(`✅ Closed session ${sessionId} resolved by: ${resolutionText}`);
+        return true;
+      } catch (updateErr) {
+        // Fallback: Retry without top-level assignedAgent if schema rejects it
+        if (updateErr?.code === 400 || updateErr?.message?.includes('Unknown attribute')) {
+          console.log(`⚠️  assignedAgent field not in collection, falling back to userMeta only`);
+          delete updateDoc.assignedAgent;
+
+          await databases.updateDocument(
+            databaseId,
+            sessionsCollectionId,
+            sessionId,
+            updateDoc
+          );
+          console.log(`✅ Closed session ${sessionId} (resolution stored in userMeta)`);
+          return true;
+        } else {
+          throw updateErr;
+        }
+      }
+    } catch (err) {
+      console.error(`❌ Failed to set session resolution [${sessionId}]:`, err?.message);
+      return false;
+    }
+  }
+
+  /**
    * Assign agent to session
    * @param {string} sessionId - Session identifier
    * @param {string} agentId - Agent identifier
@@ -656,6 +758,8 @@ function createChatService(dependencies) {
     saveMessageToAppwrite,
     markSessionNeedsHuman,
     assignAgentToSession,
+    updateSessionStatus,
+    setSessionResolution,
     setIo
   };
 }
@@ -663,4 +767,3 @@ function createChatService(dependencies) {
 module.exports = {
   createChatService
 };
-

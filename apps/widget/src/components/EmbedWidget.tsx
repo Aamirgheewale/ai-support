@@ -102,6 +102,7 @@ export default function EmbedWidget({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);
+  const [selectedConclusionOption, setSelectedConclusionOption] = useState<string | null>(null); // Track selected conclusion option
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<number | null>(null);
   const messagesLoadedRef = useRef(false); // Track if messages have been loaded
@@ -745,12 +746,18 @@ export default function EmbedWidget({
           // Check business hours
           const inBusinessHours = isBusinessHours();
 
-          if (!agentRequestSentInSession && inBusinessHours) {
-            console.log('🤖 Backend requested to show agent button (business hours)');
+          if (!agentRequestSentInSession) {
+            // Always show button if backend requested it (either for "Connect" or "Leave Message")
             setShowAgentButton(true);
             agentButtonShownRef.current = false; // Reset so button can appear
+
+            if (inBusinessHours) {
+              console.log('🤖 Backend requested to show agent button (business hours)');
+            } else {
+              console.log('🌙 Backend requested to show agent button (offline hours) -> Will show Leave Message');
+            }
           } else {
-            console.log('🔒 Backend requested button but conditions not met (already sent or outside business hours)');
+            console.log('🔒 Backend requested button but already sent in this session');
           }
         }
 
@@ -1009,7 +1016,7 @@ export default function EmbedWidget({
     setTimeout(() => setIsButtonBlinking(false), 2000); // Stop after 2 seconds
   }
 
-  function handleConclusionOption(optionValue: string, optionText: string) {
+  function handleConclusionOption(optionValue: string, optionText: string, messageIndex?: number) {
     const socket = socketRef.current;
     if (!socket || !sessionId || conversationConcluded) return; // Don't allow clicks if conversation is concluded
 
@@ -1018,18 +1025,71 @@ export default function EmbedWidget({
     socket.emit('user_message', { sessionId, text: optionText });
 
     if (optionValue === 'thank_you') {
-      // Option 1: Thank you - conversation is ending, clear localStorage immediately
-      startTypingIndicator();
-      // Clear all localStorage data when user chooses to end conversation
-      if (sessionId) {
-        localStorage.removeItem('ai-support-session-id');
-        localStorage.removeItem(`ai-support-messages-${sessionId}`);
-        localStorage.removeItem(`ai-support-concluded-${sessionId}`);
-        console.log('🧹 Cleared localStorage - conversation ended by user choice');
+      // Show final message locally
+      setMessages(prev => [...prev, {
+        sender: 'bot',
+        text: "thank you for reaching out, feeling free to ask if you have any doubt",
+        ts: Date.now()
+      }]);
+
+      // Highlight selected option
+      setSelectedConclusionOption(optionValue);
+
+      // Notify backend to close session (mark as closed in DB)
+      if (socket && sessionId) {
+        socket.emit('end_session', { sessionId });
       }
+
+      // Wait 3 seconds then reset
+      setTimeout(() => {
+        if (sessionId) {
+          localStorage.removeItem('ai-support-session-id');
+          localStorage.removeItem(`ai-support-messages-${sessionId}`);
+          localStorage.removeItem(`ai-support-concluded-${sessionId}`);
+          console.log('🧹 Cleared localStorage - conversation ended by user choice');
+        }
+
+        // Reset state to initial (FAQ View)
+        setSessionId(null);
+        setMessages([]);
+        setConversationConcluded(false);
+        setIsChatMode(false); // CRITICAL: Return to "opening first time" view
+        setSelectedConclusionOption(null); // Reset selection
+        setShowAgentButton(false);
+        setAgentRequestSent(false);
+        setAgentWaitTimer(null);
+
+        // Re-trigger intial greeting if needed, or let the user start fresh
+        // Usually clearing sessionId is enough for the effect to restart
+      }, 3000);
+
     } else if (optionValue === 'continue') {
       // Option 2: Continue conversation - normal flow
+      setSelectedConclusionOption(optionValue);
       startTypingIndicator();
+
+      // Reset selection after delay and UPDATE the message to persist choice
+      setTimeout(() => {
+        setSelectedConclusionOption(null);
+
+        // If we have an index, update that specific message to show ONLY the selected option
+        // This satisfies "discard close conversation option" and "treat it as part of conversation"
+        if (typeof messageIndex === 'number') {
+          setMessages(prev => {
+            const newMessages = [...prev];
+            if (newMessages[messageIndex]) {
+              // Filter options to keep ONLY the selected one
+              // And mark as answered/processed so it looks static/history
+              newMessages[messageIndex] = {
+                ...newMessages[messageIndex],
+                options: newMessages[messageIndex].options?.filter(o => o.value === optionValue),
+                // optional: answered: true 
+              };
+            }
+            return newMessages;
+          });
+        }
+      }, 1000);
     }
   }
 
@@ -1242,6 +1302,34 @@ export default function EmbedWidget({
       });
 
       // Start 3-minute countdown timer (180 seconds)
+      // BUT check business hours first - if offline, show form immediately!
+      const inBusinessHours = isBusinessHours();
+
+      if (!inBusinessHours) {
+        console.log('🌙 Outside business hours - showing offline form immediately');
+        setMessages(prev => {
+          // Check if offline form message already exists
+          const hasOfflineFormMessage = prev.some(msg => msg.type === 'offline_form');
+          if (!hasOfflineFormMessage) {
+            return [...prev, {
+              sender: 'system',
+              text: 'We are currently offline. Please leave a message and we will get back to you.',
+              type: 'offline_form',
+              ts: Date.now()
+            }];
+          }
+          return prev;
+        });
+        setShowOfflineForm(true);
+        // Clean up any existing timer just in case
+        if (agentWaitTimerIntervalRef.current) {
+          clearInterval(agentWaitTimerIntervalRef.current);
+          agentWaitTimerIntervalRef.current = null;
+        }
+        return;
+      }
+
+      // Inside business hours: Start Timer
       const TIMER_DURATION = 3 * 60; // 3 minutes in seconds
       const timerStartTime = Date.now();
 
@@ -1878,13 +1966,25 @@ export default function EmbedWidget({
                       e.currentTarget.style.boxShadow = '0 6px 12px rgba(102, 126, 234, 0.4), 0 4px 6px rgba(0,0,0,0.15)';
                     }}
                   >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                      <circle cx="9" cy="7" r="4"></circle>
-                      <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                      <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                    </svg>
-                    <span>Connect to Agent</span>
+                    {isBusinessHours() ? (
+                      <>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                          <circle cx="9" cy="7" r="4"></circle>
+                          <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                          <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                        </svg>
+                        <span>Connect to Agent</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                          <polyline points="22,6 12,13 2,6"></polyline>
+                        </svg>
+                        <span>Leave a Message</span>
+                      </>
+                    )}
                   </button>
                 </div>
               )}
@@ -1899,51 +1999,67 @@ export default function EmbedWidget({
                 width: '100%',
                 flexShrink: 0
               }}>
-                {m.options.map((option, optIdx) => (
-                  <button
-                    key={optIdx}
-                    onClick={() => handleConclusionOption(option.value, option.text)}
-                    disabled={conversationConcluded}
-                    style={{
-                      padding: '10px 12px',
-                      minHeight: '40px',
-                      height: 'auto',
-                      background: conversationConcluded
-                        ? 'rgba(200, 200, 200, 0.1)'
-                        : 'rgba(102, 126, 234, 0.1)',
-                      border: conversationConcluded
-                        ? '1px solid rgba(200, 200, 200, 0.3)'
-                        : '1px solid rgba(102, 126, 234, 0.3)',
-                      borderRadius: '8px',
-                      color: '#ffffff',
-                      fontSize: isMobile ? '13px' : '14px',
-                      cursor: conversationConcluded ? 'not-allowed' : 'pointer',
-                      fontWeight: 500,
-                      transition: 'all 0.2s',
-                      textAlign: 'left',
-                      opacity: conversationConcluded ? 0.5 : 1,
-                      flexShrink: 0,
-                      whiteSpace: 'normal',
-                      wordWrap: 'break-word',
-                      overflowWrap: 'break-word',
-                      boxSizing: 'border-box'
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!conversationConcluded) {
-                        e.currentTarget.style.background = 'rgba(102, 126, 234, 0.2)';
-                        e.currentTarget.style.borderColor = 'rgba(102, 126, 234, 0.5)';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!conversationConcluded) {
-                        e.currentTarget.style.background = 'rgba(102, 126, 234, 0.1)';
-                        e.currentTarget.style.borderColor = 'rgba(102, 126, 234, 0.3)';
-                      }
-                    }}
-                  >
-                    {option.text}
-                  </button>
-                ))}
+                {m.options.map((option, optIdx) => {
+                  const isSelected = selectedConclusionOption === option.value;
+                  const isOtherSelected = selectedConclusionOption !== null && !isSelected;
+                  // If options length is 1, it means it was already processed/answered
+                  // We should style it as static/history
+                  const isProcessed = m.options && m.options.length === 1;
+
+                  return (
+                    <button
+                      key={optIdx}
+                      onClick={() => handleConclusionOption(option.value, option.text, i)}
+                      disabled={conversationConcluded || selectedConclusionOption !== null || isProcessed}
+                      style={{
+                        padding: '10px 12px',
+                        minHeight: '40px',
+                        height: 'auto',
+                        background: isSelected
+                          ? 'rgba(102, 126, 234, 0.8)' // Highlight selected
+                          : isProcessed
+                            ? 'rgba(102, 126, 234, 0.2)' // Processed state (slightly highlighted history)
+                            : conversationConcluded || isOtherSelected
+                              ? 'rgba(200, 200, 200, 0.1)' // Fade others
+                              : 'rgba(102, 126, 234, 0.1)',
+                        border: isSelected
+                          ? '1px solid rgba(102, 126, 234, 1)'
+                          : isProcessed
+                            ? '1px solid rgba(102, 126, 234, 0.5)' // Processed border
+                            : conversationConcluded || isOtherSelected
+                              ? '1px solid rgba(200, 200, 200, 0.3)'
+                              : '1px solid rgba(102, 126, 234, 0.3)',
+                        borderRadius: '8px',
+                        color: '#ffffff',
+                        fontSize: isMobile ? '13px' : '14px',
+                        cursor: (conversationConcluded || selectedConclusionOption !== null || isProcessed) ? 'default' : 'pointer', // Disable cursor
+                        fontWeight: 500,
+                        transition: 'all 0.2s',
+                        textAlign: 'left',
+                        opacity: (conversationConcluded || isOtherSelected) ? 0.5 : 1, // Fade unselected
+                        flexShrink: 0,
+                        whiteSpace: 'normal',
+                        wordWrap: 'break-word',
+                        overflowWrap: 'break-word',
+                        boxSizing: 'border-box'
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!conversationConcluded && selectedConclusionOption === null && !isProcessed) {
+                          e.currentTarget.style.background = 'rgba(102, 126, 234, 0.2)';
+                          e.currentTarget.style.borderColor = 'rgba(102, 126, 234, 0.5)';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!conversationConcluded && selectedConclusionOption === null && !isProcessed) {
+                          e.currentTarget.style.background = 'rgba(102, 126, 234, 0.1)';
+                          e.currentTarget.style.borderColor = 'rgba(102, 126, 234, 0.3)';
+                        }
+                      }}
+                    >
+                      {option.text}
+                    </button>
+                  )
+                })}
               </div>
             )}
           </div>
@@ -2242,7 +2358,13 @@ export default function EmbedWidget({
           <div style={{ position: 'relative' }}>
             <button
               ref={attachButtonRef}
-              onClick={() => setShowAttachmentMenu(!showAttachmentMenu)}
+              onClick={() => {
+                // Disable attachment menu if pending conclusion
+                if (messages.length > 0 && messages[messages.length - 1].type === 'conclusion_question' && !conversationConcluded) {
+                  return;
+                }
+                setShowAttachmentMenu(!showAttachmentMenu);
+              }}
               disabled={!sessionId || conversationConcluded || uploadingFile || showOfflineForm}
               style={{
                 padding: '10px',
@@ -2335,7 +2457,7 @@ export default function EmbedWidget({
               handleTypingInput(); // Trigger typing indicator
             }}
             onKeyPress={handleKeyPress}
-            disabled={!sessionId || conversationConcluded || agentRequestSent || (agentWaitTimer !== null && agentWaitTimer > 0) || showOfflineForm}
+            disabled={!sessionId || conversationConcluded || agentRequestSent || (agentWaitTimer !== null && agentWaitTimer > 0) || showOfflineForm || (messages.length > 0 && messages[messages.length - 1].type === 'conclusion_question' && !conversationConcluded)}
             style={{
               flex: 1,
               padding: '10px 14px',
@@ -2343,13 +2465,13 @@ export default function EmbedWidget({
               borderRadius: '8px',
               fontSize: '14px',
               outline: 'none',
-              background: (sessionId && !conversationConcluded && !agentRequestSent && !(agentWaitTimer !== null && agentWaitTimer > 0) && !showOfflineForm) ? 'white' : '#f5f5f5',
+              background: (sessionId && !conversationConcluded && !agentRequestSent && !(agentWaitTimer !== null && agentWaitTimer > 0) && !showOfflineForm && !(messages.length > 0 && messages[messages.length - 1].type === 'conclusion_question')) ? 'white' : '#f5f5f5',
               minWidth: 0,
               maxWidth: '100%',
               boxSizing: 'border-box',
               width: '100%',
               margin: 0,
-              cursor: (agentRequestSent || (agentWaitTimer !== null && agentWaitTimer > 0) || showOfflineForm) ? 'not-allowed' : 'text'
+              cursor: (agentRequestSent || (agentWaitTimer !== null && agentWaitTimer > 0) || showOfflineForm || (messages.length > 0 && messages[messages.length - 1].type === 'conclusion_question' && !conversationConcluded)) ? 'not-allowed' : 'text'
             }}
             placeholder={
               showOfflineForm
@@ -2358,14 +2480,16 @@ export default function EmbedWidget({
                   ? "Waiting for agent to join..."
                   : conversationConcluded
                     ? "Conversation ended. Click 'Start Chat' for a new session"
-                    : sessionId
-                      ? "Type your message..."
-                      : "Click 'Start Chat' to begin"
+                    : (messages.length > 0 && messages[messages.length - 1].type === 'conclusion_question' && !conversationConcluded)
+                      ? "Select an option above..."
+                      : sessionId
+                        ? "Type your message..."
+                        : "Click 'Start Chat' to begin"
             }
           />
           <button
             onClick={send}
-            disabled={!sessionId || (!text.trim() && !selectedFile) || conversationConcluded || agentRequestSent || (agentWaitTimer !== null && agentWaitTimer > 0) || uploadingFile || showOfflineForm}
+            disabled={!sessionId || (!text.trim() && !selectedFile) || conversationConcluded || agentRequestSent || (agentWaitTimer !== null && agentWaitTimer > 0) || uploadingFile || showOfflineForm || (messages.length > 0 && messages[messages.length - 1].type === 'conclusion_question' && !conversationConcluded)}
             style={{
               padding: '10px 16px',
               background: (sessionId && text.trim() && !conversationConcluded && !agentRequestSent && !(agentWaitTimer !== null && agentWaitTimer > 0) && !showOfflineForm)

@@ -1014,286 +1014,211 @@ export default function ConversationView() {
 
   return (
     <div style={{ padding: '20px', maxWidth: '1000px', margin: '0 auto' }}>
-      <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
+      {/* Header Section */}
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 gap-4 border-b border-gray-200 dark:border-gray-700 pb-4">
+        {/* Left Side: Back & Title */}
+        <div className="flex items-center gap-4">
           <button
             onClick={() => navigate('/sessions')}
-            style={{
-              padding: '8px 16px',
-              marginRight: '10px',
-              background: '#6c757d',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
+            className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
           >
-            ← Back
+            <span>←</span>
+            <span>Back</span>
           </button>
-          <h1 style={{ display: 'inline', marginLeft: '10px', marginRight: '10px' }}>Session: {sessionId}</h1>
+
+          <div className="flex flex-col">
+            <h1 className="text-xl font-bold text-gray-900 dark:text-white">
+              Session <span className="font-mono text-lg opacity-70">#{sessionId?.slice(-6)}</span>
+            </h1>
+            <span className={`text-xs font-medium px-2 py-0.5 rounded-full w-fit mt-1 ${sessionStatus === 'closed' ? 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400' :
+                sessionStatus === 'active' || sessionStatus === 'agent_assigned' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                  'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+              }`}>
+              {sessionStatus === 'agent_assigned' ? 'Agent Assigned' :
+                sessionStatus === 'active' ? 'Active' :
+                  sessionStatus}
+            </span>
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+
+        {/* Right Side: Actions Toolbar */}
+        <div className="flex flex-wrap items-center gap-3">
+
+          {/* Export Button */}
           {(hasRole('admin') || hasRole('agent')) && (
-            <div style={{ position: 'relative', display: 'inline-block' }} data-export-menu>
+            <div className="relative" data-export-menu>
               <button
                 onClick={() => setShowExportMenu(!showExportMenu)}
                 disabled={exporting}
-                style={{
-                  padding: '8px 16px',
-                  background: exporting ? '#ccc' : '#667eea',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: exporting ? 'not-allowed' : 'pointer',
-                  fontSize: '13px'
-                }}
+                className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${exporting
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                  }`}
               >
-                {exporting ? 'Exporting...' : 'Export'}
+                <span>{exporting ? 'Exporting...' : 'Export'}</span>
+                <ChevronDown className="w-3.5 h-3.5 opacity-50" />
               </button>
+
               {showExportMenu && (
-                <div
-                  data-export-menu
-                  style={{
-                    position: 'absolute',
-                    top: '100%',
-                    right: 0,
-                    background: 'white',
-                    border: '1px solid #ddd',
-                    borderRadius: '4px',
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                    zIndex: 1000,
-                    minWidth: '120px',
-                    marginTop: '4px'
-                  }}
-                >
+                <div className="absolute top-full right-0 mt-2 w-32 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden">
                   <button
                     onClick={() => exportConversation('json')}
-                    style={{
-                      display: 'block',
-                      width: '100%',
-                      padding: '8px 12px',
-                      textAlign: 'left',
-                      background: 'white',
-                      border: 'none',
-                      cursor: 'pointer',
-                      fontSize: '13px'
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = '#f8f9fa'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+                    className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 transition-colors"
                   >
-                    Export JSON
+                    JSON
                   </button>
                   <button
                     onClick={() => exportConversation('csv')}
-                    style={{
-                      display: 'block',
-                      width: '100%',
-                      padding: '8px 12px',
-                      textAlign: 'left',
-                      background: 'white',
-                      border: 'none',
-                      borderTop: '1px solid #eee',
-                      cursor: 'pointer',
-                      fontSize: '13px'
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = '#f8f9fa'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+                    className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 border-t border-gray-100 dark:border-gray-700 transition-colors"
                   >
-                    Export CSV
+                    CSV
                   </button>
                 </div>
               )}
             </div>
           )}
-          {/* Refresh button - always visible for all sessions */}
+
+          {/* Refresh Button */}
           <button
             onClick={() => {
-              // Reload latest session info and messages
               loadSessionInfo()
               loadMessages(false)
             }}
-            style={{
-              padding: '8px 16px',
-              background: '#007bff',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '13px',
-              marginLeft: '10px'
-            }}
-            title="Refresh chat messages and session data"
+            className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 bg-transparent hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+            title="Refresh"
           >
-            🔄 Refresh
+            <span className="text-xl">↻</span>
           </button>
+
+          {/* Divider */}
+          <div className="h-6 w-px bg-gray-300 dark:bg-gray-600 mx-1"></div>
+
+          {/* Agent Assignment Logic */}
           {hasAnyRole(['agent', 'admin']) && (
             <>
-              {isAdmin && !assignedAgentId && (() => {
-                // Debug: Log rendering state
-                console.log('🎨 Rendering dropdown with:', {
-                  onlineAgents: onlineAgents.length,
-                  loadingAgents,
-                  selectedAgentId,
-                  hasAgents: onlineAgents.length > 0
-                })
-
-                // Only disable if actively loading AND no agents available yet
-                // If agents are available, enable the dropdown even if loading (for real-time updates)
-                const shouldDisable = loadingAgents && onlineAgents.length === 0
-
-                return (
-                  <div className="flex items-center gap-2 ml-2.5 relative" data-agent-dropdown>
-                    {/* Custom Dropdown Trigger */}
-                    <button
-                      onClick={() => {
-                        if (!shouldDisable) {
-                          setShowAgentDropdown(!showAgentDropdown)
-                          if (!showAgentDropdown) handleDropdownFocus()
-                        }
-                      }}
-                      disabled={shouldDisable}
-                      className={`
-                        flex items-center justify-between px-3 py-2 border rounded text-sm min-w-[200px] transition-colors
-                        ${shouldDisable
-                          ? 'bg-gray-100 dark:bg-gray-800 text-gray-500 cursor-not-allowed opacity-60'
-                          : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white cursor-pointer hover:border-gray-400 dark:hover:border-gray-500'}
-                      `}
-                    >
-                      <div className="flex items-center gap-2 overflow-hidden">
-                        {(() => {
-                          // Use selectedAgentId to find agent
-                          const selectedAgent = onlineAgents.find(a => a.userId === selectedAgentId)
-                          const selectedDisplayName = selectedAgent
-                            ? (selectedAgent.name || selectedAgent.email || 'Unknown')
-                            : 'Select an agent...'
-
-                          // Allow selecting any agent who is connected via socket (isOnline)
-                          const selectedIsOnline = selectedAgent?.isOnline === true
-
-                          if (selectedAgent) {
-                            return (
-                              <>
-                                <Circle className={`w-3 h-3 flex-shrink-0 ${selectedIsOnline ? 'fill-green-500 text-green-500' : 'text-gray-400'}`} />
-                                <span className="truncate">{selectedDisplayName}</span>
-                              </>
-                            )
-                          } else {
-                            return <span className="text-gray-500 dark:text-gray-400">{loadingAgents && onlineAgents.length === 0 ? 'Loading agents...' : 'Select an agent...'}</span>
+              {/* Admin Agent Dropdown */}
+              {isAdmin && !assignedAgentId && (
+                (() => {
+                  const shouldDisable = loadingAgents && onlineAgents.length === 0
+                  return (
+                    <div className="relative" data-agent-dropdown>
+                      <button
+                        onClick={() => {
+                          if (!shouldDisable) {
+                            setShowAgentDropdown(!showAgentDropdown)
+                            if (!showAgentDropdown) handleDropdownFocus()
                           }
-                        })()}
-                      </div>
-                      <ChevronDown className="w-4 h-4 opacity-50 ml-2 flex-shrink-0" />
-                    </button>
-
-                    {/* Custom Dropdown Menu */}
-                    {showAgentDropdown && (
-                      <div className="absolute top-full left-0 mt-1 w-full min-w-[240px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 max-h-[300px] overflow-y-auto">
-                        {onlineAgents.length === 0 ? (
-                          <div className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 text-center">
-                            {loadingAgents ? 'Loading agents...' : 'No agents found'}
-                          </div>
-                        ) : (
-                          <div className="py-1">
-                            {onlineAgents.map((agent) => {
-                              const displayName = agent.name || agent.email || 'Unknown'
-                              // Allow selecting any agent who is connected via socket (isOnline)
-                              const isOnline = agent.isOnline === true
-                              const isSelected = selectedAgentId === agent.userId
-
+                        }}
+                        disabled={shouldDisable}
+                        className={`flex items-center justify-between px-3 py-2 text-sm border rounded-lg min-w-[180px] transition-colors ${shouldDisable
+                            ? 'bg-gray-50 text-gray-400 cursor-not-allowed'
+                            : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:border-gray-400'
+                          }`}
+                      >
+                        <div className="flex items-center gap-2 overflow-hidden max-w-[140px]">
+                          {(() => {
+                            const selected = onlineAgents.find(a => a.userId === selectedAgentId)
+                            if (selected) {
                               return (
+                                <>
+                                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${selected.isOnline ? 'bg-green-500' : 'bg-gray-300'}`} />
+                                  <span className="truncate">{selected.name || selected.email}</span>
+                                </>
+                              )
+                            }
+                            return <span className="text-gray-500">Select agent...</span>
+                          })()}
+                        </div>
+                        <ChevronDown className="w-4 h-4 text-gray-400" />
+                      </button>
+
+                      {showAgentDropdown && (
+                        <div className="absolute top-full right-0 mt-2 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-50 max-h-[300px] overflow-y-auto">
+                          {onlineAgents.length === 0 ? (
+                            <div className="px-4 py-3 text-sm text-gray-500 text-center">No agents found</div>
+                          ) : (
+                            <div className="py-1">
+                              {onlineAgents.map(agent => (
                                 <button
                                   key={agent.userId}
                                   onClick={() => {
-                                    if (isOnline) {
+                                    if (agent.isOnline) {
                                       setSelectedAgentId(agent.userId)
                                       setShowAgentDropdown(false)
                                     }
                                   }}
-                                  disabled={!isOnline}
-                                  className={`
-                                    w-full text-left px-3 py-2 text-sm flex items-center justify-between transition-colors
-                                    ${!isOnline
-                                      ? 'bg-gray-50 dark:bg-gray-800 text-gray-400 cursor-not-allowed opacity-70'
-                                      : 'hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-gray-900 dark:text-gray-100'}
-                                    ${isSelected ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400' : ''}
-                                  `}
+                                  disabled={!agent.isOnline}
+                                  className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700 ${selectedAgentId === agent.userId ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600' : 'text-gray-700 dark:text-gray-200'
+                                    } ${!agent.isOnline ? 'opacity-50 cursor-not-allowed' : ''}`}
                                 >
-                                  <div className="flex items-center gap-2.5 overflow-hidden">
-                                    <div className="flex-shrink-0 relative">
-                                      <User className={`w-4 h-4 ${!isOnline ? 'opacity-40' : 'opacity-70'}`} />
-                                      <div className="absolute -bottom-0.5 -right-0.5 bg-white dark:bg-gray-800 rounded-full p-[1px]">
-                                        <Circle className={`w-2.5 h-2.5 ${isOnline ? 'fill-green-500 text-green-500' : 'text-gray-300 dark:text-gray-600'}`} />
-                                      </div>
-                                    </div>
-                                    <div className="flex flex-col truncate">
-                                      <span className={`font-medium truncate ${!isOnline ? 'text-gray-400' : ''}`}>{displayName}</span>
-                                      {!isOnline && (
-                                        <span className="text-[10px] text-gray-400 capitalize">{agent.status || 'Offline'}</span>
-                                      )}
-                                    </div>
+                                  <div className="flex items-center gap-2 truncate">
+                                    <div className={`w-2 h-2 rounded-full ${agent.isOnline ? 'bg-green-500' : 'bg-gray-300'}`} />
+                                    <span className="truncate">{agent.name || agent.email}</span>
                                   </div>
-                                  {isSelected && <Check className="w-4 h-4 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />}
+                                  {selectedAgentId === agent.userId && <Check className="w-3 h-3" />}
                                 </button>
-                              )
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    <button
-                      onClick={assignToSelectedAgent}
-                      disabled={!selectedAgentId || loadingAgents}
-                      className={`
-                        px-4 py-2 border-none rounded text-sm text-white transition-colors
-                        ${(!selectedAgentId || loadingAgents)
-                          ? 'bg-gray-400 cursor-not-allowed'
-                          : 'bg-green-600 hover:bg-green-700 cursor-pointer'}
-                      `}
-                    >
-                      Assign
-                    </button>
-                  </div>
-                )
-              })()}
-              {assignedAgentId && canSendMessages && sessionStatus === 'agent_assigned' ? (
-                <>
-                  <button
-                    onClick={closeConversation}
-                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm ml-2.5 transition-colors"
-                  >
-                    Close Conversation
-                  </button>
-                  {assignedAgentId === agentId && (
-                    <span className="text-sm text-green-600 dark:text-green-400 font-medium ml-2.5">✓ Assigned</span>
-                  )}
-                </>
-              ) : assignedAgentId ? (
-                <>
-                  <span className="text-sm text-gray-500 dark:text-gray-400 ml-2.5">
-                    Assigned to: {assignedAgentId}
-                  </span>
-                  {/* Only show reassign button if current user is NOT the assigned agent */}
-                  {user?.userId !== assignedAgentId && (
-                    <button
-                      onClick={assignToMe}
-                      className="px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-gray-900 rounded text-sm ml-2.5 transition-colors font-medium"
-                    >
-                      Reassign to Me
-                    </button>
-                  )}
-                  {/* If current user IS the assigned agent, show they're assigned */}
-                  {user?.userId === assignedAgentId && (
-                    <span className="text-sm text-green-600 dark:text-green-400 font-medium ml-2.5">✓ You are assigned</span>
-                  )}
-                </>
-              ) : (
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()
+              )}
+
+              {/* Assign/Reassign Buttons */}
+              {isAdmin && !assignedAgentId && (
                 <button
-                  onClick={assignToMe}
-                  className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded text-sm ml-2.5 transition-colors"
+                  onClick={assignToSelectedAgent}
+                  disabled={!selectedAgentId}
+                  className={`px-3 py-2 text-sm font-medium rounded-lg text-white transition-colors ${!selectedAgentId
+                      ? 'bg-gray-300 cursor-not-allowed'
+                      : 'bg-green-600 hover:bg-green-700 shadow-sm'
+                    }`}
                 >
-                  Assign to Me
+                  Assign
                 </button>
               )}
+
+              {/* Close Conversation Button */}
+              {assignedAgentId && canSendMessages && (sessionStatus === 'agent_assigned' || sessionStatus === 'active') && (
+                <button
+                  onClick={closeConversation}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-white border border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 text-sm font-medium rounded-lg transition-all shadow-sm"
+                >
+                  <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                  Close Chat
+                </button>
+              )}
+
+              {/* Status Indicators / Self Assign */}
+              {!assignedAgentId && (
+                <button
+                  onClick={assignToMe}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg shadow-sm transition-colors"
+                >
+                  Take Over
+                </button>
+              )}
+
+              {assignedAgentId && (
+                <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 ml-2">
+                  <User className="w-3.5 h-3.5 text-gray-500" />
+                  <span className="text-sm text-gray-600 dark:text-gray-300">
+                    {assignedAgentId === user?.userId ? 'You' : assignedAgentId}
+                  </span>
+                  {assignedAgentId !== user?.userId && (
+                    <button
+                      onClick={assignToMe}
+                      className="text-xs text-indigo-600 hover:text-indigo-800 font-medium ml-1 underline"
+                    >
+                      Take Over
+                    </button>
+                  )}
+                </div>
+              )}
+
             </>
           )}
         </div>

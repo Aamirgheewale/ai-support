@@ -7,6 +7,10 @@ import NotificationItem from './NotificationItem'
 
 type TabType = 'all' | 'unread'
 
+interface NotificationBellProps {
+  onOpenLLMSettings?: () => void
+}
+
 /**
  * NotificationBell - World Class Inbox-style notification system
  * Features:
@@ -14,7 +18,7 @@ type TabType = 'all' | 'unread'
  * - Modern inbox UI
  * - Mark all as read
  */
-export default function NotificationBell() {
+export default function NotificationBell({ onOpenLLMSettings }: NotificationBellProps) {
   const navigate = useNavigate()
   const { notifications, unreadCount, markAsRead, markAllAsRead, deleteNotification } = useNotifications()
   const { playNotificationPop } = useSoundContext()
@@ -189,6 +193,7 @@ export default function NotificationBell() {
                   notification={notification}
                   onMarkAsRead={markAsRead}
                   onDelete={deleteNotification}
+                  onOpenLLMSettings={onOpenLLMSettings}
                 />
               ))
             )}

@@ -22,6 +22,7 @@ import AudioNotifications from './components/common/AudioNotifications'
 import SidebarHeader from './components/sidebar/SidebarHeader'
 import StopRingButton from './components/sidebar/StopRingButton'
 import WaitingForAccess from './pages/WaitingForAccess'
+
 import { useState, useEffect, useRef } from 'react'
 
 interface NavigationProps {
@@ -672,6 +673,7 @@ function App() {
                     <Route path="/users" element={<ProtectedRoute requiredPermission="users"><UsersPage /></ProtectedRoute>} />
                     <Route path="/agents-online" element={<ProtectedRoute requiredRole={['admin', 'agent']} requiredPermission="agents_online"><AgentsOnline /></ProtectedRoute>} />
                     <Route path="/signup" element={<ProtectedRoute requiredRole="admin"><SignupPage /></ProtectedRoute>} />
+
                     <Route path="/encryption" element={<ProtectedRoute requiredPermission="encryption"><EncryptionPage /></ProtectedRoute>} />
                     <Route path="/notifications" element={<ProtectedRoute requiredPermission="notifications"><NotificationsPage /></ProtectedRoute>} />
                   </Routes>

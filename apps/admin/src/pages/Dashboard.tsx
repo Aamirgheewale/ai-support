@@ -203,7 +203,7 @@ export default function Dashboard() {
                 <Col numColSpan={1} numColSpanLg={2}>
                     <Card>
                         <Title>Traffic Trends</Title>
-                        <Subtitle>Incoming sessions vs tickets over the last 7 days</Subtitle>
+                        <Subtitle>Incoming sessions vs tickets (All Time)</Subtitle>
                         <AreaChart
                             className="mt-6 h-72"
                             data={data.charts.weeklyVolume}

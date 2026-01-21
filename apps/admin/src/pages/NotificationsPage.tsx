@@ -1,8 +1,9 @@
 import { useNotifications } from '../context/NotificationContext';
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { X, ChevronRight, Inbox, FileText, Users, Edit } from 'lucide-react';
+import { X, ChevronRight, Inbox, FileText, Users, Edit, ShieldAlert } from 'lucide-react';
 import { Card } from '../components/ui';
+import LLMSettingsModal from '../components/modals/LLMSettingsModal';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
 
@@ -10,6 +11,7 @@ export default function NotificationsPage() {
     const { notifications, unreadCount, markAsRead, deleteNotification } = useNotifications();
     const navigate = useNavigate();
     const [resolvedTicketIds, setResolvedTicketIds] = useState<Set<string>>(new Set());
+    const [isLLMSettingsOpen, setIsLLMSettingsOpen] = useState(false);
 
     // Fetch tickets to get resolved ticket IDs
     useEffect(() => {
@@ -54,7 +56,7 @@ export default function NotificationsPage() {
     // Filter notifications by type
     const requestNotifications = notifications.filter(n => n.type === 'request_agent');
     const assignmentNotifications = notifications.filter(n => n.type === 'assignment');
-    
+
     // Filter ticket notifications to exclude resolved tickets AND deduplicate by ticketId
     // Keep only the most recent notification for each ticketId
     const ticketNotifications = (() => {
@@ -63,10 +65,10 @@ export default function NotificationsPage() {
             .filter(n => {
                 if (n.type !== 'ticket_created') return false;
                 const ticketId = extractTicketId(n.content || '');
-                
+
                 // If we can't extract ticketId, include it (better safe than sorry)
                 if (!ticketId) return true;
-                
+
                 // Exclude resolved tickets
                 return !resolvedTicketIds.has(ticketId);
             })
@@ -76,18 +78,18 @@ export default function NotificationsPage() {
                 const dateB = new Date(b.createdAt || b.$createdAt || 0).getTime();
                 return dateB - dateA;
             });
-        
+
         // Deduplicate: keep only the first (most recent) occurrence of each ticketId
         const seenTicketIds = new Set<string>();
         return ticketNotifs.filter(n => {
             const ticketId = extractTicketId(n.content || '');
-            
+
             // If we can't extract ticketId, include it
             if (!ticketId) return true;
-            
+
             // Skip if we've already seen this ticketId
             if (seenTicketIds.has(ticketId)) return false;
-            
+
             seenTicketIds.add(ticketId);
             return true;
         });
@@ -101,11 +103,14 @@ export default function NotificationsPage() {
         if (notification.type === 'ticket_created') {
             // Navigate to pending queries page for tickets
             navigate('/pending-queries');
+        } else if (notification.type === 'system' || (notification.sessionId === 'system')) {
+            // Open LLM Settings (Fleet Manager) for system notifications
+            setIsLLMSettingsOpen(true);
         } else if (notification.sessionId && notification.sessionId.trim() !== '') {
             // Navigate to session for other types
             navigate(`/sessions/${notification.sessionId}`);
         }
-        // If no sessionId and not a ticket, just mark as read (no navigation)
+        // If no sessionId and not a ticket/system, just mark as read (no navigation)
     };
 
     const handleDeleteNotification = async (e: React.MouseEvent, notificationId: string) => {
@@ -147,6 +152,12 @@ export default function NotificationsPage() {
                     🎫 New Ticket
                 </span>
             );
+        } else if (type === 'system') {
+            return (
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300">
+                    <ShieldAlert className="w-3 h-3 mr-1" /> System
+                </span>
+            );
         } else {
             // For other types (session_timeout_warning), show neutral badge
             // Removed: agent_connected and agent_disconnected badge (no longer supported)
@@ -165,45 +176,51 @@ export default function NotificationsPage() {
                 return 'hover:bg-gradient-to-r hover:from-red-50 hover:to-pink-50 dark:hover:bg-none dark:hover:bg-red-500/20 hover:border-red-300 dark:hover:border-red-800 hover:border-l-red-500 dark:hover:border-l-red-600';
             } else if (notification.type === 'request_agent') {
                 return 'hover:bg-gradient-to-r hover:from-yellow-50 hover:to-amber-50 dark:hover:bg-none dark:hover:bg-yellow-500/20 hover:border-yellow-300 dark:hover:border-yellow-800 hover:border-l-yellow-500 dark:hover:border-l-yellow-600';
-            // Removed: agent_connected and agent_disconnected hover styles (no longer supported)
+            } else if (notification.type === 'system') {
+                // Critical systems get red borders, warnings/info get purple
+                if (notification.severity === 'critical') {
+                    return 'bg-red-50/50 dark:bg-red-900/10 hover:bg-red-50 dark:hover:bg-red-900/20 border-red-200 dark:border-red-800 hover:border-l-red-500';
+                }
+                return 'hover:bg-gradient-to-r hover:from-purple-50 hover:to-fuchsia-50 dark:hover:bg-none dark:hover:bg-purple-500/20 hover:border-purple-300 dark:hover:border-purple-800 hover:border-l-purple-500 dark:hover:border-l-purple-600';
             }
+            // Removed: agent_connected and agent_disconnected hover styles (no longer supported)
             // Default: assignments and other types
             return 'hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 dark:hover:bg-none dark:hover:bg-blue-500/20 hover:border-blue-300 dark:hover:border-blue-800 hover:border-l-blue-500 dark:hover:border-l-blue-600';
         };
 
         return (
-        <div
-            onClick={() => handleNotificationClick(notification)}
-            className={`px-4 py-2.5 bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 ${getHoverClasses()} hover:shadow-md hover:border-l-4 transition-all duration-200 ease-in-out cursor-pointer flex items-start justify-between group relative`}
-        >
-            <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                    {getBadgeForNotification(notification.type)}
-                    <span className="text-[10px] text-gray-500 dark:text-gray-400 dark:group-hover:text-gray-200">
-                        {formatTime(notification.createdAt || notification.$createdAt || '')}
-                    </span>
+            <div
+                onClick={() => handleNotificationClick(notification)}
+                className={`px-4 py-2.5 bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 ${getHoverClasses()} hover:shadow-md hover:border-l-4 transition-all duration-200 ease-in-out cursor-pointer flex items-start justify-between group relative`}
+            >
+                <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                        {getBadgeForNotification(notification.type)}
+                        <span className="text-[10px] text-gray-500 dark:text-gray-400 dark:group-hover:text-gray-200">
+                            {formatTime(notification.createdAt || notification.$createdAt || '')}
+                        </span>
+                    </div>
+                    <p className="text-xs text-gray-900 dark:text-gray-100 dark:group-hover:text-white font-medium truncate">{notification.content}</p>
+                    {notification.sessionId && notification.sessionId.trim() !== '' && (
+                        <p className="text-[10px] text-gray-500 dark:text-gray-400 dark:group-hover:text-gray-200 mt-0.5 truncate">Session: {notification.sessionId}</p>
+                    )}
                 </div>
-                <p className="text-xs text-gray-900 dark:text-gray-100 dark:group-hover:text-white font-medium truncate">{notification.content}</p>
-                {notification.sessionId && notification.sessionId.trim() !== '' && (
-                    <p className="text-[10px] text-gray-500 dark:text-gray-400 dark:group-hover:text-gray-200 mt-0.5 truncate">Session: {notification.sessionId}</p>
-                )}
+                <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                    {/* Delete Button - Only visible on hover */}
+                    <button
+                        onClick={(e) => handleDeleteNotification(e, notification.$id)}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400"
+                        aria-label="Delete notification"
+                        title="Delete notification"
+                    >
+                        <X className="w-4 h-4" />
+                    </button>
+                    {/* Arrow icon - Only show if sessionId exists */}
+                    {notification.sessionId && notification.sessionId.trim() !== '' && (
+                        <ChevronRight className="w-4 h-4 text-gray-400 dark:text-gray-500 dark:group-hover:text-gray-200 transition-colors" />
+                    )}
+                </div>
             </div>
-            <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-                {/* Delete Button - Only visible on hover */}
-                <button
-                    onClick={(e) => handleDeleteNotification(e, notification.$id)}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400"
-                    aria-label="Delete notification"
-                    title="Delete notification"
-                >
-                    <X className="w-4 h-4" />
-                </button>
-                {/* Arrow icon - Only show if sessionId exists */}
-                {notification.sessionId && notification.sessionId.trim() !== '' && (
-                    <ChevronRight className="w-4 h-4 text-gray-400 dark:text-gray-500 dark:group-hover:text-gray-200 transition-colors" />
-                )}
-            </div>
-        </div>
         );
     };
 
@@ -336,6 +353,13 @@ export default function NotificationsPage() {
                     </Card>
                 </div>
             </div>
+            {/* Local LLM Settings Modal */}
+            {isLLMSettingsOpen && (
+                <LLMSettingsModal
+                    isOpen={isLLMSettingsOpen}
+                    onClose={() => setIsLLMSettingsOpen(false)}
+                />
+            )}
         </div>
     );
 }

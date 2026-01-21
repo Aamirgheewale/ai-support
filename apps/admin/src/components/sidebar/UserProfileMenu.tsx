@@ -4,11 +4,14 @@ import { useTheme } from '../../context/ThemeContext'
 import EditProfileModal from '../modals/EditProfileModal'
 import GlobalSettingsModal from '../modals/GlobalSettingsModal'
 import CannedResponsesModal from '../modals/CannedResponsesModal'
-import { Sun, Moon, Palette, Loader2, MoreVertical, Volume2, MessageSquare, Check } from 'lucide-react'
+import LLMSettingsModal from '../modals/LLMSettingsModal'
+import { useNavigate } from 'react-router-dom'
+import { Sun, Moon, Palette, Loader2, MoreVertical, Volume2, MessageSquare, Check, Cpu } from 'lucide-react'
 
 interface UserProfileMenuProps {
   onClose: () => void
   onModalStateChange?: (hasOpenModal: boolean) => void
+  onOpenLLMSettings: () => void
 }
 
 type UserStatus = 'online' | 'away'
@@ -16,8 +19,9 @@ type UserStatus = 'online' | 'away'
 /**
  * UserProfileMenu - Floating menu with identity, status, and settings
  */
-export default function UserProfileMenu({ onClose, onModalStateChange }: UserProfileMenuProps) {
-  const { user, updateUserStatus, hasRole } = useAuth()
+export default function UserProfileMenu({ onClose, onModalStateChange, onOpenLLMSettings }: UserProfileMenuProps) {
+  const { user, updateUserStatus, hasRole, isAdmin } = useAuth()
+  const navigate = useNavigate()
   const { theme, setTheme } = useTheme()
   const [status, setStatus] = useState<UserStatus>('online')
   const [isStatusMenuOpen, setIsStatusMenuOpen] = useState(false)
@@ -25,6 +29,7 @@ export default function UserProfileMenu({ onClose, onModalStateChange }: UserPro
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isCannedResponsesOpen, setIsCannedResponsesOpen] = useState(false)
+  // Local LLM settings state removed - now controlled by parent
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
   const statusButtonRef = useRef<HTMLButtonElement>(null)
   const themeButtonRef = useRef<HTMLButtonElement>(null)
@@ -32,8 +37,9 @@ export default function UserProfileMenu({ onClose, onModalStateChange }: UserPro
   const [themeMenuPosition, setThemeMenuPosition] = useState({ top: 0, left: 0 })
 
   // Track if any modal is open and notify parent
+  // We don't track isLLMSettingsOpen here anymore as it's lifted
   const hasOpenModal = isEditProfileOpen || isSettingsOpen || isCannedResponsesOpen
-  
+
   useEffect(() => {
     if (onModalStateChange) {
       onModalStateChange(hasOpenModal)
@@ -56,16 +62,16 @@ export default function UserProfileMenu({ onClose, onModalStateChange }: UserPro
     if (!user || isUpdatingStatus) return
 
     setIsUpdatingStatus(true)
-    
+
     // Optimistic update - update UI immediately
     setStatus(newStatus)
     localStorage.setItem(`user-status-${user.userId}`, newStatus)
     window.dispatchEvent(new CustomEvent('user-status-updated'))
-    
+
     try {
       // Call the API via useAuth hook
       const success = await updateUserStatus(newStatus)
-      
+
       if (!success) {
         console.warn('Failed to persist status to server, but local state updated')
       }
@@ -162,6 +168,7 @@ export default function UserProfileMenu({ onClose, onModalStateChange }: UserPro
                   // Close other modals first
                   setIsSettingsOpen(false)
                   setIsCannedResponsesOpen(false)
+                  // Open profile modal locally
                   setIsEditProfileOpen(true)
                 }}
                 className="self-start px-3 py-1 text-xs font-medium text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-400 dark:hover:border-gray-500 rounded transition-colors"
@@ -203,6 +210,9 @@ export default function UserProfileMenu({ onClose, onModalStateChange }: UserPro
               // Close other modals first
               setIsEditProfileOpen(false)
               setIsCannedResponsesOpen(false)
+              // Prop call not needed for 'Close' logic, but good practice if toggling. 
+              // Actually we just want to ensure we don't accidentally close/open things wrong.
+              // Just clearing other local states is fine.
               setIsSettingsOpen(true)
             }}
             className="w-full px-3 py-2.5 flex items-center gap-3 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors"
@@ -211,6 +221,24 @@ export default function UserProfileMenu({ onClose, onModalStateChange }: UserPro
             <span>Sounds & Notifications</span>
           </button>
 
+          {/* AI Configuration - Admins only */}
+          {(user?.roles?.includes('admin') || hasRole('admin')) && (
+            <button
+              onClick={() => {
+                // Close other modals first
+                setIsEditProfileOpen(false)
+                setIsSettingsOpen(false)
+                setIsCannedResponsesOpen(false)
+                // Use prop to open global modal
+                onOpenLLMSettings()
+              }}
+              className="w-full px-3 py-2.5 flex items-center gap-3 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors"
+            >
+              <Cpu className="w-5 h-5 text-gray-400" />
+              <span>AI Configuration</span>
+            </button>
+          )}
+
           {/* Canned Responses - visible to admin/agent */}
           {(hasRole('admin') || hasRole('agent')) && (
             <button
@@ -218,6 +246,9 @@ export default function UserProfileMenu({ onClose, onModalStateChange }: UserPro
                 // Close other modals first
                 setIsEditProfileOpen(false)
                 setIsSettingsOpen(false)
+                // Ensure LLM settings is closed? We can't close it from here easily if it's external,
+                // but typically opening a new modal sits on top or we rely on user to close.
+                // For now, just open local modal.
                 setIsCannedResponsesOpen(true)
               }}
               className="w-full px-3 py-2.5 flex items-center gap-3 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors"
@@ -241,7 +272,7 @@ export default function UserProfileMenu({ onClose, onModalStateChange }: UserPro
 
       {/* Status Submenu - Fixed positioning to overflow outside sidebar */}
       {isStatusMenuOpen && (
-        <div 
+        <div
           className="fixed w-40 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-[10002]"
           style={{ top: statusMenuPosition.top, left: statusMenuPosition.left }}
         >
@@ -270,7 +301,7 @@ export default function UserProfileMenu({ onClose, onModalStateChange }: UserPro
 
       {/* Theme Submenu - Fixed positioning to overflow outside sidebar */}
       {isThemeMenuOpen && (
-        <div 
+        <div
           className="fixed w-40 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-[10002]"
           style={{ top: themeMenuPosition.top, left: themeMenuPosition.left }}
         >
@@ -305,26 +336,27 @@ export default function UserProfileMenu({ onClose, onModalStateChange }: UserPro
 
       {/* Modals */}
       {isEditProfileOpen && (
-        <EditProfileModal 
-          isOpen={isEditProfileOpen} 
-          onClose={() => setIsEditProfileOpen(false)} 
+        <EditProfileModal
+          isOpen={isEditProfileOpen}
+          onClose={() => setIsEditProfileOpen(false)}
         />
       )}
 
       {isSettingsOpen && (
-        <GlobalSettingsModal 
-          isOpen={isSettingsOpen} 
-          onClose={() => setIsSettingsOpen(false)} 
+        <GlobalSettingsModal
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
         />
       )}
 
       {isCannedResponsesOpen && (
-        <CannedResponsesModal 
-          isOpen={isCannedResponsesOpen} 
-          onClose={() => setIsCannedResponsesOpen(false)} 
+        <CannedResponsesModal
+          isOpen={isCannedResponsesOpen}
+          onClose={() => setIsCannedResponsesOpen(false)}
         />
       )}
+
+
     </>
   )
 }
-

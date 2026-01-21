@@ -27,6 +27,7 @@ const cannedResponseRoutes = require('./routes/cannedResponseRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const systemRoutes = require('./routes/systemRoutes');
 const authRoutes = require('./routes/authRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 
 // Security headers (helmet)
 let helmet = null;
@@ -77,6 +78,7 @@ app.use('/api/canned-responses', cannedResponseRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/', systemRoutes); // Mounts / and /health/db, and legacy paths
 app.use('/', themeRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Socket.IO Setup
 const server = http.createServer(app);

@@ -260,6 +260,51 @@ async function logExportAction(adminId, resources, format) {
 }
 
 
+// Helper: Fetch all documents with pagination (up to safety limit)
+async function fetchAllDocuments(collectionId, queries = [], maxLimit = 5000) {
+    const limit = 100;
+    let offset = 0;
+    let allDocuments = [];
+
+    // Always ensure queries array exists
+    const safeQueries = [...(queries || [])];
+
+    while (true) {
+        // Prepare batch queries
+        const batchQueries = [
+            ...safeQueries,
+            Query.limit(limit),
+            Query.offset(offset)
+        ];
+
+        try {
+            const result = await awDatabases.listDocuments(
+                APPWRITE_DATABASE_ID,
+                collectionId,
+                batchQueries
+            );
+
+            allDocuments = [...allDocuments, ...result.documents];
+
+            if (result.documents.length < limit || allDocuments.length >= maxLimit) {
+                break;
+            }
+
+            offset += limit;
+        } catch (err) {
+            console.error(`Error fetching batch for ${collectionId}:`, err.message);
+            // Break on error to return partial results at least
+            break;
+        }
+    }
+
+    // mimic listDocuments response structure
+    return {
+        documents: allDocuments,
+        total: allDocuments.length
+    };
+}
+
 // ============================================================================
 // CONTROLLERS
 // ============================================================================
@@ -295,26 +340,22 @@ const getDashboardStats = async (req, res) => {
             pendingTicketsCount,
             agentsCount,
             recentActivityList,
-            resolvedSessionsCount
+            resolvedSessionsCount,
+            sessionsClosedRecent,
+            ticketsResolvedRecent
         ] = await Promise.all([
-            // A. Sessions in last 7 days
-            awDatabases.listDocuments(
-                APPWRITE_DATABASE_ID,
+            // A. Sessions (All Time for Trends)
+            fetchAllDocuments(
                 APPWRITE_SESSIONS_COLLECTION_ID,
-                [
-                    Query.greaterThanEqual('$createdAt', sinceDate),
-                    Query.limit(500)
-                ]
+                [], // No filters = all time
+                5000 // Safety cap
             ),
 
-            // B. Tickets in last 7 days
-            awDatabases.listDocuments(
-                APPWRITE_DATABASE_ID,
+            // B. Tickets (All Time for Trends)
+            fetchAllDocuments(
                 APPWRITE_TICKETS_COLLECTION_ID,
-                [
-                    Query.greaterThanEqual('$createdAt', sinceDate),
-                    Query.limit(500)
-                ]
+                [], // No filters
+                5000
             ),
 
             // C. AI Accuracy Stats
@@ -376,36 +417,56 @@ const getDashboardStats = async (req, res) => {
                     Query.equal('status', 'resolved'),
                     Query.limit(1)
                 ]
-            ).catch(() => ({ total: 0 }))
+            ).catch(() => ({ total: 0 })),
+
+            // I. Closed Sessions (All Time for Leaderboard)
+            fetchAllDocuments(
+                APPWRITE_SESSIONS_COLLECTION_ID,
+                [Query.equal('status', 'closed')],
+                5000
+            ),
+
+            // J. Resolved Tickets (All Time for Leaderboard)
+            fetchAllDocuments(
+                APPWRITE_TICKETS_COLLECTION_ID,
+                [Query.equal('status', 'resolved')],
+                5000
+            )
         ]);
 
         // 3. Compute Aggregations
 
         // --- Weekly Volume Chart ---
-        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        // --- Volume Trends (All Time) ---
         const volumeMap = {};
-        for (let i = 6; i >= 0; i--) {
-            const d = new Date();
-            d.setDate(d.getDate() - i);
-            const dayName = dayNames[d.getDay()];
-            volumeMap[dayName] = { date: dayName, Sessions: 0, Tickets: 0 };
-        }
+
+        // Helper to format date key (e.g., "Jan 21")
+        const formatDateKey = (isoString) => {
+            const d = new Date(isoString);
+            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        };
+
+        // Initialize map with unique dates from data to ensure sorting
+        // (Charts handle sparse data, but sorting is key)
 
         // Aggregate Sessions
         sessionsRecent.documents.forEach(doc => {
-            const d = new Date(doc.$createdAt);
-            const dayName = dayNames[d.getDay()];
-            if (volumeMap[dayName]) volumeMap[dayName].Sessions++;
+            const key = formatDateKey(doc.$createdAt);
+            if (!volumeMap[key]) volumeMap[key] = { date: key, Sessions: 0, Tickets: 0, _ts: new Date(doc.$createdAt).getTime() };
+            volumeMap[key].Sessions++;
         });
 
         // Aggregate Tickets
         ticketsRecent.documents.forEach(doc => {
-            const d = new Date(doc.$createdAt);
-            const dayName = dayNames[d.getDay()];
-            if (volumeMap[dayName]) volumeMap[dayName].Tickets++;
+            const key = formatDateKey(doc.$createdAt);
+            if (!volumeMap[key]) volumeMap[key] = { date: key, Sessions: 0, Tickets: 0, _ts: new Date(doc.$createdAt).getTime() };
+            volumeMap[key].Tickets++;
         });
 
-        const weeklyVolume = Object.values(volumeMap);
+        // Convert to array and sort by timestamp
+        const weeklyVolume = Object.values(volumeMap).sort((a, b) => a._ts - b._ts);
+
+
 
         // --- Top Agents Leaderboard ---
         const agentStats = {};
@@ -413,23 +474,28 @@ const getDashboardStats = async (req, res) => {
             if (!agentStats[id]) agentStats[id] = { sessionsClosed: 0, queriesResolved: 0 };
         };
 
-        // Sessions
-        sessionsRecent.documents.forEach(doc => {
-            if (doc.userMeta && doc.status === 'closed') {
+        // Sessions (Performance)
+        sessionsClosedRecent.documents.forEach(doc => {
+            // Check top-level assignedAgent OR userMeta
+            let agentId = doc.assignedAgent || null;
+
+            if (!agentId && doc.userMeta) {
                 try {
-                    const meta = JSON.parse(doc.userMeta);
-                    if (meta.assignedAgent) {
-                        initAgent(meta.assignedAgent);
-                        agentStats[meta.assignedAgent].sessionsClosed++;
-                    }
+                    const meta = typeof doc.userMeta === 'string' ? JSON.parse(doc.userMeta) : doc.userMeta;
+                    if (meta?.assignedAgent) agentId = meta.assignedAgent;
                 } catch (e) { }
+            }
+
+            if (agentId && !agentId.startsWith('Solved by AI')) {
+                initAgent(agentId);
+                agentStats[agentId].sessionsClosed++;
             }
         });
 
-        // Tickets
-        ticketsRecent.documents.forEach(doc => {
+        // Tickets (Performance)
+        ticketsResolvedRecent.documents.forEach(doc => {
             const agentId = doc.resolvedBy;
-            if (agentId && doc.status === 'resolved') {
+            if (agentId) { // Status checked in query
                 initAgent(agentId);
                 agentStats[agentId].queriesResolved++;
             }

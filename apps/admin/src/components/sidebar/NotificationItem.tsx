@@ -1,23 +1,17 @@
 import { useNavigate } from 'react-router-dom'
+import { Notification } from '../../context/NotificationContext'
 
 interface NotificationItemProps {
-  notification: {
-    $id: string
-    type: 'request_agent' | 'assignment' | 'ticket_created' | 'session_timeout_warning'
-    content: string
-    sessionId: string
-    isRead: boolean
-    createdAt?: string
-    $createdAt?: string
-  }
+  notification: Notification
   onMarkAsRead: (id: string) => void
   onDelete?: (id: string) => void
+  onOpenLLMSettings?: () => void
 }
 
 /**
  * NotificationItem - Individual notification item in inbox
  */
-export default function NotificationItem({ notification, onMarkAsRead, onDelete }: NotificationItemProps) {
+export default function NotificationItem({ notification, onMarkAsRead, onDelete, onOpenLLMSettings }: NotificationItemProps) {
   const navigate = useNavigate()
 
   // Format relative time
@@ -88,6 +82,18 @@ export default function NotificationItem({ notification, onMarkAsRead, onDelete 
           title: 'Assignment',
           bgColor: 'bg-blue-50'
         }
+      case 'system':
+        return {
+          icon: (
+            <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center shrink-0">
+              <svg className="w-5 h-5 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+          ),
+          title: 'System Alert',
+          bgColor: 'bg-red-50'
+        }
       default:
         return {
           icon: (
@@ -112,6 +118,14 @@ export default function NotificationItem({ notification, onMarkAsRead, onDelete 
       await onMarkAsRead(notification.$id)
     }
 
+    // Intercept 'system' or 'needs_key' type notifications (assuming 'system' uses sessionId: 'system')
+    if (notification.type === 'system' || notification.sessionId === 'system') {
+      if (onOpenLLMSettings) {
+        onOpenLLMSettings()
+      }
+      return
+    }
+
     // Navigate based on type
     if (notification.type === 'ticket_created') {
       navigate('/pending-queries')
@@ -131,8 +145,8 @@ export default function NotificationItem({ notification, onMarkAsRead, onDelete 
   return (
     <div
       onClick={handleClick}
-      className={`group relative w-full p-3 flex items-start gap-3 transition-colors text-left border-b border-gray-100 dark:border-gray-700 last:border-b-0 cursor-pointer ${!notification.isRead 
-        ? config.bgColor + ' hover:bg-gray-50 dark:bg-gray-800 dark:hover:bg-gray-700' 
+      className={`group relative w-full p-3 flex items-start gap-3 transition-colors text-left border-b border-gray-100 dark:border-gray-700 last:border-b-0 cursor-pointer ${!notification.isRead
+        ? config.bgColor + ' hover:bg-gray-50 dark:bg-gray-800 dark:hover:bg-gray-700'
         : 'bg-white hover:bg-gray-50 dark:bg-gray-800 dark:hover:bg-gray-700'
         }`}
     >

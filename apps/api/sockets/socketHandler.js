@@ -14,6 +14,7 @@ const {
   chatService,
   config
 } = require('../config/clients');
+const llmService = require('../services/llm/llmService');
 
 const {
   APPWRITE_DATABASE_ID,
@@ -182,6 +183,82 @@ module.exports = function (io) {
       io.to('admin_feed').emit('live_visitors_update', Array.from(liveVisitors.values()));
     });
 
+    socket.on('initiate_chat', async (data) => {
+      const { targetSocketId, message, agentId } = data;
+      console.log('🚀 initiate_chat received:', { targetSocketId, agentId });
+
+      if (!targetSocketId || !message) {
+        socket.emit('chat_initiated', { success: false, error: 'Missing targetSocketId or message' });
+        return;
+      }
+
+      try {
+        // 1. Create a new Session ID
+        const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+        // Get visitor info for metadata
+        const visitor = liveVisitors.get(targetSocketId);
+        const agentIdToAssign = agentId || 'admin';
+
+        const userMeta = visitor ? {
+          name: 'Visitor', // Default name
+          assignedAgent: agentIdToAssign, // CRITICAL: Marks this session as assigned so AI doesn't reply
+          metadata: JSON.stringify({
+            url: visitor.url,
+            title: visitor.title,
+            referrer: visitor.referrer,
+            userAgent: visitor.userAgent
+          })
+        } : {
+          assignedAgent: agentIdToAssign
+        };
+
+        // 2. Ensure session exists in Appwrite
+        await chatService.ensureSessionInAppwrite(sessionId, userMeta);
+
+        // 2a. Update local cache immediately so subsequent user messages are caught even before DB sync
+        sessionAssignments.set(sessionId, { agentId: agentIdToAssign, aiPaused: true });
+
+        // 3. Save the initial message (from agent)
+        await chatService.saveMessageToAppwrite(sessionId, 'agent', message, {
+          agentId: agentIdToAssign,
+          type: 'text'
+        });
+
+        // 4. Emit to the specific visitor (Widget)
+        // The widget expects 'agent_initiated_chat'
+        io.to(targetSocketId).emit('agent_initiated_chat', {
+          sessionId,
+          text: message,
+          sender: 'agent', // Display as agent message
+          agentId: agentIdToAssign
+        });
+
+        // 5. Respond success to Admin
+        socket.emit('chat_initiated', {
+          success: true,
+          sessionId
+        });
+
+        // 6. Join the admin to this session room so they get updates
+        socket.join(sessionId);
+
+        // 7. Update visitor status in live list
+        if (visitor) {
+          visitor.status = 'chatting';
+          visitor.sessionId = sessionId;
+          liveVisitors.set(targetSocketId, visitor);
+          io.to('admin_feed').emit('live_visitors_update', Array.from(liveVisitors.values()));
+        }
+
+        console.log(`✅ Chat initiated successfully: ${sessionId} (Agent: ${agentIdToAssign})`);
+
+      } catch (error) {
+        console.error('❌ Error in initiate_chat:', error);
+        socket.emit('chat_initiated', { success: false, error: error.message || 'Internal Server Error' });
+      }
+    });
+
     socket.on('start_session', async (data) => {
       const sessionId = data?.sessionId || socket.id;
       const sessionCreated = await chatService.ensureSessionInAppwrite(sessionId, data?.userMeta || {});
@@ -196,6 +273,28 @@ module.exports = function (io) {
     });
 
     // User Message Handler
+    socket.on('end_session', async (data) => {
+      const { sessionId } = data || {};
+      if (sessionId) {
+        console.log(`🛑 Client requested end_session: ${sessionId}`);
+
+        // Fetch current AI provider info
+        const providerInfo = await llmService.getCurrentProviderInfo();
+        const providerName = providerInfo.name || 'AI';
+        const resolutionText = `Solved by AI (${providerName})`;
+
+        // Use dedicated resolution method to handle complex userMeta updates
+        await chatService.setSessionResolution(sessionId, resolutionText);
+
+        // Notify any agents or admin feed monitoring this session
+        io.to('admin_feed').emit('session_updated', {
+          sessionId,
+          status: 'closed',
+          assignedAgent: resolutionText
+        });
+      }
+    });
+
     socket.on('user_message', async (data) => {
       const { sessionId, text } = data;
       if (!sessionId || !text) return;
@@ -210,16 +309,88 @@ module.exports = function (io) {
         createdAt: new Date().toISOString()
       });
 
-      // 2. Check assignments
-      const assignment = sessionAssignments.get(sessionId);
-      if (assignment && !assignment.aiPaused) {
-        // If assigned to agent, agent handles it. 
-        // But if we want AI to suggest, we generate hidden suggestion? 
-        // For now, if assigned, we do nothing and let agent reply.
+      // 2. Check assignments (Check DB first for truth)
+      // assignments might be cached, but best to trust DB if critical
+      const sessionDoc = await chatService.getSessionDoc(sessionId);
+      let isAssigned = false;
+
+      if (sessionDoc) {
+        // Check userMeta for assignedAgent
+        try {
+          const meta = typeof sessionDoc.userMeta === 'string' ? JSON.parse(sessionDoc.userMeta || '{}') : sessionDoc.userMeta;
+          if (meta?.assignedAgent) isAssigned = true;
+        } catch (e) { }
+
+        // Also check direct fields if they exist
+        if (sessionDoc.assignedAgent || sessionDoc.status === 'agent_assigned') isAssigned = true;
+      }
+
+      if (isAssigned) {
+        // AI Paused
         return;
       }
 
-      // 3. AI Response
+      // Fallback to cache if DB check failed or valid
+      const assignment = sessionAssignments.get(sessionId);
+      if (assignment) {
+        // If assigned, default to AI paused unless explicitly enabled?
+        // For now, if assigned, we assume agent handles it.
+        // And definitely if aiPaused is true.
+        if (assignment.aiPaused !== false) {
+          console.log(`⏸️  AI paused for session ${sessionId} (Assigned to ${assignment.agentId})`);
+          return;
+        }
+      }
+
+      // 3. Check for Ending Phrase (Thank You loop)
+      // Special handler for "Yes, ask more" - resumption flow
+      if (text.toLowerCase().trim() === 'yes, ask more') {
+        const msg = "yes, how i can help you !!!";
+        await chatService.saveMessageToAppwrite(sessionId, 'bot', msg);
+        io.to(sessionId).emit('bot_message', { text: msg });
+        return;
+      }
+
+      // Special handler for "No, close conversation" - termination flow
+      // Prevent AI from replying to this message, as frontend handles the closing UI
+      if (text.toLowerCase().trim() === 'no, close conversation') {
+        console.log(`🔇 Creating silence for specific closing phrase: "${text}"`);
+        return;
+      }
+
+      if (isEndingPhrase(text)) {
+        const msg = "You're welcome! Is there anything else I can help you with?";
+        const options = [
+          { text: "Yes, ask more", value: "continue" },
+          { text: "No, close conversation", value: "thank_you" }
+        ];
+
+        await chatService.saveMessageToAppwrite(sessionId, 'bot', msg, {
+          type: 'conclusion_question',
+          options: options
+        });
+
+        io.to(sessionId).emit('bot_message', {
+          text: msg,
+          type: 'conclusion_question',
+          options: options
+        });
+
+        return;
+      }
+
+      // 4. Human Agent Intent Detection
+      if (detectHumanAgentIntent(text)) {
+        const msg = "I can connect you with a human agent.";
+        await chatService.saveMessageToAppwrite(sessionId, 'bot', msg);
+        io.to(sessionId).emit('bot_message', {
+          text: msg,
+          showAgentButton: true // Signal frontend to show the button
+        });
+        return;
+      }
+
+      // 5. AI Response
       const preloaded = getPreloadedResponse(text);
       if (preloaded) {
         const responseText = preloaded;
@@ -229,19 +400,23 @@ module.exports = function (io) {
         return;
       }
 
-      // 4. Gemini Fallback
-      if (geminiModel) {
-        try {
-          const result = await geminiModel.generateContent(text);
-          const responseText = result.response.text();
-          await chatService.saveMessageToAppwrite(sessionId, 'bot', responseText);
-          io.to(sessionId).emit('bot_message', { text: responseText });
-        } catch (e) {
-          console.error('Gemini error:', e);
-          const errRes = "I'm having trouble connecting to my brain right now. Please try again.";
-          io.to(sessionId).emit('bot_message', { text: errRes });
-          await chatService.saveMessageToAppwrite(sessionId, 'bot', errRes);
-        }
+      // 5. LLM Response (Modular)
+      try {
+        const { generateResponse } = require('../services/llm/llmService');
+
+        // Construct message history if we had it, but for now simple user prompt
+        // Future improvement: Fetch recent history from Appwrite to pass context
+        const messages = [{ role: 'user', content: text }];
+
+        const responseText = await generateResponse(messages);
+
+        await chatService.saveMessageToAppwrite(sessionId, 'bot', responseText);
+        io.to(sessionId).emit('bot_message', { text: responseText });
+      } catch (e) {
+        console.error('LLM Generation error:', e);
+        const errRes = "I'm having trouble connecting to my brain right now. Please try again.";
+        io.to(sessionId).emit('bot_message', { text: errRes });
+        await chatService.saveMessageToAppwrite(sessionId, 'bot', errRes);
       }
     });
 
@@ -257,6 +432,52 @@ module.exports = function (io) {
       } else {
         socket.emit('auth_error', { message: 'Invalid token' });
       }
+
+    });
+
+    // Agent Message Handler
+    socket.on('agent_message', async (data) => {
+      const { sessionId, text, agentId, type, attachmentUrl } = data;
+      if (!sessionId || !text) return;
+
+      console.log(`💬 Agent message in ${sessionId}: ${text.substring(0, 50)}...`);
+
+      // 1. Save to Appwrite
+      await chatService.saveMessageToAppwrite(sessionId, 'agent', text, {
+        agentId,
+        type: type || 'text',
+        attachmentUrl
+      });
+
+      // 2. Broadcast to User (and other agents watching)
+      io.to(sessionId).emit('agent_message', {
+        sessionId,
+        text,
+        sender: 'agent',
+        agentId,
+        type: type || 'text',
+        attachmentUrl,
+        createdAt: new Date().toISOString()
+      });
+    });
+
+    // Internal Note Handler
+    socket.on('internal_note', async (data) => {
+      const { sessionId, text, agentId } = data;
+      if (!sessionId || !text) return;
+
+      // 1. Save as internal
+      await chatService.saveMessageToAppwrite(sessionId, 'internal', text, { agentId }, 'internal');
+
+      // 2. Broadcast ONLY to admins/agents (not to the user room generally, but admin feed or specific socket)
+      // Since agents join the session room, we need a special event that the widget IGNORES
+      io.to(sessionId).emit('internal_note', {
+        sessionId,
+        text,
+        sender: 'internal',
+        agentId,
+        createdAt: new Date().toISOString()
+      });
     });
 
     socket.on('disconnect', () => {
