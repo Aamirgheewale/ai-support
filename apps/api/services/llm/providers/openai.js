@@ -6,11 +6,16 @@ class OpenAIProvider {
         this.model = model;
     }
 
-    async generateResponse(messages) {
+    async generateResponse(messages, systemPrompt) {
         try {
+            // Prepend system prompt if provided
+            const finalMessages = systemPrompt
+                ? [{ role: 'system', content: systemPrompt }, ...messages]
+                : messages;
+
             // Standard messages map directly to OpenAI format
             const completion = await this.client.chat.completions.create({
-                messages: messages,
+                messages: finalMessages,
                 model: this.model,
             });
 
