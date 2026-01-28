@@ -15,6 +15,8 @@ const {
   config
 } = require('../config/clients');
 const llmService = require('../services/llm/llmService');
+const settingsService = require('../services/settingsService');
+const responseService = require('../services/chat/responseService');
 
 const {
   APPWRITE_DATABASE_ID,
@@ -38,32 +40,8 @@ const {
 } = require('../controllers/authController');
 
 // ============================================================================
-// PRELOADED RESPONSES
+// HELPER FUNCTIONS
 // ============================================================================
-
-const PRELOADED_RESPONSES_MAP = new Map([
-  ['hello', "Hi! I'm your AI Assistant. Ask me any question related to VTU internyet portal and I will provide you quick response."],
-  ['hi', "Hi! I'm your AI Assistant. Ask me any question related to VTU internyet portal and I will provide you quick response."],
-  ['hey', "Hi! I'm your AI Assistant. Ask me any question related to VTU internyet portal and I will provide you quick response."],
-  ['help', "I'm here to help! Ask me any question related to VTU internyet portal - services, plans, troubleshooting, or account-related queries."],
-]);
-// (Keeping map small for brevity in this rewrite, but in real scenario would keep all)
-
-// Pre-compiled partial matches array (shortened for brevity)
-const PARTIAL_MATCHES = [
-  { key: 'what is vtu', response: "VTU is a University" },
-  { key: 'help', response: "I'm here to help! Ask me any question related to VTU internyet portal." },
-];
-
-function getPreloadedResponse(userMessage) {
-  if (!userMessage || typeof userMessage !== 'string') return null;
-  const normalized = userMessage.toLowerCase().trim().replace(/[.,!?;:]/g, '').replace(/\s+/g, ' ');
-  if (PRELOADED_RESPONSES_MAP.has(normalized)) return PRELOADED_RESPONSES_MAP.get(normalized);
-  for (const { key, response } of PARTIAL_MATCHES) {
-    if (normalized.startsWith(key)) return response;
-  }
-  return null;
-}
 
 function isEndingPhrase(userMessage) {
   if (!userMessage || typeof userMessage !== 'string') return false;
@@ -126,6 +104,11 @@ async function saveAccuracyRecord(sessionId, messageId, aiText, confidence, late
 // ============================================================================
 
 module.exports = function (io) {
+  // Initialize response service cache on startup
+  responseService.loadResponses().catch(err => {
+    console.error('Failed to load response cache on startup:', err);
+  });
+
   // Socket.IO connection handler
   io.on('connection', (socket) => {
     console.log(`📱 Client connected: ${socket.id}`);
@@ -264,7 +247,15 @@ module.exports = function (io) {
       const sessionCreated = await chatService.ensureSessionInAppwrite(sessionId, data?.userMeta || {});
 
       socket.join(sessionId);
-      const welcomeMsg = "Hi! I'm your AI Assistant. Ask me any question related to VTU internyet portal.";
+
+      // Fetch dynamic welcome message with fail-safe fallback
+      let welcomeMsg = "Hi! I'm your AI Assistant. How can I help you today?"; // Hardcoded Fallback
+      try {
+        welcomeMsg = await settingsService.getWelcomeMessage();
+      } catch (error) {
+        console.error("Failed to fetch welcome message, using default:", error);
+      }
+
       socket.emit('session_started', { sessionId });
       io.to('admin_feed').emit('session_started', { sessionId });
       socket.emit('bot_message', { text: welcomeMsg });
@@ -296,17 +287,33 @@ module.exports = function (io) {
     });
 
     socket.on('user_message', async (data) => {
-      const { sessionId, text } = data;
-      if (!sessionId || !text) return;
+      const { sessionId, text, type, attachmentUrl } = data;
+      if (!sessionId || (!text && !attachmentUrl)) return;
 
-      // 1. Save user message
-      await chatService.saveMessageToAppwrite(sessionId, 'user', text);
+      // 1. Save user message with attachment info if present
+      const metadata = {};
+      if (type) metadata.type = type;
+      if (attachmentUrl) metadata.attachmentUrl = attachmentUrl;
+
+      await chatService.saveMessageToAppwrite(sessionId, 'user', text || 'Image', metadata);
+
       // Broadcast to admins watching
       socket.to(sessionId).emit('new_message', {
         sessionId,
-        text,
+        text: text || 'Image',
         sender: 'user',
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        type: type || undefined,
+        attachmentUrl: attachmentUrl || undefined
+      });
+
+      // Also emit user_message_for_agent with attachment info
+      socket.to(sessionId).emit('user_message_for_agent', {
+        sessionId,
+        text: text || 'Image',
+        ts: Date.now(),
+        type: type || undefined,
+        attachmentUrl: attachmentUrl || undefined
       });
 
       // 2. Check assignments (Check DB first for truth)
@@ -390,33 +397,120 @@ module.exports = function (io) {
         return;
       }
 
-      // 5. AI Response
-      const preloaded = getPreloadedResponse(text);
-      if (preloaded) {
-        const responseText = preloaded;
+      // 5. Check Bot Auto-Replies (from dynamic responseService)
+      const autoReply = responseService.findMatch(text);
+      if (autoReply) {
+        const startTime = Date.now();
         await new Promise(r => setTimeout(r, 600)); // Latency sim
-        await chatService.saveMessageToAppwrite(sessionId, 'bot', responseText);
-        io.to(sessionId).emit('bot_message', { text: responseText });
+        const latency = Date.now() - startTime;
+
+        await chatService.saveMessageToAppwrite(sessionId, 'bot', autoReply, {
+          type: 'auto_reply',
+          confidence: 1.0 // Auto-replies are exact matches = 100% confident
+        });
+
+        // Track in ai_accuracy collection for dashboard
+        await saveAccuracyRecord(
+          sessionId,
+          null, // messageId
+          autoReply,
+          1.0, // confidence
+          latency,
+          null, // tokens
+          'auto_reply',
+          { source: 'responseService' }
+        );
+
+        io.to(sessionId).emit('bot_message', {
+          text: autoReply,
+          confidence: 1.0
+        });
         return;
       }
 
-      // 5. LLM Response (Modular)
+      // 6. LLM Response (Modular)
       try {
         const { generateResponse } = require('../services/llm/llmService');
 
-        // Construct message history if we had it, but for now simple user prompt
-        // Future improvement: Fetch recent history from Appwrite to pass context
-        const messages = [{ role: 'user', content: text }];
+        // Dynamic Context Memory
+        const contextLimit = await settingsService.getContextLimit();
 
+        // Fetch recent history
+        const historyDocs = await awDatabases.listDocuments(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_MESSAGES_COLLECTION_ID,
+          [
+            Query.equal('sessionId', sessionId),
+            Query.orderDesc('createdAt'),
+            Query.limit(contextLimit)
+          ]
+        );
+
+        // Map to standard format and reverse (oldest first)
+        // 'user' -> 'user'
+        // 'bot'/'agent' -> 'assistant'
+        const messages = historyDocs.documents.reverse().map(doc => ({
+          role: doc.sender === 'user' ? 'user' : 'assistant',
+          content: doc.text || ''
+        }));
+
+        // Fallback if history fetch failed or empty (race condition)
+        if (messages.length === 0) {
+          messages.push({ role: 'user', content: text });
+        }
+
+        const startTime = Date.now();
         const responseText = await generateResponse(messages);
+        const latency = Date.now() - startTime;
 
-        await chatService.saveMessageToAppwrite(sessionId, 'bot', responseText);
-        io.to(sessionId).emit('bot_message', { text: responseText });
+        // Default confidence for LLM responses (can be made dynamic later)
+        const confidence = 0.75;
+
+        await chatService.saveMessageToAppwrite(sessionId, 'bot', responseText, {
+          confidence: confidence
+        });
+
+        // Track in ai_accuracy collection for dashboard
+        await saveAccuracyRecord(
+          sessionId,
+          null, // messageId
+          responseText,
+          confidence,
+          latency,
+          null, // tokens (can be extracted from LLM response if available)
+          'llm_response',
+          { contextLimit: contextLimit }
+        );
+
+        io.to(sessionId).emit('bot_message', {
+          text: responseText,
+          confidence: confidence
+        });
       } catch (e) {
         console.error('LLM Generation error:', e);
-        const errRes = "I'm having trouble connecting to my brain right now. Please try again.";
-        io.to(sessionId).emit('bot_message', { text: errRes });
-        await chatService.saveMessageToAppwrite(sessionId, 'bot', errRes);
+        const errRes = "I'm experiencing technical difficulties. Please try again in a moment, or request a human agent for immediate assistance.";
+
+        // Error responses have 0 confidence (will trigger offline form in widget)
+        await chatService.saveMessageToAppwrite(sessionId, 'bot', errRes, {
+          confidence: 0.0
+        });
+
+        // Track error in ai_accuracy collection for dashboard
+        await saveAccuracyRecord(
+          sessionId,
+          null, // messageId
+          errRes,
+          0.0, // confidence = 0 for errors
+          0, // latency
+          null, // tokens
+          'error',
+          { error: e.message || 'Unknown error' }
+        );
+
+        io.to(sessionId).emit('bot_message', {
+          text: errRes,
+          confidence: 0.0
+        });
       }
     });
 
