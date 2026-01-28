@@ -460,7 +460,12 @@ module.exports = function (io) {
         }
 
         const startTime = Date.now();
-        const responseText = await generateResponse(messages);
+
+        // Vision Support: Pass attachmentUrl if present
+        const responseText = attachmentUrl
+          ? await generateResponse(messages, attachmentUrl)
+          : await generateResponse(messages);
+
         const latency = Date.now() - startTime;
 
         // Default confidence for LLM responses (can be made dynamic later)
