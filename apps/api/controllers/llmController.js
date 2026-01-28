@@ -296,11 +296,125 @@ const updateConfigKey = async (req, res) => {
     }
 };
 
+const settingsService = require('../services/settingsService');
+
+/**
+ * GET /api/admin/system-prompt
+ * Fetches the global system prompt
+ */
+const getSystemPrompt = async (req, res) => {
+    try {
+        const prompt = await settingsService.getSystemPrompt();
+        res.json({ systemPrompt: prompt });
+    } catch (error) {
+        console.error('Error fetching system prompt:', error);
+        res.status(500).json({ message: 'Failed to fetch system prompt' });
+    }
+};
+
+/**
+ * POST /api/admin/system-prompt
+ * Updates the global system prompt
+ */
+const saveSystemPrompt = async (req, res) => {
+    const { systemPrompt } = req.body;
+
+    if (systemPrompt === undefined) {
+        return res.status(400).json({ message: 'systemPrompt is required' });
+    }
+
+    try {
+        await settingsService.saveSystemPrompt(systemPrompt);
+        // Note: We might want to invalidate LLM cache if we cached prompt there, 
+        // but current implementation fetches per request or relies on service.
+        // settingsService fetches live mostly or we can add caching later.
+
+        res.json({ message: 'System prompt updated successfully' });
+    } catch (error) {
+        console.error('Error saving system prompt:', error);
+        res.status(500).json({ message: 'Failed to save system prompt' });
+    }
+};
+
+/**
+ * GET /api/admin/context-limit
+ * Fetches the context limit setting
+ */
+const getContextLimit = async (req, res) => {
+    try {
+        const limit = await settingsService.getContextLimit();
+        res.json({ limit });
+    } catch (error) {
+        console.error('Error fetching context limit:', error);
+        res.status(500).json({ message: 'Failed to fetch context limit' });
+    }
+};
+
+/**
+ * POST /api/admin/context-limit
+ * Updates the context limit setting
+ */
+const saveContextLimit = async (req, res) => {
+    const { limit } = req.body;
+
+    try {
+        await settingsService.saveContextLimit(limit);
+
+        // Invalidate LLM cache if relevant
+        invalidateCache();
+
+        res.json({ message: 'Context limit updated successfully' });
+    } catch (error) {
+        console.error('Error saving context limit:', error);
+        res.status(400).json({ message: error.message || 'Failed to save context limit' });
+    }
+};
+
+/**
+ * GET /api/admin/welcome-message
+ * Fetches the global welcome message
+ */
+const getWelcomeMessage = async (req, res) => {
+    try {
+        const message = await settingsService.getWelcomeMessage();
+        res.json({ welcomeMessage: message });
+    } catch (error) {
+        console.error('Error fetching welcome message:', error);
+        res.status(500).json({ message: 'Failed to fetch welcome message' });
+    }
+};
+
+/**
+ * POST /api/admin/welcome-message
+ * Updates the global welcome message
+ */
+const saveWelcomeMessage = async (req, res) => {
+    const { welcomeMessage } = req.body;
+
+    if (welcomeMessage === undefined) {
+        return res.status(400).json({ message: 'welcomeMessage is required' });
+    }
+
+    try {
+        await settingsService.saveWelcomeMessage(welcomeMessage);
+        res.json({ message: 'Welcome message updated successfully' });
+    } catch (error) {
+        console.error('Error saving welcome message:', error);
+        res.status(500).json({ message: 'Failed to save welcome message' });
+    }
+};
+
 module.exports = {
     getAllConfigs,
     getActiveConfig,
     upsertConfig,
     activateConfig,
     deleteConfig,
-    updateConfigKey
+    updateConfigKey,
+    getSystemPrompt,
+    saveSystemPrompt,
+    getContextLimit,
+    saveContextLimit,
+    getWelcomeMessage,
+    saveWelcomeMessage
 };
