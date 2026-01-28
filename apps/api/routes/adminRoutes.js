@@ -7,7 +7,13 @@ const {
     upsertConfig,
     activateConfig,
     deleteConfig,
-    updateConfigKey
+    updateConfigKey,
+    getSystemPrompt,
+    saveSystemPrompt,
+    getContextLimit,
+    saveContextLimit,
+    getWelcomeMessage,
+    saveWelcomeMessage
 } = require('../controllers/llmController');
 
 // GET Active Config (Legacy/Dashboard support)
@@ -27,5 +33,29 @@ router.patch('/llm-config/:id/activate', requireAuth, requireAdminAuth, activate
 
 // DELETE Config by ID
 router.delete('/llm-config/:id', requireAuth, requireAdminAuth, deleteConfig);
+
+// --- System Prompt Settings ---
+
+// GET System Prompt
+router.get('/system-prompt', requireAuth, requireAdminAuth, getSystemPrompt);
+
+// POST System Prompt
+router.post('/system-prompt', requireAuth, requireAdminAuth, saveSystemPrompt);
+
+// --- Context Limit Settings ---
+
+// GET Context Limit
+router.get('/context-limit', requireAuth, requireAdminAuth, getContextLimit);
+
+// POST Context Limit
+router.post('/context-limit', requireAuth, requireAdminAuth, saveContextLimit);
+
+// --- Welcome Message Settings ---
+
+// GET Welcome Message
+router.get('/welcome-message', requireAuth, requireAdminAuth, getWelcomeMessage);
+
+// POST Welcome Message
+router.post('/welcome-message', requireAuth, requireAdminAuth, saveWelcomeMessage);
 
 module.exports = router;
