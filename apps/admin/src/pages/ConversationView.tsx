@@ -71,6 +71,7 @@ export default function ConversationView() {
     shortcut: string
     category?: string
     content: string
+    match_type?: string
   }
   const [cannedResponses, setCannedResponses] = useState<CannedResponse[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
@@ -95,12 +96,13 @@ export default function ConversationView() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [showExportMenu, showAgentDropdown])
 
-  // Fetch canned responses on mount
+  // Fetch canned responses on mount (ONLY shortcuts for agent slash commands)
   useEffect(() => {
     async function fetchCannedResponses() {
       try {
         const authToken = token || localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token')
-        const response = await fetch(`${API_BASE}/api/canned-responses`, {
+        // IMPORTANT: Only fetch shortcuts (type=shortcut) - exclude bot auto-replies
+        const response = await fetch(`${API_BASE}/api/canned-responses?type=shortcut`, {
           headers: {
             'Authorization': `Bearer ${authToken}`,
             'Content-Type': 'application/json'
@@ -145,7 +147,9 @@ export default function ConversationView() {
         // Filter suggestions - with safety check
         if (Array.isArray(cannedResponses) && cannedResponses.length > 0) {
           const filtered = cannedResponses.filter(resp =>
-            resp && resp.shortcut && resp.shortcut.toLowerCase().startsWith(searchTerm)
+            resp && resp.shortcut && resp.shortcut.toLowerCase().startsWith(searchTerm) &&
+            // IMPORTANT: Only show shortcuts (exclude auto-replies)
+            (!resp.match_type || resp.match_type === 'shortcut')
           )
           setSuggestions(filtered)
           setShowSuggestions(filtered.length > 0)
@@ -298,7 +302,9 @@ export default function ConversationView() {
           return [...prev, {
             sender: 'user',
             text: data.text,
-            timestamp: new Date(data.ts || Date.now()).toISOString()
+            timestamp: new Date(data.ts || Date.now()).toISOString(),
+            type: data.type || undefined,
+            attachmentUrl: data.attachmentUrl || undefined
           }]
         })
       } else {
@@ -355,7 +361,9 @@ export default function ConversationView() {
           return [...prev, {
             sender: 'user',
             text: data.text,
-            timestamp: new Date(data.ts || Date.now()).toISOString()
+            timestamp: new Date(data.ts || Date.now()).toISOString(),
+            type: data.type || undefined,
+            attachmentUrl: data.attachmentUrl || undefined
           }]
         })
       }
@@ -452,7 +460,9 @@ export default function ConversationView() {
             sender: 'user',
             text: data.text,
             timestamp: data.createdAt || new Date().toISOString(),
-            agentId: null
+            agentId: null,
+            type: data.type || undefined,
+            attachmentUrl: data.attachmentUrl || undefined
           }]
         })
       }
@@ -686,11 +696,11 @@ export default function ConversationView() {
       // Transform Appwrite messages to UI format - includes user, bot, and agent messages
       const transformedMessages = messages.map((msg: any) => {
         // Parse metadata if it's a string
-        let metadata: { agentId?: string } = {}
+        let metadata: { agentId?: string; attachmentUrl?: string; type?: string } = {}
         if (msg.metadata) {
           try {
             const parsed = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata
-            metadata = parsed as { agentId?: string }
+            metadata = parsed as { agentId?: string; attachmentUrl?: string; type?: string }
           } catch (e) {
             // Ignore parse errors
             metadata = {}
@@ -702,13 +712,24 @@ export default function ConversationView() {
           text: msg.text || '',
           timestamp: msg.createdAt || msg.timestamp || msg.$createdAt || new Date().toISOString(),
           agentId: metadata?.agentId || undefined,
-          type: msg.type || undefined,
-          attachmentUrl: msg.attachmentUrl || undefined
+          // Check both direct field and metadata for attachmentUrl and type
+          type: msg.type || metadata?.type || undefined,
+          attachmentUrl: msg.attachmentUrl || metadata?.attachmentUrl || undefined
         }
       })
 
       console.log(`📊 Transformed ${transformedMessages.length} message(s)`)
       console.log(`📊 Message senders:`, [...new Set(transformedMessages.map((m: Message) => m.sender))])
+      // Debug: Log messages with attachments
+      const messagesWithAttachments = transformedMessages.filter((m: Message) => m.attachmentUrl || m.type === 'image')
+      if (messagesWithAttachments.length > 0) {
+        console.log(`📸 Found ${messagesWithAttachments.length} message(s) with attachments:`, messagesWithAttachments.map((m: Message) => ({
+          sender: m.sender,
+          type: m.type,
+          attachmentUrl: m.attachmentUrl,
+          text: m.text?.substring(0, 50)
+        })))
+      }
 
       if (loadOlder) {
         // Prepend older messages to existing messages
@@ -1013,9 +1034,17 @@ export default function ConversationView() {
   }
 
   return (
-    <div style={{ padding: '20px', maxWidth: '1000px', margin: '0 auto' }}>
-      {/* Header Section */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 gap-4 border-b border-gray-200 dark:border-gray-700 pb-4">
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      height: 'calc(100vh - 40px)',
+      maxWidth: '1000px',
+      margin: '0 auto',
+      padding: '20px',
+      overflow: 'hidden'
+    }}>
+      {/* Header Section - Fixed at top */}
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-gray-200 dark:border-gray-700 pb-4 mb-4 flex-shrink-0">
         {/* Left Side: Back & Title */}
         <div className="flex items-center gap-4">
           <button
@@ -1031,8 +1060,8 @@ export default function ConversationView() {
               Session <span className="font-mono text-lg opacity-70">#{sessionId?.slice(-6)}</span>
             </h1>
             <span className={`text-xs font-medium px-2 py-0.5 rounded-full w-fit mt-1 ${sessionStatus === 'closed' ? 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400' :
-                sessionStatus === 'active' || sessionStatus === 'agent_assigned' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
-                  'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+              sessionStatus === 'active' || sessionStatus === 'agent_assigned' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
               }`}>
               {sessionStatus === 'agent_assigned' ? 'Agent Assigned' :
                 sessionStatus === 'active' ? 'Active' :
@@ -1051,8 +1080,8 @@ export default function ConversationView() {
                 onClick={() => setShowExportMenu(!showExportMenu)}
                 disabled={exporting}
                 className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${exporting
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
                   }`}
               >
                 <span>{exporting ? 'Exporting...' : 'Export'}</span>
@@ -1111,8 +1140,8 @@ export default function ConversationView() {
                         }}
                         disabled={shouldDisable}
                         className={`flex items-center justify-between px-3 py-2 text-sm border rounded-lg min-w-[180px] transition-colors ${shouldDisable
-                            ? 'bg-gray-50 text-gray-400 cursor-not-allowed'
-                            : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:border-gray-400'
+                          ? 'bg-gray-50 text-gray-400 cursor-not-allowed'
+                          : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:border-gray-400'
                           }`}
                       >
                         <div className="flex items-center gap-2 overflow-hidden max-w-[140px]">
@@ -1173,8 +1202,8 @@ export default function ConversationView() {
                   onClick={assignToSelectedAgent}
                   disabled={!selectedAgentId}
                   className={`px-3 py-2 text-sm font-medium rounded-lg text-white transition-colors ${!selectedAgentId
-                      ? 'bg-gray-300 cursor-not-allowed'
-                      : 'bg-green-600 hover:bg-green-700 shadow-sm'
+                    ? 'bg-gray-300 cursor-not-allowed'
+                    : 'bg-green-600 hover:bg-green-700 shadow-sm'
                     }`}
                 >
                   Assign
@@ -1224,7 +1253,12 @@ export default function ConversationView() {
         </div>
       </div>
 
-      <div ref={messagesContainerRef} className="bg-white dark:bg-gray-900 rounded-lg p-5 mb-5 min-h-[400px] max-h-[600px] overflow-auto">
+      {/* Messages Container - Scrollable in between */}
+      <div
+        ref={messagesContainerRef}
+        className="bg-white dark:bg-gray-900 rounded-lg p-5 flex-1 overflow-y-auto"
+        style={{ minHeight: 0 }}
+      >
         {loading ? (
           <div className="text-gray-600 dark:text-gray-400">Loading messages...</div>
         ) : (
@@ -1419,7 +1453,15 @@ export default function ConversationView() {
         )}
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      {/* Input Section - Fixed at bottom */}
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '10px',
+        flexShrink: 0,
+        paddingTop: '10px',
+        position: 'relative'
+      }}>
         {/* Private Note Toggle */}
         <div className="flex items-center gap-2">
           <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-600 dark:text-gray-400">
