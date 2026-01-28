@@ -5,8 +5,9 @@ import EditProfileModal from '../modals/EditProfileModal'
 import GlobalSettingsModal from '../modals/GlobalSettingsModal'
 import CannedResponsesModal from '../modals/CannedResponsesModal'
 import LLMSettingsModal from '../modals/LLMSettingsModal'
+import SystemPromptModal from '../modals/SystemPromptModal'
 import { useNavigate } from 'react-router-dom'
-import { Sun, Moon, Palette, Loader2, MoreVertical, Volume2, MessageSquare, Check, Cpu } from 'lucide-react'
+import { Sun, Moon, Palette, Loader2, MoreVertical, Volume2, MessageSquare, Check, Cpu, Terminal } from 'lucide-react'
 
 interface UserProfileMenuProps {
   onClose: () => void
@@ -29,6 +30,7 @@ export default function UserProfileMenu({ onClose, onModalStateChange, onOpenLLM
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isCannedResponsesOpen, setIsCannedResponsesOpen] = useState(false)
+  const [isSystemPromptOpen, setSystemPromptOpen] = useState(false)
   // Local LLM settings state removed - now controlled by parent
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
   const statusButtonRef = useRef<HTMLButtonElement>(null)
@@ -38,7 +40,7 @@ export default function UserProfileMenu({ onClose, onModalStateChange, onOpenLLM
 
   // Track if any modal is open and notify parent
   // We don't track isLLMSettingsOpen here anymore as it's lifted
-  const hasOpenModal = isEditProfileOpen || isSettingsOpen || isCannedResponsesOpen
+  const hasOpenModal = isEditProfileOpen || isSettingsOpen || isCannedResponsesOpen || isSystemPromptOpen
 
   useEffect(() => {
     if (onModalStateChange) {
@@ -210,9 +212,7 @@ export default function UserProfileMenu({ onClose, onModalStateChange, onOpenLLM
               // Close other modals first
               setIsEditProfileOpen(false)
               setIsCannedResponsesOpen(false)
-              // Prop call not needed for 'Close' logic, but good practice if toggling. 
-              // Actually we just want to ensure we don't accidentally close/open things wrong.
-              // Just clearing other local states is fine.
+              setSystemPromptOpen(false)
               setIsSettingsOpen(true)
             }}
             className="w-full px-3 py-2.5 flex items-center gap-3 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors"
@@ -223,20 +223,36 @@ export default function UserProfileMenu({ onClose, onModalStateChange, onOpenLLM
 
           {/* AI Configuration - Admins only */}
           {(user?.roles?.includes('admin') || hasRole('admin')) && (
-            <button
-              onClick={() => {
-                // Close other modals first
-                setIsEditProfileOpen(false)
-                setIsSettingsOpen(false)
-                setIsCannedResponsesOpen(false)
-                // Use prop to open global modal
-                onOpenLLMSettings()
-              }}
-              className="w-full px-3 py-2.5 flex items-center gap-3 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors"
-            >
-              <Cpu className="w-5 h-5 text-gray-400" />
-              <span>AI Configuration</span>
-            </button>
+            <>
+              <button
+                onClick={() => {
+                  // Close other modals first
+                  setIsEditProfileOpen(false)
+                  setIsSettingsOpen(false)
+                  setIsCannedResponsesOpen(false)
+                  setSystemPromptOpen(false)
+                  // Use prop to open global modal
+                  onOpenLLMSettings()
+                }}
+                className="w-full px-3 py-2.5 flex items-center gap-3 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              >
+                <Cpu className="w-5 h-5 text-gray-400" />
+                <span>AI Configuration</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setIsEditProfileOpen(false)
+                  setIsSettingsOpen(false)
+                  setIsCannedResponsesOpen(false)
+                  setSystemPromptOpen(true)
+                }}
+                className="w-full px-3 py-2.5 flex items-center gap-3 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              >
+                <Terminal className="w-5 h-5 text-gray-400" />
+                <span>System Prompt</span>
+              </button>
+            </>
           )}
 
           {/* Canned Responses - visible to admin/agent */}
@@ -246,9 +262,7 @@ export default function UserProfileMenu({ onClose, onModalStateChange, onOpenLLM
                 // Close other modals first
                 setIsEditProfileOpen(false)
                 setIsSettingsOpen(false)
-                // Ensure LLM settings is closed? We can't close it from here easily if it's external,
-                // but typically opening a new modal sits on top or we rely on user to close.
-                // For now, just open local modal.
+                setSystemPromptOpen(false)
                 setIsCannedResponsesOpen(true)
               }}
               className="w-full px-3 py-2.5 flex items-center gap-3 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors"
@@ -356,6 +370,12 @@ export default function UserProfileMenu({ onClose, onModalStateChange, onOpenLLM
         />
       )}
 
+      {isSystemPromptOpen && (
+        <SystemPromptModal
+          isOpen={isSystemPromptOpen}
+          onClose={() => setSystemPromptOpen(false)}
+        />
+      )}
 
     </>
   )
