@@ -13,7 +13,9 @@ const {
     getContextLimit,
     saveContextLimit,
     getWelcomeMessage,
-    saveWelcomeMessage
+    saveWelcomeMessage,
+    getImagePrompt,
+    saveImagePrompt
 } = require('../controllers/llmController');
 
 // GET Active Config (Legacy/Dashboard support)
@@ -57,5 +59,13 @@ router.get('/welcome-message', requireAuth, requireAdminAuth, getWelcomeMessage)
 
 // POST Welcome Message
 router.post('/welcome-message', requireAuth, requireAdminAuth, saveWelcomeMessage);
+
+// --- Image Analysis Prompt Settings ---
+
+// GET Image Prompt
+router.get('/image-prompt', requireAuth, requireAdminAuth, getImagePrompt);
+
+// POST Image Prompt
+router.post('/image-prompt', requireAuth, requireAdminAuth, saveImagePrompt);
 
 module.exports = router;
