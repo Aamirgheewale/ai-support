@@ -502,7 +502,7 @@ async function getSessionMessages(req, res) {
             };
         }
 
-        // Decrypt messages
+        // Decrypt messages and ensure all fields are included
         const decryptedMessages = result.documents.map(msg => {
             const decrypted = { ...msg };
             if (msg.encrypted && encryption) {
@@ -519,6 +519,15 @@ async function getSessionMessages(req, res) {
                 try { decrypted.metadata = JSON.parse(msg.metadata); }
                 catch { decrypted.metadata = msg.metadata; }
             }
+            
+            // Ensure type and attachmentUrl are included (check both direct fields and metadata)
+            if (!decrypted.type && decrypted.metadata && typeof decrypted.metadata === 'object' && decrypted.metadata.type) {
+                decrypted.type = decrypted.metadata.type;
+            }
+            if (!decrypted.attachmentUrl && decrypted.metadata && typeof decrypted.metadata === 'object' && decrypted.metadata.attachmentUrl) {
+                decrypted.attachmentUrl = decrypted.metadata.attachmentUrl;
+            }
+            
             return decrypted;
         });
 
