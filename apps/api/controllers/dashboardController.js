@@ -19,10 +19,11 @@ const {
 // ============================================================================
 
 // Global server-side cache for dashboard stats (simple object)
-// { data: object, timestamp: number }
+// { data: object, timestamp: number, cacheKey: string }
 let dashboardCache = {
     data: null,
-    timestamp: 0
+    timestamp: 0,
+    cacheKey: null
 };
 const DASHBOARD_CACHE_TTL_MS = 5 * 60 * 1000; // 5 Minutes
 
@@ -266,22 +267,22 @@ async function fetchAllDocuments(collectionId, queries = [], maxLimit = 5000) {
     let offset = 0;
     let allDocuments = [];
 
-    // Always ensure queries array exists
-    const safeQueries = [...(queries || [])];
+    // Always ensure queries array exists and Query is available
+    const safeQueries = Query ? [...(queries || [])] : [];
 
     while (true) {
-        // Prepare batch queries
-        const batchQueries = [
+        // Prepare batch queries - merge date filters with pagination
+        const batchQueries = Query ? [
             ...safeQueries,
             Query.limit(limit),
             Query.offset(offset)
-        ];
+        ] : [];
 
         try {
             const result = await awDatabases.listDocuments(
                 APPWRITE_DATABASE_ID,
                 collectionId,
-                batchQueries
+                batchQueries.length > 0 ? batchQueries : undefined
             );
 
             allDocuments = [...allDocuments, ...result.documents];
@@ -316,20 +317,47 @@ const getDashboardStats = async (req, res) => {
     }
 
     try {
-        const now = Date.now();
+        // Extract date filters from query params
+        const { startDate, endDate } = req.query;
+        let dateRange = null;
 
-        // 1. Check Cache
-        if (dashboardCache.data && (now - dashboardCache.timestamp < DASHBOARD_CACHE_TTL_MS)) {
+        // Validate and parse dates
+        if (startDate && endDate && typeof startDate === 'string' && typeof endDate === 'string' && startDate.trim() !== '' && endDate.trim() !== '') {
+            try {
+                dateRange = getDateRange(startDate, endDate);
+                console.log(`📅 Dashboard stats with date filter: ${dateRange.start.toISOString()} to ${dateRange.end.toISOString()}`);
+            } catch (dateErr) {
+                console.warn(`⚠️  Invalid date format, showing ALL data:`, dateErr.message);
+                dateRange = null; // Show all data instead of defaulting to 7 days
+            }
+        } else {
+            console.log(`📅 Dashboard stats: No date filter provided, showing ALL data`);
+            dateRange = null;
+        }
+
+        const now = Date.now();
+        const cacheKey = dateRange ? `${dateRange.start.toISOString()}_${dateRange.end.toISOString()}` : 'all_data';
+
+        // 1. Check Cache (with date range key)
+        if (dashboardCache.data && dashboardCache.cacheKey === cacheKey && (now - dashboardCache.timestamp < DASHBOARD_CACHE_TTL_MS)) {
             console.log('⚡ Serving dashboard stats from cache');
             return res.json(dashboardCache.data);
         }
 
         console.log('📊 Fetching fresh dashboard stats from Appwrite...');
 
-        // Calculate 7 days ago date string
-        const sevenDaysAgo = new Date();
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-        const sinceDate = sevenDaysAgo.toISOString();
+        // 2. Build date filter queries
+        // Note: Sessions use 'startTime' or '$createdAt', Tickets/Messages use 'createdAt' or '$createdAt'
+        const dateQueries = [];
+        const sessionDateQueries = [];
+        if (Query && dateRange) {
+            // For sessions, use startTime if available, otherwise createdAt
+            sessionDateQueries.push(Query.greaterThanEqual('startTime', dateRange.start.toISOString()));
+            sessionDateQueries.push(Query.lessThanEqual('startTime', dateRange.end.toISOString()));
+            // For tickets/messages, use createdAt
+            dateQueries.push(Query.greaterThanEqual('createdAt', dateRange.start.toISOString()));
+            dateQueries.push(Query.lessThanEqual('createdAt', dateRange.end.toISOString()));
+        }
 
         // 2. Fetch Real Data (Parallel)
         const [
@@ -344,17 +372,17 @@ const getDashboardStats = async (req, res) => {
             sessionsClosedRecent,
             ticketsResolvedRecent
         ] = await Promise.all([
-            // A. Sessions (All Time for Trends)
+            // A. Sessions (Filtered by date range)
             fetchAllDocuments(
                 APPWRITE_SESSIONS_COLLECTION_ID,
-                [], // No filters = all time
+                sessionDateQueries, // Apply date filters (uses startTime)
                 5000 // Safety cap
             ),
 
-            // B. Tickets (All Time for Trends)
+            // B. Tickets (Filtered by date range)
             fetchAllDocuments(
                 APPWRITE_TICKETS_COLLECTION_ID,
-                [], // No filters
+                dateQueries, // Apply date filters
                 5000
             ),
 
@@ -419,17 +447,17 @@ const getDashboardStats = async (req, res) => {
                 ]
             ).catch(() => ({ total: 0 })),
 
-            // I. Closed Sessions (All Time for Leaderboard)
+            // I. Closed Sessions (Filtered by date range for Leaderboard)
             fetchAllDocuments(
                 APPWRITE_SESSIONS_COLLECTION_ID,
-                [Query.equal('status', 'closed')],
+                Query ? [Query.equal('status', 'closed'), ...sessionDateQueries] : [],
                 5000
             ),
 
-            // J. Resolved Tickets (All Time for Leaderboard)
+            // J. Resolved Tickets (Filtered by date range for Leaderboard)
             fetchAllDocuments(
                 APPWRITE_TICKETS_COLLECTION_ID,
-                [Query.equal('status', 'resolved')],
+                [Query.equal('status', 'resolved'), ...dateQueries],
                 5000
             )
         ]);
@@ -465,6 +493,12 @@ const getDashboardStats = async (req, res) => {
 
         // Convert to array and sort by timestamp
         const weeklyVolume = Object.values(volumeMap).sort((a, b) => a._ts - b._ts);
+
+        // Debug logging to verify data filtering
+        const totalSessionsInRange = sessionsRecent.documents.length;
+        const totalTicketsInRange = ticketsRecent.documents.length;
+        console.log(`📊 Data aggregation complete: ${totalSessionsInRange} sessions, ${totalTicketsInRange} tickets in date range`);
+        console.log(`📊 Chart data points: ${weeklyVolume.length} days with data`);
 
 
 
@@ -577,7 +611,8 @@ const getDashboardStats = async (req, res) => {
 
         dashboardCache = {
             data: responseData,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            cacheKey: cacheKey
         };
 
         console.log('✅ Dashboard stats computed and cached');
