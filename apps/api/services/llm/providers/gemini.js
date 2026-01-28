@@ -6,7 +6,7 @@ class GeminiProvider {
         this.model = this.client.getGenerativeModel({ model });
     }
 
-    async generateResponse(messages) {
+    async generateResponse(messages, systemPrompt) {
         try {
             // Convert standard messages to Gemini format
             // Standard: [{ role: 'user'|'assistant'|'system', content: '...' }]
@@ -20,9 +20,19 @@ class GeminiProvider {
             // Filter out system messages if Gemini doesn't support them directly in history (it supports systemInstruction but simplistic mapping is safer for now)
             // For now, we'll prepend system messages to the first user message or use systemInstruction if init'd
 
-            const result = await this.model.generateContent({
+            const requestConfig = {
                 contents: contents,
-            });
+            };
+
+            // Inject System Prompt if provided
+            if (systemPrompt) {
+                requestConfig.systemInstruction = {
+                    role: 'system', // specific role for instruction
+                    parts: [{ text: systemPrompt }]
+                };
+            }
+
+            const result = await this.model.generateContent(requestConfig);
 
             const response = await result.response;
             return response.text();
