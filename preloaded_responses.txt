@@ -1,0 +1,110 @@
+# PRELOADED RESPONSES FOR AI CUSTOMER SUPPORT CHATBOT
+# =====================================================
+# This file documents all preloaded responses that the backend uses to reply
+# to common user messages without calling the AI/LLM.
+#
+# Location: apps/api/sockets/socketHandler.js (lines 45-67)
+# Last Updated: 2026-01-27
+
+## EXACT MATCH RESPONSES
+## =====================
+## These responses trigger when the user message (normalized, lowercase, punctuation removed)
+## exactly matches the key.
+
+hello
+→ Hi! I'm your AI Assistant. Ask me any question related to VTU internyet portal and I will provide you quick response.
+
+hi
+→ Hi! I'm your AI Assistant. Ask me any question related to VTU internyet portal and I will provide you quick response.
+
+hey
+→ Hi! I'm your AI Assistant. Ask me any question related to VTU internyet portal and I will provide you quick response.
+
+help
+→ I'm here to help! Ask me any question related to VTU internyet portal - services, plans, troubleshooting, or account-related queries.
+
+
+## PARTIAL MATCH RESPONSES
+## ========================
+## These responses trigger when the user message (normalized) STARTS WITH the key.
+## Checked in order, first match wins.
+
+what is vtu
+→ VTU is a University
+
+help
+→ I'm here to help! Ask me any question related to VTU internyet portal.
+
+
+## SPECIAL PHRASE HANDLERS
+## ========================
+## These are not in the preloaded map but have special handling logic.
+
+### ENDING PHRASES (Thank You Loop)
+## Triggers when message contains: bye, goodbye, thank you, thanks
+→ You're welcome! Is there anything else I can help you with?
+   [Shows options: "Yes, ask more" | "No, close conversation"]
+
+### RESUMPTION PHRASE
+yes, ask more
+→ yes, how i can help you !!!
+
+### CLOSING PHRASE (Silent - No Response)
+no, close conversation
+→ [No response - frontend handles closing UI]
+
+### HUMAN AGENT INTENT DETECTION
+## Triggers when message contains:
+## - One of: agent, human, support person
+## - AND one of: talk, speak, connect, want, need
+→ I can connect you with a human agent.
+   [Shows "Request Agent" button]
+
+### AGENT REQUEST CONFIRMATION
+## Sent when user clicks "Request Agent" button
+→ An agent has been requested. A representative will join shortly.
+
+
+## WELCOME MESSAGE
+## ================
+## Sent automatically when a new session starts (start_session event)
+→ Hi! I'm your AI Assistant. Ask me any question related to VTU internyet portal.
+
+
+## ERROR MESSAGES
+## ===============
+## Sent when LLM/AI fails to generate a response
+→ I'm having trouble connecting to my brain right now. Please try again.
+
+
+## NORMALIZATION RULES
+## ====================
+## Before checking against preloaded responses, user messages are normalized:
+## 1. Convert to lowercase
+## 2. Trim whitespace
+## 3. Remove punctuation: .,!?;:
+## 4. Replace multiple spaces with single space
+##
+## Examples:
+##   "Hello!" → "hello"
+##   "Hi there!!!" → "hi there"
+##   "HELP ME" → "help me"
+##   "What is VTU?" → "what is vtu"
+
+
+## MATCHING PRIORITY
+## ==================
+## 1. Check exact match in PRELOADED_RESPONSES_MAP
+## 2. Check partial matches (startsWith) in PARTIAL_MATCHES array
+## 3. Check special phrase handlers (ending phrases, agent intent)
+## 4. If no match, send to AI/LLM for response
+
+
+## NOTES
+## =====
+## - Preloaded responses have ~600ms artificial latency to simulate typing
+## - These responses do NOT call the AI/LLM, saving API costs
+## - Partial matches are checked in order - first match wins
+## - Case-insensitive matching for all responses
+## - Punctuation is stripped before matching
+    
