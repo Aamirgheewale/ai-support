@@ -4,7 +4,8 @@ const {
     getCannedResponses,
     createCannedResponse,
     updateCannedResponse,
-    deleteCannedResponse
+    deleteCannedResponse,
+    refreshResponseCache
 } = require('../controllers/cannedResponseController');
 
 const {
@@ -27,4 +28,8 @@ router.put('/:id', adminAgentAuth, updateCannedResponse);
 // DELETE /api/canned-responses/:id - Delete
 router.delete('/:id', adminAgentAuth, deleteCannedResponse);
 
+// POST /api/canned-responses/refresh - Refresh cache
+router.post('/refresh', adminAgentAuth, refreshResponseCache);
+
 module.exports = router;
+
