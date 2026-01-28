@@ -85,11 +85,15 @@ const LLMSettingsModal = ({ isOpen, onClose }: LLMSettingsModalProps) => {
                 const currentActive = fetchedConfigs.find(c => c.isActive);
                 setActiveConfig(currentActive || null);
 
-                if (currentActive && !selectedSwitchId) {
-                    setSelectedSwitchId(currentActive.$id || '');
-                } else if (!selectedSwitchId && fetchedConfigs.length > 0) {
+                // Prioritize healthy providers for auto-selection
+                if (!selectedSwitchId && fetchedConfigs.length > 0) {
                     const healthy = fetchedConfigs.find(c => c.healthStatus !== 'error');
-                    if (healthy) setSelectedSwitchId(healthy.$id || '');
+                    if (healthy) {
+                        setSelectedSwitchId(healthy.$id || '');
+                    } else if (currentActive) {
+                        // Only fall back to active (even if failed) if no healthy options exist
+                        setSelectedSwitchId(currentActive.$id || '');
+                    }
                 }
             }
         } catch (err) {
@@ -392,7 +396,8 @@ const LLMSettingsModal = ({ isOpen, onClose }: LLMSettingsModalProps) => {
                                                 </select>
                                                 <button
                                                     onClick={handleSwitch}
-                                                    disabled={!selectedSwitchId || switching || (activeConfig && selectedSwitchId === activeConfig.$id)}
+                                                    // disabled={!selectedSwitchId || switching || (activeConfig && selectedSwitchId === activeConfig.$id)}
+                                                    disabled={!selectedSwitchId || switching || (activeConfig && selectedSwitchId === activeConfig.$id && activeConfig.healthStatus === 'ok')}
                                                     className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium disabled:opacity-50 flex items-center gap-2"
                                                 >
                                                     {switching ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Switch'}
