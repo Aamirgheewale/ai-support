@@ -6,10 +6,10 @@ class AnthropicProvider {
         this.model = model;
     }
 
-    async generateResponse(messages) {
+    async generateResponse(messages, systemPrompt) {
         try {
             // Anthropic requires system message to be separate
-            let system = '';
+            let system = systemPrompt || '';
             const anthropicMessages = messages.filter(msg => {
                 if (msg.role === 'system') {
                     system += msg.content + '\n';
