@@ -88,6 +88,8 @@ async function getActiveProvider() {
     }
 }
 
+const settingsService = require('../settingsService');
+
 /**
  * Generate a response using the active LLM provider.
  * @param {Array} messages - Array of { role, content } objects.
@@ -96,7 +98,11 @@ async function getActiveProvider() {
 async function generateResponse(messages) {
     try {
         const provider = await getActiveProvider();
-        return await provider.generateResponse(messages);
+
+        // Fetch system prompt (fails safe with default)
+        const systemPrompt = await settingsService.getSystemPrompt();
+
+        return await provider.generateResponse(messages, systemPrompt);
     } catch (error) {
         console.error('❌ LLM Generation Failed:', error);
 
