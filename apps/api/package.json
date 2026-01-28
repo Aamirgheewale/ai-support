@@ -19,6 +19,7 @@
     "appwrite": "^21.4.0",
     "archiver": "^7.0.1",
     "array-flatten": "^3.0.0",
+    "axios": "^1.13.4",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "csv-stringify": "^6.6.0",
