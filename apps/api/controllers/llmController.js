@@ -404,6 +404,40 @@ const saveWelcomeMessage = async (req, res) => {
     }
 };
 
+/**
+ * GET /api/admin/image-prompt
+ * Fetches the global image analysis prompt
+ */
+const getImagePrompt = async (req, res) => {
+    try {
+        const prompt = await settingsService.getImageAnalysisPrompt();
+        res.json({ imagePrompt: prompt });
+    } catch (error) {
+        console.error('Error fetching image prompt:', error);
+        res.status(500).json({ message: 'Failed to fetch image prompt' });
+    }
+};
+
+/**
+ * POST /api/admin/image-prompt
+ * Updates the global image analysis prompt
+ */
+const saveImagePrompt = async (req, res) => {
+    const { imagePrompt } = req.body;
+
+    if (imagePrompt === undefined) {
+        return res.status(400).json({ message: 'imagePrompt is required' });
+    }
+
+    try {
+        await settingsService.saveImageAnalysisPrompt(imagePrompt);
+        res.json({ message: 'Image prompt updated successfully' });
+    } catch (error) {
+        console.error('Error saving image prompt:', error);
+        res.status(500).json({ message: 'Failed to save image prompt' });
+    }
+};
+
 module.exports = {
     getAllConfigs,
     getActiveConfig,
@@ -416,5 +450,7 @@ module.exports = {
     getContextLimit,
     saveContextLimit,
     getWelcomeMessage,
-    saveWelcomeMessage
+    saveWelcomeMessage,
+    getImagePrompt,
+    saveImagePrompt
 };
