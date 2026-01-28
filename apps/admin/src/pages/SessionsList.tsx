@@ -27,32 +27,53 @@ export default function SessionsList() {
   const [agentFilter, setAgentFilter] = useState('')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
-  const [fullTextSearch, setFullTextSearch] = useState('')
+  const [agents, setAgents] = useState<{ userId: string; name: string }[]>([])
+
   const [showFilters, setShowFilters] = useState(false)
   const [selectedSessions, setSelectedSessions] = useState<Set<string>>(new Set())
   const [exporting, setExporting] = useState<string | null>(null)
   const [bulkExporting, setBulkExporting] = useState(false)
   const [showBulkModal, setShowBulkModal] = useState(false)
-  
+
   // Store all sessions fetched from backend
   const [allSessions, setAllSessions] = useState<Session[]>([])
-  
+
   // Client-side pagination state (for displaying 20 per page)
   const [displayLimit, setDisplayLimit] = useState(20) // Display 20 sessions per page
   const [currentPage, setCurrentPage] = useState(0) // Current page (0-indexed)
-  
+
   // Backend fetch state
   const [limit, setLimit] = useState(10000) // Fetch all sessions at once from backend
   const [total, setTotal] = useState(0)
-  
+
   const navigate = useNavigate()
+
+  useEffect(() => {
+    // Fetch agents list for filter
+    async function loadAgents() {
+      try {
+        const res = await fetch(`${API_BASE}/admin/users/agents`, {
+          headers: {
+            'Authorization': `Bearer ${token || ADMIN_SECRET}`
+          }
+        })
+        const data = await res.json()
+        if (data.agents) {
+          setAgents(data.agents)
+        }
+      } catch (err) {
+        console.error('Failed to load agents:', err)
+      }
+    }
+    loadAgents()
+  }, []) // Run once on mount
 
   useEffect(() => {
     // Reset to first page when filters change
     setCurrentPage(0)
     // Fetch all sessions when filters change
     loadSessions(0)
-  }, [statusFilter, search, agentFilter, startDate, endDate, fullTextSearch])
+  }, [statusFilter, search, agentFilter, startDate, endDate])
 
   useEffect(() => {
     // Fetch all sessions on mount or when limit changes
@@ -70,7 +91,7 @@ export default function SessionsList() {
       if (agentFilter) params.append('agentId', agentFilter)
       if (startDate) params.append('startDate', startDate)
       if (endDate) params.append('endDate', endDate)
-      if (fullTextSearch) params.append('fullTextSearch', fullTextSearch)
+
       params.append('limit', limit.toString()) // Fetch all sessions (10000)
       params.append('offset', '0') // Always start from 0 to fetch all
 
@@ -81,14 +102,14 @@ export default function SessionsList() {
         credentials: 'include' // Include cookies as fallback
       })
       const data = await res.json()
-      
+
       // Handle both old format (sessions) and new format (items)
       let sessions = data.items || data.sessions || []
       const totalCount = data.total || sessions.length
       const hasMoreData = data.hasMore !== undefined ? data.hasMore : (currentOffset + sessions.length < totalCount)
-      
+
       console.log(`📊 Received ${sessions.length} session(s) from backend (total: ${totalCount}, offset: ${currentOffset}, limit: ${limit})`)
-      
+
       // Log status distribution for debugging
       const statusCounts: Record<string, number> = {}
       sessions.forEach((s: Session) => {
@@ -97,13 +118,13 @@ export default function SessionsList() {
       })
       console.log('📊 Status distribution:', statusCounts)
       console.log('📊 Filter requested:', statusFilter || 'none')
-      
+
       // IMPORTANT: Don't apply client-side filtering to paginated results!
       // The backend already handles filtering and pagination.
       // Client-side filtering should only be used as a fallback if backend filtering fails,
       // but in that case, we need to fetch ALL sessions first, not paginated ones.
       // For now, we trust the backend filtering and don't apply client-side filtering to paginated results.
-      
+
       console.log('📊 Fetched all sessions:', sessions.length, 'Status filter:', statusFilter || 'none')
       // Store all sessions for client-side pagination
       setAllSessions(sessions)
@@ -121,7 +142,7 @@ export default function SessionsList() {
     console.log(`🔄 Page change: page ${currentPage} → ${newPage}, offset ${newOffset}`)
     setCurrentPage(newPage)
   }
-  
+
   // Calculate paginated sessions to display (20 per page)
   const startIndex = currentPage * displayLimit
   const endIndex = startIndex + displayLimit
@@ -145,7 +166,7 @@ export default function SessionsList() {
   async function exportSession(sessionId: string, format: 'json' | 'csv', e: React.MouseEvent) {
     e.stopPropagation() // Prevent row click
     setExporting(sessionId)
-    
+
     try {
       const res = await fetch(`${API_BASE}/admin/sessions/${sessionId}/export?format=${format}`, {
         headers: {
@@ -161,13 +182,13 @@ export default function SessionsList() {
       }
 
       const contentDisposition = res.headers.get('content-disposition')
-      const filename = contentDisposition 
+      const filename = contentDisposition
         ? contentDisposition.split('filename=')[1]?.replace(/"/g, '') || `export_${sessionId}.${format}`
         : `aichat_session-${sessionId}_${new Date().toISOString().slice(0, 10)}.${format}`
 
       const blob = await res.blob()
       downloadFile(blob, filename)
-      
+
       console.log(`✅ Exported session ${sessionId} as ${format}`)
     } catch (err) {
       console.error('Export error:', err)
@@ -208,13 +229,13 @@ export default function SessionsList() {
       }
 
       const contentDisposition = res.headers.get('content-disposition')
-      const filename = contentDisposition 
+      const filename = contentDisposition
         ? contentDisposition.split('filename=')[1]?.replace(/"/g, '') || `bulk_export.${format === 'csv' ? 'zip' : 'json'}`
         : `bulk_export_${new Date().toISOString().slice(0, 10)}.${format === 'csv' ? 'zip' : 'json'}`
 
       const blob = await res.blob()
       downloadFile(blob, filename)
-      
+
       console.log(`✅ Bulk exported ${selectedSessions.size} sessions as ${format}`)
       setSelectedSessions(new Set())
     } catch (err) {
@@ -236,18 +257,43 @@ export default function SessionsList() {
     setSelectedSessions(newSelected)
   }
 
-  function toggleSelectAll() {
-    if (selectedSessions.size === sessions.length) {
-      setSelectedSessions(new Set())
+  function toggleSelectAll(e?: React.ChangeEvent<HTMLInputElement>) {
+    if (e) {
+      e.stopPropagation()
+    }
+    
+    // Get current paginated sessions (recalculate to ensure we have latest)
+    const currentPaginated = allSessions.slice(
+      currentPage * displayLimit,
+      (currentPage * displayLimit) + displayLimit
+    )
+    
+    if (currentPaginated.length === 0) {
+      return
+    }
+    
+    // Check if all visible rows on current page are selected
+    const allVisibleSelected = currentPaginated.every(s => selectedSessions.has(s.sessionId))
+    
+    if (allVisibleSelected) {
+      // Deselect all visible rows
+      const newSelected = new Set(selectedSessions)
+      currentPaginated.forEach(s => newSelected.delete(s.sessionId))
+      setSelectedSessions(newSelected)
+      console.log('Deselected all visible rows:', currentPaginated.length)
     } else {
-      setSelectedSessions(new Set(sessions.map(s => s.sessionId)))
+      // Select all visible rows
+      const newSelected = new Set(selectedSessions)
+      currentPaginated.forEach(s => newSelected.add(s.sessionId))
+      setSelectedSessions(newSelected)
+      console.log('Selected all visible rows:', currentPaginated.length)
     }
   }
 
   return (
     <div className="p-5 max-w-7xl mx-auto">
       <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Customer Support - Sessions</h1>
-      
+
       <div className="mt-12 mb-5">
         {/* Main Search Bar */}
         <div className="flex gap-2.5 mb-2.5 flex-wrap items-center">
@@ -256,105 +302,102 @@ export default function SessionsList() {
             placeholder="Search session ID..."
             value={search}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
-            className="flex-1 min-w-[200px] px-2 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
-          />
-          <input
-            type="text"
-            placeholder="Full-text search in messages..."
-            value={fullTextSearch}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFullTextSearch(e.target.value)}
-            className="flex-1 min-w-[200px] px-2 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
+            className="flex-1 min-w-[200px] max-w-sm px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 dark:focus:ring-indigo-400 dark:focus:border-indigo-400 outline-none transition-all"
           />
           <select
             value={statusFilter}
             onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setStatusFilter(e.target.value)}
-            className="px-2 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 dark:focus:ring-indigo-400 dark:focus:border-indigo-400 outline-none transition-all"
           >
             <option value="">All Status</option>
             <option value="active">Active</option>
             <option value="agent_assigned">Agent Assigned</option>
             <option value="closed">Closed</option>
           </select>
-          <button 
-            onClick={() => setShowFilters(!showFilters)}
-            className={`px-4 py-2 text-white rounded cursor-pointer transition-colors ${
-              showFilters 
-                ? 'bg-gray-600 dark:bg-gray-600 hover:bg-gray-700 dark:hover:bg-gray-700' 
-                : 'bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-700 dark:hover:bg-indigo-600'
-            }`}
-          >
-            {showFilters ? 'Hide Filters' : 'More Filters'}
-          </button>
-          {selectedSessions.size > 0 && hasRole('admin') && (
+          <div className="flex gap-2 ml-auto">
             <button
-              onClick={() => setShowBulkModal(true)}
-              disabled={bulkExporting}
-              className={`px-4 py-2 text-white rounded transition-colors ${
-                bulkExporting
+              onClick={() => setShowFilters(!showFilters)}
+              className={`px-4 py-2 text-white rounded cursor-pointer transition-all shadow-sm ${showFilters
+                ? 'bg-gray-600 dark:bg-gray-600 hover:bg-gray-700 dark:hover:bg-gray-500'
+                : 'bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-700 dark:hover:bg-indigo-600'
+                }`}
+            >
+              {showFilters ? 'Hide Filters' : 'More Filters'}
+            </button>
+            <button
+              onClick={() => loadSessions()}
+              className="px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 rounded cursor-pointer transition-all shadow-sm flex items-center gap-2"
+            >
+              <span className="text-lg">↻</span>
+            </button>
+            {selectedSessions.size > 0 && hasRole('admin') && (
+              <button
+                onClick={() => setShowBulkModal(true)}
+                disabled={bulkExporting}
+                className={`px-4 py-2 text-white rounded transition-all shadow-sm ${bulkExporting
                   ? 'bg-gray-400 dark:bg-gray-600 cursor-not-allowed'
                   : 'bg-green-600 dark:bg-green-500 hover:bg-green-700 dark:hover:bg-green-600 cursor-pointer'
-              }`}
-            >
-              {bulkExporting ? 'Exporting...' : `Bulk Export (${selectedSessions.size})`}
-            </button>
-          )}
-          <button 
-            onClick={() => loadSessions()} 
-            className="px-4 py-2 bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-700 dark:hover:bg-indigo-600 text-white rounded cursor-pointer transition-colors"
-          >
-            Refresh
-          </button>
+                  }`}
+              >
+                {bulkExporting ? 'Exporting...' : `Bulk Export (${selectedSessions.size})`}
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Advanced Filters Panel */}
         {showFilters && (
-          <Card className="p-4 mb-2.5">
-            <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-2.5">
+          <Card className="p-4 mb-2.5 animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4">
               <div>
-                <label className="block mb-1 text-[13px] font-medium text-gray-700 dark:text-gray-300">
-                  Agent ID
+                <label className="block mb-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                  Agent
                 </label>
-                <input
-                  type="text"
-                  placeholder="Filter by agent..."
+                <select
                   value={agentFilter}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAgentFilter(e.target.value)}
-                  className="w-full px-1.5 py-1.5 border border-gray-300 dark:border-gray-600 rounded text-[13px] bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
-                />
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setAgentFilter(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 dark:focus:ring-indigo-400 dark:focus:border-indigo-400 outline-none transition-all"
+                >
+                  <option value="">All Agents</option>
+                  {agents.map((agent) => (
+                    <option key={agent.userId} value={agent.userId}>
+                      {agent.name}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
-                <label className="block mb-1 text-[13px] font-medium text-gray-700 dark:text-gray-300">
+                <label className="block mb-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                   Start Date
                 </label>
                 <input
                   type="date"
                   value={startDate}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setStartDate(e.target.value)}
-                  className="w-full px-1.5 py-1.5 border border-gray-300 dark:border-gray-600 rounded text-[13px] bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
                 />
               </div>
               <div>
-                <label className="block mb-1 text-[13px] font-medium text-gray-700 dark:text-gray-300">
+                <label className="block mb-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                   End Date
                 </label>
                 <input
                   type="date"
                   value={endDate}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEndDate(e.target.value)}
-                  className="w-full px-1.5 py-1.5 border border-gray-300 dark:border-gray-600 rounded text-[13px] bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
                 />
               </div>
             </div>
-            <div className="mt-2.5 flex gap-2.5">
+            <div className="mt-4 flex justify-end">
               <button
                 onClick={() => {
                   setAgentFilter('')
                   setStartDate('')
                   setEndDate('')
-                  setFullTextSearch('')
                   setSearch('')
                 }}
-                className="px-3 py-1.5 bg-gray-600 dark:bg-gray-600 hover:bg-gray-700 dark:hover:bg-gray-700 text-white rounded cursor-pointer text-xs transition-colors"
+                className="px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded cursor-pointer text-sm font-medium transition-colors"
               >
                 Clear All Filters
               </button>
@@ -371,11 +414,16 @@ export default function SessionsList() {
             <Table>
               <Thead>
                 <Tr>
-                  <Th className="w-10">
+                  <Th className="w-10" onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"
-                      checked={selectedSessions.size === sessions.length && sessions.length > 0}
-                      onChange={toggleSelectAll}
+                      checked={paginatedSessions.length > 0 && 
+                        paginatedSessions.every(s => selectedSessions.has(s.sessionId))}
+                      onChange={(e) => {
+                        e.stopPropagation()
+                        toggleSelectAll(e)
+                      }}
+                      onClick={(e) => e.stopPropagation()}
                       className="cursor-pointer h-4 w-4 text-indigo-600 dark:text-indigo-400 focus:ring-indigo-500 dark:focus:ring-indigo-400 border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-800"
                     />
                   </Th>
@@ -398,22 +446,21 @@ export default function SessionsList() {
                       <input
                         type="checkbox"
                         checked={selectedSessions.has(session.sessionId)}
-                        onChange={() => {}}
+                        onChange={() => { }}
                         onClick={(e) => toggleSessionSelection(session.sessionId, e)}
                         className="cursor-pointer h-4 w-4 text-indigo-600 dark:text-indigo-400 focus:ring-indigo-500 dark:focus:ring-indigo-400 border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-800"
                       />
                     </Td>
                     <Td className="font-mono text-xs">{session.sessionId}</Td>
                     <Td>
-                      <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
-                        session.status === 'active' 
-                          ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' 
-                          : session.status === 'agent_assigned'
+                      <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${session.status === 'active'
+                        ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300'
+                        : session.status === 'agent_assigned'
                           ? 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-800 dark:text-cyan-300'
                           : session.status === 'closed'
-                          ? 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'
-                          : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300'
-                      }`}>
+                            ? 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300'
+                        }`}>
                         {session.status || 'unknown'}
                       </span>
                     </Td>
@@ -442,11 +489,10 @@ export default function SessionsList() {
                               }
                             }}
                             disabled={exporting === session.sessionId}
-                            className={`px-3 py-1.5 text-xs rounded ${
-                              exporting === session.sessionId
-                                ? 'bg-gray-400 dark:bg-gray-600 cursor-not-allowed'
-                                : 'bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-700 dark:hover:bg-indigo-600 cursor-pointer'
-                            } text-white`}
+                            className={`px-3 py-1.5 text-xs rounded ${exporting === session.sessionId
+                              ? 'bg-gray-400 dark:bg-gray-600 cursor-not-allowed'
+                              : 'bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-700 dark:hover:bg-indigo-600 cursor-pointer'
+                              } text-white`}
                           >
                             {exporting === session.sessionId ? '...' : 'Export'}
                           </button>
@@ -495,8 +541,8 @@ export default function SessionsList() {
               <p className="text-gray-600 dark:text-gray-400">
                 No sessions found with status: <strong className="text-gray-900 dark:text-white">{statusFilter}</strong>
               </p>
-              <button 
-                onClick={() => setStatusFilter('')} 
+              <button
+                onClick={() => setStatusFilter('')}
                 className="mt-2.5 px-4 py-2 bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-700 dark:hover:bg-indigo-600 text-white rounded cursor-pointer transition-colors"
               >
                 Show All Sessions
@@ -507,7 +553,7 @@ export default function SessionsList() {
           )}
         </Card>
       )}
-      
+
       {!loading && allSessions.length > 0 && (
         <>
           <div className="mt-2.5 p-2.5 bg-gray-50 dark:bg-gray-800 rounded text-sm text-gray-600 dark:text-gray-400">
