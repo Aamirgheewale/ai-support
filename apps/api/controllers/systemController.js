@@ -176,7 +176,8 @@ const getAccuracyStats = async (req, res) => {
         }
 
         const { from, to } = req.query;
-        const cacheKey = `stats_${from || 'all'}_${to || 'all'}`;
+        // Include sort order in cache key to avoid mixing sorted/unsorted if we ever change it back (good practice)
+        const cacheKey = `stats_v2_${from || 'all'}_${to || 'all'}`;
 
         if (accuracyStatsCache.has(cacheKey)) {
             return res.json(accuracyStatsCache.get(cacheKey));
@@ -185,15 +186,22 @@ const getAccuracyStats = async (req, res) => {
         const fromDate = from ? new Date(from) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
         const toDate = to ? new Date(to) : new Date();
 
-        const queries = [Query.between('createdAt', fromDate.toISOString(), toDate.toISOString())];
+        const queries = [
+            Query.between('createdAt', fromDate.toISOString(), toDate.toISOString()),
+            Query.orderDesc('createdAt') // Scan newest first
+        ];
 
         let totalScanned = 0;
         let totalResponses = 0;
         let totalConfidence = 0;
+        let confidenceCount = 0;
         let totalLatency = 0;
+        let latencyCount = 0;
+
         let helpfulCount = 0;
         let unhelpfulCount = 0;
         let flaggedCount = 0;
+
         let hasMore = true;
         let offset = 0;
         const pageSize = 100;
@@ -209,8 +217,18 @@ const getAccuracyStats = async (req, res) => {
             for (const doc of result.documents) {
                 totalScanned++;
                 totalResponses++;
-                if (doc.confidence !== null && doc.confidence !== undefined) totalConfidence += doc.confidence;
-                if (doc.latencyMs !== null && doc.latencyMs !== undefined) totalLatency += doc.latencyMs;
+
+                // Only count valid confidence scores
+                if (doc.confidence !== null && doc.confidence !== undefined) {
+                    totalConfidence += doc.confidence;
+                    confidenceCount++;
+                }
+
+                // Only count valid latency
+                if (doc.latencyMs !== null && doc.latencyMs !== undefined) {
+                    totalLatency += doc.latencyMs;
+                    latencyCount++;
+                }
 
                 if (doc.humanMark === 'helpful') helpfulCount++;
                 else if (doc.humanMark === 'unhelpful') unhelpfulCount++;
@@ -221,14 +239,24 @@ const getAccuracyStats = async (req, res) => {
             else offset += pageSize;
         }
 
+        // Calculate averages
+        const avgConfidence = confidenceCount > 0 ? totalConfidence / confidenceCount : 0;
+        const avgLatencyMs = latencyCount > 0 ? Math.round(totalLatency / latencyCount) : 0;
+
+        // Calculate rates (0-100)
+        const helpfulRate = totalResponses > 0 ? (helpfulCount / totalResponses) * 100 : 0;
+        const unhelpfulRate = totalResponses > 0 ? (unhelpfulCount / totalResponses) * 100 : 0;
+
+        // Flattened structure to match AccuracyStats.tsx interface
         const stats = {
-            period: { from: fromDate.toISOString(), to: toDate.toISOString() },
             totalResponses,
-            metrics: {
-                averageConfidence: totalResponses > 0 ? totalConfidence / totalResponses : 0,
-                averageLatencyMs: totalResponses > 0 ? totalLatency / totalResponses : 0
-            },
-            humanFeedback: { helpful: helpfulCount, unhelpful: unhelpfulCount, flagged: flaggedCount, unrated: totalResponses - (helpfulCount + unhelpfulCount + flaggedCount) }
+            avgConfidence,
+            avgLatencyMs,
+            helpfulRate,
+            unhelpfulRate,
+            flaggedCount,
+            startDate: fromDate.toISOString(),
+            endDate: toDate.toISOString()
         };
 
         accuracyStatsCache.set(cacheKey, stats);
