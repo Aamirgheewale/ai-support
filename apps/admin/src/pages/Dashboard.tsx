@@ -11,9 +11,9 @@ import {
     Col
 } from '@tremor/react';
 import { ColumnDef } from '@tanstack/react-table';
-import { Activity, CheckCircle, Eye, Ticket, Users } from 'lucide-react';
+import { Activity, CheckCircle, Eye, Ticket, Users, RefreshCw } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import DashboardSkeleton from '../components/ui/DashboardSkeleton';
 import DataTable from '../components/ui/DataTable';
@@ -42,41 +42,59 @@ interface DashboardStats {
     recentActivity: any[];
 }
 
+
+
 export default function Dashboard() {
     const { user } = useAuth();
     const [stats, setStats] = useState<DashboardStats | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [refreshing, setRefreshing] = useState(false);
 
-    useEffect(() => {
-        // Only fetch once
-        const fetchStats = async () => {
-            try {
-                const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
-                const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
+    const fetchStats = async (isRefresh = false) => {
+        if (isRefresh) {
+            setRefreshing(true);
+        } else {
+            setLoading(true);
+        }
+        setError(null);
 
-                const response = await fetch(`${API_BASE}/admin/dashboard/stats`, {
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
-                });
+        try {
+            const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+            const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
 
-                if (!response.ok) {
-                    throw new Error('Failed to fetch dashboard stats');
+            // Fetch all-time data (no date filter)
+            const response = await fetch(`${API_BASE}/admin/dashboard/stats`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
                 }
+            });
 
-                const data = await response.json();
-                setStats(data);
-            } catch (err: any) {
-                console.error('Dashboard fetch error:', err);
-                setError(err.message || 'Failed to load dashboard data');
-            } finally {
-                setLoading(false);
+            if (!response.ok) {
+                throw new Error('Failed to fetch dashboard stats');
             }
-        };
 
+            const data = await response.json();
+            setStats(data);
+        } catch (err: any) {
+            console.error('Dashboard fetch error:', err);
+            setError(err.message || 'Failed to load dashboard data');
+        } finally {
+            setLoading(false);
+            setRefreshing(false);
+        }
+    };
+
+    // Fetch data on mount
+    useEffect(() => {
         fetchStats();
     }, []);
+
+    const handleRefresh = () => {
+        fetchStats(true);
+    };
+
+
 
     // Define columns for Agent Leaderboard
     const dashboardColumns: ColumnDef<any>[] = [
@@ -175,9 +193,21 @@ export default function Dashboard() {
             transition={{ duration: 0.5 }}
             className="p-6 space-y-6 bg-gray-50 dark:bg-gray-900 min-h-screen"
         >
-            <div>
-                <Title>Executive Dashboard</Title>
-                <Text>Real-time overview of support performance.</Text>
+            {/* Header with Refresh */}
+            <div className="flex items-center justify-between">
+                <div>
+                    <Title>Executive Dashboard</Title>
+                    <Text>Real-time overview of support performance (All Time).</Text>
+                </div>
+                <button
+                    onClick={handleRefresh}
+                    disabled={refreshing || loading}
+                    className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Refresh data"
+                >
+                    <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+                    <span className="text-sm font-medium">Refresh</span>
+                </button>
             </div>
 
             {/* Top Row: KPIs */}
