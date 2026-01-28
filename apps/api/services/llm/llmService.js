@@ -9,6 +9,9 @@ const {
     APPWRITE_LLM_SETTINGS_COLLECTION_ID
 } = config;
 
+const axios = require('axios');
+const settingsService = require('../settingsService');
+
 // Optional: In-memory cache for the active provider instance
 let activeProviderInstance = null;
 let activeProviderConfig = null;
@@ -88,21 +91,135 @@ async function getActiveProvider() {
     }
 }
 
-const settingsService = require('../settingsService');
+/**
+ * Helper function to download an image from a URL and convert it to base64
+ * @param {string} url - The image URL (typically from Appwrite storage)
+ * @returns {Promise<{data: string, mimeType: string}>} Base64 data and MIME type
+ */
+async function urlToBase64(url) {
+    try {
+        const response = await axios.get(url, {
+            responseType: 'arraybuffer',
+            timeout: 10000 // 10 second timeout
+        });
+
+        const buffer = Buffer.from(response.data);
+        const mimeType = response.headers['content-type'] || 'image/jpeg';
+
+        return {
+            data: buffer.toString('base64'),
+            mimeType: mimeType
+        };
+    } catch (error) {
+        console.error('❌ Failed to download/convert image:', error.message);
+        throw new Error(`Image download failed: ${error.message}`);
+    }
+}
 
 /**
  * Generate a response using the active LLM provider.
  * @param {Array} messages - Array of { role, content } objects.
+ * @param {string|null} attachmentUrl - Optional image URL for vision analysis
  * @returns {Promise<string>} The generated text.
  */
-async function generateResponse(messages) {
+async function generateResponse(messages, attachmentUrl = null) {
     try {
         const provider = await getActiveProvider();
 
         // Fetch system prompt (fails safe with default)
         const systemPrompt = await settingsService.getSystemPrompt();
 
-        return await provider.generateResponse(messages, systemPrompt);
+        // TEXT-ONLY PATH (Backwards Compatible)
+        if (!attachmentUrl) {
+            return await provider.generateResponse(messages, systemPrompt);
+        }
+
+        // VISION PATH (Image Analysis)
+        console.log('🖼️ Vision mode activated - processing image:', attachmentUrl);
+
+        // Fetch image analysis prompt
+        const imagePrompt = await settingsService.getImageAnalysisPrompt();
+
+        // Try to download and convert image
+        let imageData;
+        try {
+            imageData = await urlToBase64(attachmentUrl);
+        } catch (imageError) {
+            console.warn('⚠️ Image download failed, falling back to text-only:', imageError.message);
+            return await provider.generateResponse(messages, systemPrompt);
+        }
+
+        // Provider-specific vision logic
+        const providerType = activeProviderConfig?.provider || 'gemini';
+
+        if (providerType === 'google' || providerType === 'gemini') {
+            // Gemini Vision Logic
+            const GeminiProvider = require('./providers/gemini');
+
+            // Get the last user message
+            const lastMessage = messages[messages.length - 1];
+            const userText = lastMessage?.content || '';
+
+            // Combine system prompt, image prompt, and user message
+            const combinedPrompt = `${systemPrompt}\n\n${imagePrompt}\n\nUser query: ${userText}`;
+
+            // Use Gemini's multimodal API
+            const result = await provider.model.generateContent([
+                { text: combinedPrompt },
+                {
+                    inlineData: {
+                        data: imageData.data,
+                        mimeType: imageData.mimeType
+                    }
+                }
+            ]);
+
+            const response = await result.response;
+            return response.text();
+
+        } else if (providerType === 'openai') {
+            // OpenAI Vision Logic
+            const lastMessage = messages[messages.length - 1];
+            const userText = lastMessage?.content || '';
+
+            // Construct vision message
+            const visionMessage = {
+                role: 'user',
+                content: [
+                    {
+                        type: 'text',
+                        text: `${imagePrompt}\n\n${userText}`
+                    },
+                    {
+                        type: 'image_url',
+                        image_url: {
+                            url: `data:${imageData.mimeType};base64,${imageData.data}`
+                        }
+                    }
+                ]
+            };
+
+            // Replace last message with vision message
+            const visionMessages = [
+                { role: 'system', content: systemPrompt },
+                ...messages.slice(0, -1),
+                visionMessage
+            ];
+
+            // Call OpenAI with vision-enabled messages
+            const completion = await provider.client.chat.completions.create({
+                messages: visionMessages,
+                model: provider.model,
+            });
+
+            return completion.choices[0].message.content;
+
+        } else {
+            // Anthropic or other providers - fallback to text-only for now
+            console.warn(`⚠️ Vision not yet supported for provider: ${providerType}, using text-only`);
+            return await provider.generateResponse(messages, systemPrompt);
+        }
+
     } catch (error) {
         console.error('❌ LLM Generation Failed:', error);
 
