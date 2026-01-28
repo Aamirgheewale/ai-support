@@ -7,6 +7,7 @@ const APPWRITE_APP_SETTINGS_COLLECTION_ID = 'app_settings';
 
 const DEFAULT_SYSTEM_PROMPT = "You are a helpful AI assistant.";
 const DEFAULT_WELCOME_MESSAGE = "Hi! I'm your AI Assistant. How can I help you today?";
+const DEFAULT_IMAGE_ANALYSIS_PROMPT = "Analyze this image and provide a helpful response in the context of our support query.";
 
 /**
  * Service to manage global application settings
@@ -253,6 +254,84 @@ const settingsService = {
             }
         } catch (error) {
             console.error('❌ Error saving welcome message:', error);
+            throw error;
+        }
+    },
+
+    /**
+     * Fetch the image analysis prompt for vision/multimodal LLM.
+     * Returns a default value if not found or on error.
+     * @returns {Promise<string>}
+     */
+    async getImageAnalysisPrompt() {
+        if (!awDatabases) {
+            console.warn('⚠️ Appwrite DB not ready, using default image analysis prompt');
+            return DEFAULT_IMAGE_ANALYSIS_PROMPT;
+        }
+
+        try {
+            const result = await awDatabases.listDocuments(
+                APPWRITE_DATABASE_ID,
+                APPWRITE_APP_SETTINGS_COLLECTION_ID,
+                [
+                    Query.equal('key', 'image_analysis_prompt'),
+                    Query.limit(1)
+                ]
+            );
+
+            if (result.documents.length > 0) {
+                return result.documents[0].value;
+            } else {
+                return DEFAULT_IMAGE_ANALYSIS_PROMPT;
+            }
+        } catch (error) {
+            console.warn(`⚠️ Failed to fetch image analysis prompt (using default): ${error.message}`);
+            return DEFAULT_IMAGE_ANALYSIS_PROMPT;
+        }
+    },
+
+    /**
+     * Save/update the image analysis prompt.
+     * @param {string} text - The new image analysis prompt
+     * @returns {Promise<Object>} The created/updated document
+     */
+    async saveImageAnalysisPrompt(text) {
+        if (!awDatabases) throw new Error('Database connection not available');
+
+        try {
+            // 1. Check if exists
+            const result = await awDatabases.listDocuments(
+                APPWRITE_DATABASE_ID,
+                APPWRITE_APP_SETTINGS_COLLECTION_ID,
+                [
+                    Query.equal('key', 'image_analysis_prompt'),
+                    Query.limit(1)
+                ]
+            );
+
+            if (result.documents.length > 0) {
+                // 2. Update existing
+                const docId = result.documents[0].$id;
+                return await awDatabases.updateDocument(
+                    APPWRITE_DATABASE_ID,
+                    APPWRITE_APP_SETTINGS_COLLECTION_ID,
+                    docId,
+                    { value: text }
+                );
+            } else {
+                // 3. Create new
+                return await awDatabases.createDocument(
+                    APPWRITE_DATABASE_ID,
+                    APPWRITE_APP_SETTINGS_COLLECTION_ID,
+                    'unique()',
+                    {
+                        key: 'image_analysis_prompt',
+                        value: text
+                    }
+                );
+            }
+        } catch (error) {
+            console.error('❌ Error saving image analysis prompt:', error);
             throw error;
         }
     }
