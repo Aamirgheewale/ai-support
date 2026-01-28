@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Terminal, X, Loader2, Save, Brain, MessageSquare, History, Sparkles } from 'lucide-react';
+import { Terminal, X, Loader2, Save, Brain, MessageSquare, History, Sparkles, Eye } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
@@ -9,7 +9,7 @@ interface SystemPromptModalProps {
     onClose: () => void;
 }
 
-type Tab = 'persona' | 'memory' | 'welcome';
+type Tab = 'persona' | 'memory' | 'welcome' | 'vision';
 
 export default function SystemPromptModal({ isOpen, onClose }: SystemPromptModalProps) {
     const { token } = useAuth();
@@ -19,6 +19,7 @@ export default function SystemPromptModal({ isOpen, onClose }: SystemPromptModal
     const [prompt, setPrompt] = useState('');
     const [contextLimit, setContextLimit] = useState(10);
     const [welcomeMessage, setWelcomeMessage] = useState('');
+    const [imagePrompt, setImagePrompt] = useState('');
 
     // UI States
     const [isLoading, setIsLoading] = useState(false);
@@ -67,9 +68,11 @@ export default function SystemPromptModal({ isOpen, onClose }: SystemPromptModal
         setError(null);
         try {
             // Parallel fetch
-            const [promptRes, limitRes] = await Promise.all([
+            const [promptRes, limitRes, welcomeRes, imageRes] = await Promise.all([
                 fetch(`${API_BASE}/api/admin/system-prompt`, { headers: { 'Authorization': `Bearer ${token}` } }),
-                fetch(`${API_BASE}/api/admin/context-limit`, { headers: { 'Authorization': `Bearer ${token}` } })
+                fetch(`${API_BASE}/api/admin/context-limit`, { headers: { 'Authorization': `Bearer ${token}` } }),
+                fetch(`${API_BASE}/api/admin/welcome-message`, { headers: { 'Authorization': `Bearer ${token}` } }),
+                fetch(`${API_BASE}/api/admin/image-prompt`, { headers: { 'Authorization': `Bearer ${token}` } })
             ]);
 
             if (promptRes.ok) {
@@ -84,12 +87,14 @@ export default function SystemPromptModal({ isOpen, onClose }: SystemPromptModal
             }
 
             // Fetch welcome message
-            const welcomeRes = await fetch(`${API_BASE}/api/admin/welcome-message`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
             if (welcomeRes.ok) {
                 const data = await welcomeRes.json();
                 setWelcomeMessage(data.welcomeMessage || '');
+            }
+
+            if (imageRes.ok) {
+                const data = await imageRes.json();
+                setImagePrompt(data.imagePrompt || '');
             }
         } catch (err: any) {
             console.error('Error fetching settings:', err);
@@ -136,11 +141,20 @@ export default function SystemPromptModal({ isOpen, onClose }: SystemPromptModal
                 });
                 if (!res.ok) throw new Error('Failed to save welcome message');
             }
+            else if (activeTab === 'vision') {
+                const res = await fetch(`${API_BASE}/api/admin/image-prompt`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                    body: JSON.stringify({ imagePrompt })
+                });
+                if (!res.ok) throw new Error('Failed to save image prompt');
+            }
 
             setSuccess(
                 activeTab === 'persona' ? 'System prompt saved!' :
                     activeTab === 'memory' ? 'Memory settings saved!' :
-                        'Welcome message saved!'
+                        activeTab === 'welcome' ? 'Welcome message saved!' :
+                            'Vision prompt saved!'
             );
             setTimeout(() => setSuccess(null), 3000);
 
@@ -223,6 +237,16 @@ export default function SystemPromptModal({ isOpen, onClose }: SystemPromptModal
                         >
                             <Sparkles className="w-4 h-4" />
                             Welcome Msg
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('vision')}
+                            className={`pb-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'vision'
+                                ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                                }`}
+                        >
+                            <Eye className="w-4 h-4" />
+                            Vision
                         </button>
                     </div>
 
@@ -353,6 +377,29 @@ export default function SystemPromptModal({ isOpen, onClose }: SystemPromptModal
                                         <p className="text-sm text-gray-500 dark:text-gray-400 flex items-start gap-1.5">
                                             <span className="text-indigo-500 mt-0.5">ℹ️</span>
                                             Sent automatically when a new chat session begins.
+                                        </p>
+                                    </div>
+                                )}
+
+                                {/* Vision Tab Content */}
+                                {activeTab === 'vision' && (
+                                    <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-200">
+                                        <div className="relative">
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                                Default Vision Prompt
+                                            </label>
+                                            <textarea
+                                                value={imagePrompt}
+                                                onChange={(e) => setImagePrompt(e.target.value)}
+                                                rows={6}
+                                                className="w-full p-3 rounded-md border focus:ring-2 outline-none resize-none bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-indigo-500 dark:focus:ring-indigo-400 transition-all focus:border-indigo-500"
+                                                placeholder="Enter the instruction for analyzing images..."
+                                                spellCheck={false}
+                                            />
+                                        </div>
+                                        <p className="text-sm text-gray-500 dark:text-gray-400 flex items-start gap-1.5">
+                                            <span className="text-indigo-500 mt-0.5">ℹ️</span>
+                                            This prompt guides the AI when analyzing images sent by users.
                                         </p>
                                     </div>
                                 )}
