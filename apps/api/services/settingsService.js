@@ -334,7 +334,9 @@ const settingsService = {
             console.error('❌ Error saving image analysis prompt:', error);
             throw error;
         }
-    }
+    },
+
+
 };
 
 module.exports = settingsService;
