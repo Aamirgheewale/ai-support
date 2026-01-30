@@ -147,7 +147,7 @@ export default function UserProfileMenu({ onClose, onModalStateChange, onOpenLLM
     <>
       {/* Menu Container - Fixed positioning with breathing room */}
       {/* Higher z-index to stay above modal backdrops but below modal content */}
-      <div className="fixed left-3 top-[70px] w-64 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-100 dark:border-gray-700 z-[10001]">
+      <div className="fixed left-3 top-[70px] w-64 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-100 dark:border-gray-700 z-[9999]">
         {/* Row 1: Identity - Spacious layout */}
         <div className="p-5 border-b border-gray-100 dark:border-gray-700">
           <div className="flex items-start gap-4">

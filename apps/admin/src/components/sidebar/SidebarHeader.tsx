@@ -67,9 +67,17 @@ export default function SidebarHeader({ isCollapsed = false }: SidebarHeaderProp
   // Close profile menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
-        setIsProfileMenuOpen(false)
+      const target = event.target as Element;
+      // Ignore clicks inside the menu itself
+      if (profileMenuRef.current && profileMenuRef.current.contains(target)) {
+        return;
       }
+      // Ignore clicks inside any open modal (portals)
+      if (target.closest('[role="dialog"]')) {
+        return;
+      }
+
+      setIsProfileMenuOpen(false)
     }
 
     if (isProfileMenuOpen) {
@@ -113,7 +121,7 @@ export default function SidebarHeader({ isCollapsed = false }: SidebarHeaderProp
   const firstName = getFirstName(user.name, user.email)
 
   return (
-    <div className="relative" ref={profileMenuRef}>
+    <div className="sticky top-0 z-[60]" ref={profileMenuRef}>
       {/* Header Container */}
       <div className={`flex items-center ${isCollapsed ? 'justify-center px-2' : 'justify-between px-4'} py-3 border-b border-gray-200/80 mt-4`}>
         {/* User Profile Button */}
@@ -170,9 +178,9 @@ export default function SidebarHeader({ isCollapsed = false }: SidebarHeaderProp
         )}
       </div>
 
-      {/* Backdrop with blur effect - only show when profile menu is open */}
+      {/* Backdrop with blur effect - only show when profile menu is open AND no modal is active */}
       {/* Note: Profile menu stays visible even when modals are open */}
-      {isProfileMenuOpen && (
+      {isProfileMenuOpen && !hasOpenModal && (
         <div
           className="fixed inset-0 bg-black/20 backdrop-blur-sm z-[9998]"
           onClick={() => setIsProfileMenuOpen(false)}
