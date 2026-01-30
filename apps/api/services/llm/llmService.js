@@ -10,86 +10,110 @@ const {
 } = config;
 
 const axios = require('axios');
+
 const settingsService = require('../settingsService');
+const { Query } = require('node-appwrite');
 
-// Optional: In-memory cache for the active provider instance
-let activeProviderInstance = null;
-let activeProviderConfig = null;
-
-async function getActiveProvider() {
-    // If we have an active instance, we could return it, but we need a way to invalidate it when settings change.
-    // For now, let's fetch the config to check if it matches our cached version.
-    // Optimization: In high load, implement a webhook or polling or finding a way to signal update. 
-    // For this chat app, fetching the document is relatively cheap if we index 'isActive'.
-
+/**
+ * Get the AI client dynamically based on current configuration.
+ * Falls back to environment variables if database config is missing.
+ * @returns {Promise<{client: any, provider: string, modelName: string}>}
+ */
+async function getClient() {
     try {
-        const { Query } = require('node-appwrite');
-        const result = await awDatabases.listDocuments(
-            APPWRITE_DATABASE_ID,
-            APPWRITE_LLM_SETTINGS_COLLECTION_ID || 'llm_settings', // Default if not in env yet
-            [Query.equal('isActive', true), Query.limit(1)]
-        );
+        let config = {
+            provider: process.env.AI_PROVIDER || 'gemini',
+            apiKey: process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY,
+            modelName: process.env.AI_MODEL || 'gemini-2.0-flash-exp',
+            baseUrl: process.env.AI_BASE_URL
+        };
 
-        if (result.documents.length === 0) {
-            console.warn('⚠️ No active LLM provider found. Falling back to default Gemini from env.');
-            // Fallback to env variable Gemini if specific config is missing
-            const GeminiProvider = require('./providers/gemini');
-            return new GeminiProvider(process.env.GEMINI_API_KEY, 'gemini-1.5-flash');
-        }
-
-        const doc = result.documents[0];
-
-        // Check if we can reuse the cached instance
-        if (activeProviderInstance && activeProviderConfig && activeProviderConfig.$id === doc.$id && activeProviderConfig.updatedAt === doc.$updatedAt) {
-            return activeProviderInstance;
-        }
-
-        console.log(`🔄 Switching LLM Provider to: ${doc.provider} (${doc.model})`);
-
-        // Decrypt API Key
-        let apiKey = doc.encryptedApiKey;
-        if (encryption && doc.encryptedApiKey) {
+        // 1. Try to get ACTIVE config from DB
+        if (awDatabases) {
             try {
-                apiKey = encryption.decrypt(doc.encryptedApiKey);
-            } catch (e) {
-                console.error('Failed to decrypt LLM API Key:', e);
-                throw new Error('Invalid API Key Encryption');
+                const result = await awDatabases.listDocuments(
+                    APPWRITE_DATABASE_ID,
+                    APPWRITE_LLM_SETTINGS_COLLECTION_ID || 'llm_settings',
+                    [
+                        Query.equal('isActive', true),
+                        Query.limit(1)
+                    ]
+                );
+
+                if (result.documents.length > 0) {
+                    const doc = result.documents[0];
+                    let apiKey = doc.encryptedApiKey;
+
+                    // Decrypt if possible
+                    if (encryption && apiKey) {
+                        try {
+                            apiKey = encryption.decrypt(apiKey);
+                        } catch (err) {
+                            console.error('Failed to decrypt API key, using as-is', err);
+                        }
+                    }
+
+                    config = {
+                        provider: doc.provider,
+                        apiKey: apiKey,
+                        modelName: doc.model,
+                        baseUrl: doc.baseUrl,
+                        configId: doc.$id
+                    };
+                }
+            } catch (dbError) {
+                console.warn('⚠️ Failed to fetch LLM config from DB, using fallback:', dbError.message);
             }
-        } else {
-            // If not encrypted (legacy or direct), use as is 
-            apiKey = doc.apiKey || doc.encryptedApiKey;
         }
 
-        let providerInstance;
-        switch (doc.provider) {
+        let client;
+        const { provider, modelName, apiKey, baseUrl, configId } = config;
+
+        console.log(`🤖 Initializing AI client: ${provider} (${modelName})`);
+
+        if (!apiKey) {
+            throw new Error('No API Key configured for AI service');
+        }
+
+        switch (provider) {
+            case 'gemini':
+            case 'google': // Handle both naming conventions
+                const { GoogleGenerativeAI } = require('@google/generative-ai');
+                client = new GoogleGenerativeAI(apiKey);
+                break;
+
             case 'openai':
-                const OpenAIProvider = require('./providers/openai');
-                providerInstance = new OpenAIProvider(apiKey, doc.model);
+            case 'custom':
+                const OpenAI = require('openai');
+                // Ensure baseUrl is undefined if null/empty string for OpenAI default
+                const clientConfig = { apiKey };
+                if (baseUrl) {
+                    clientConfig.baseURL = baseUrl;
+                }
+
+                client = new OpenAI(clientConfig);
                 break;
+
             case 'anthropic':
-                const AnthropicProvider = require('./providers/anthropic');
-                providerInstance = new AnthropicProvider(apiKey, doc.model);
-                break;
-            case 'google':
+                // Placeholder for Anthropic if needed later
+                throw new Error('Anthropic provider not yet fully implemented in getClient');
+
             default:
-                const GeminiProvider = require('./providers/gemini');
-                providerInstance = new GeminiProvider(apiKey, doc.model);
-                break;
+                throw new Error(`Unsupported AI provider: ${provider}`);
         }
 
-        // Update Cache
-        activeProviderInstance = providerInstance;
-        activeProviderConfig = { $id: doc.$id, updatedAt: doc.$updatedAt, provider: doc.provider || 'gemini' };
-
-        return providerInstance;
-
+        return { client, provider, modelName, configId };
     } catch (error) {
-        console.error('Error in LLM Service Factory:', error);
-        // Fallback
-        const GeminiProvider = require('./providers/gemini');
-        return new GeminiProvider(process.env.GEMINI_API_KEY);
+        console.error('❌ Failed to initialize AI client:', error.message);
+
+        // Fallback to environment variables (backwards compatibility logic is now integrated above, but as a last resort catch we can re-try hardcoded defaults if above failed totally)
+
+        // ... Original fallback logic was to restart, but we integrated it. 
+        // If we threw error above, it means even env vars failed or key was missing.
+        throw error;
     }
 }
+
 
 /**
  * Helper function to download an image from a URL and convert it to base64
@@ -117,21 +141,60 @@ async function urlToBase64(url) {
 }
 
 /**
- * Generate a response using the active LLM provider.
+ * Generate a response using the dynamically configured LLM provider.
  * @param {Array} messages - Array of { role, content } objects.
  * @param {string|null} attachmentUrl - Optional image URL for vision analysis
  * @returns {Promise<string>} The generated text.
  */
 async function generateResponse(messages, attachmentUrl = null) {
+    let currentConfigId = null;
+
     try {
-        const provider = await getActiveProvider();
+        // Get dynamic client
+        const { client, provider, modelName, configId } = await getClient();
+        currentConfigId = configId;
 
         // Fetch system prompt (fails safe with default)
         const systemPrompt = await settingsService.getSystemPrompt();
 
         // TEXT-ONLY PATH (Backwards Compatible)
         if (!attachmentUrl) {
-            return await provider.generateResponse(messages, systemPrompt);
+            if (provider === 'gemini') {
+                // Gemini text-only
+                const model = client.getGenerativeModel({ model: modelName });
+                const result = await model.generateContent([
+                    { text: systemPrompt },
+                    { text: messages.map(m => `${m.role}: ${m.content}`).join('\n') }
+                ]);
+                const response = await result.response;
+                return response.text();
+            } else {
+                // OpenAI/Custom text-only
+                const formattedMessages = [
+                    { role: 'system', content: systemPrompt },
+                    ...messages
+                ];
+                // Check if client is OpenAI instance or GoogleGenerativeAI
+                // Logic mismatch safeguard:
+                if (client.chat && client.chat.completions) {
+                    const completion = await client.chat.completions.create({
+                        model: modelName,
+                        messages: formattedMessages
+                    });
+                    return completion.choices[0].message.content;
+                } else if (client.getGenerativeModel) {
+                    // Fallback if provider was mishandled but client is Gemini
+                    const model = client.getGenerativeModel({ model: modelName });
+                    const result = await model.generateContent([
+                        { text: systemPrompt },
+                        { text: messages.map(m => `${m.role}: ${m.content}`).join('\n') }
+                    ]);
+                    const response = await result.response;
+                    return response.text();
+                } else {
+                    throw new Error('Invalid client initialized for provider: ' + provider);
+                }
+            }
         }
 
         // VISION PATH (Image Analysis)
@@ -146,17 +209,42 @@ async function generateResponse(messages, attachmentUrl = null) {
             imageData = await urlToBase64(attachmentUrl);
         } catch (imageError) {
             console.warn('⚠️ Image download failed, falling back to text-only:', imageError.message);
-            return await provider.generateResponse(messages, systemPrompt);
+            // Fallback to text-only
+            if (provider === 'gemini') {
+                const model = client.getGenerativeModel({ model: modelName });
+                const result = await model.generateContent([
+                    { text: systemPrompt },
+                    { text: messages.map(m => `${m.role}: ${m.content}`).join('\n') }
+                ]);
+                const response = await result.response;
+                return response.text();
+            } else {
+                if (client.chat && client.chat.completions) {
+                    const formattedMessages = [
+                        { role: 'system', content: systemPrompt },
+                        ...messages
+                    ];
+                    const completion = await client.chat.completions.create({
+                        model: modelName,
+                        messages: formattedMessages
+                    });
+                    return completion.choices[0].message.content;
+                } else {
+                    // Fallback Gemini
+                    const model = client.getGenerativeModel({ model: modelName });
+                    const result = await model.generateContent([
+                        { text: systemPrompt },
+                        { text: messages.map(m => `${m.role}: ${m.content}`).join('\n') }
+                    ]);
+                    const response = await result.response;
+                    return response.text();
+                }
+            }
         }
 
         // Provider-specific vision logic
-        const providerType = activeProviderConfig?.provider || 'gemini';
-
-        if (providerType === 'google' || providerType === 'gemini') {
+        if (provider === 'gemini') {
             // Gemini Vision Logic
-            const GeminiProvider = require('./providers/gemini');
-
-            // Get the last user message
             const lastMessage = messages[messages.length - 1];
             const userText = lastMessage?.content || '';
 
@@ -164,7 +252,8 @@ async function generateResponse(messages, attachmentUrl = null) {
             const combinedPrompt = `${systemPrompt}\n\n${imagePrompt}\n\nUser query: ${userText}`;
 
             // Use Gemini's multimodal API
-            const result = await provider.model.generateContent([
+            const model = client.getGenerativeModel({ model: modelName });
+            const result = await model.generateContent([
                 { text: combinedPrompt },
                 {
                     inlineData: {
@@ -177,8 +266,8 @@ async function generateResponse(messages, attachmentUrl = null) {
             const response = await result.response;
             return response.text();
 
-        } else if (providerType === 'openai') {
-            // OpenAI Vision Logic
+        } else if (provider === 'openai' || provider === 'custom') {
+            // OpenAI/Custom Vision Logic
             const lastMessage = messages[messages.length - 1];
             const userText = lastMessage?.content || '';
 
@@ -207,17 +296,35 @@ async function generateResponse(messages, attachmentUrl = null) {
             ];
 
             // Call OpenAI with vision-enabled messages
-            const completion = await provider.client.chat.completions.create({
+            const completion = await client.chat.completions.create({
                 messages: visionMessages,
-                model: provider.model,
+                model: modelName,
             });
 
             return completion.choices[0].message.content;
 
         } else {
-            // Anthropic or other providers - fallback to text-only for now
-            console.warn(`⚠️ Vision not yet supported for provider: ${providerType}, using text-only`);
-            return await provider.generateResponse(messages, systemPrompt);
+            // Unsupported provider for vision - fallback to text-only
+            console.warn(`⚠️ Vision not yet supported for provider: ${provider}, using text-only`);
+            if (provider === 'gemini') {
+                const model = client.getGenerativeModel({ model: modelName });
+                const result = await model.generateContent([
+                    { text: systemPrompt },
+                    { text: messages.map(m => `${m.role}: ${m.content}`).join('\n') }
+                ]);
+                const response = await result.response;
+                return response.text();
+            } else {
+                const formattedMessages = [
+                    { role: 'system', content: systemPrompt },
+                    ...messages
+                ];
+                const completion = await client.chat.completions.create({
+                    model: modelName,
+                    messages: formattedMessages
+                });
+                return completion.choices[0].message.content;
+            }
         }
 
     } catch (error) {
@@ -261,14 +368,12 @@ async function generateResponse(messages, attachmentUrl = null) {
         }
 
         // 2. Update DB with health status
-        // We need the ID of the active config. `activeProviderConfig` stores it.
-        // Warning: activeProviderConfig might be null if getActiveProvider failed completely (e.g. DB error)
         try {
-            if (activeProviderConfig && activeProviderConfig.$id) {
+            if (currentConfigId) {
                 await awDatabases.updateDocument(
                     APPWRITE_DATABASE_ID,
                     APPWRITE_LLM_SETTINGS_COLLECTION_ID || 'llm_settings',
-                    activeProviderConfig.$id,
+                    currentConfigId,
                     {
                         healthStatus: status,
                         lastError: errMsg.substring(0, 255) // Truncate for safety
@@ -285,47 +390,27 @@ async function generateResponse(messages, attachmentUrl = null) {
 }
 
 /**
- * Clear the cache to force a refresh (e.g. after settings update)
- */
-function invalidateCache() {
-    activeProviderInstance = null;
-    activeProviderConfig = null;
-}
-
-/**
  * Get current provider info (name and model)
  * @returns {Promise<Object>} The provider info object
  */
 async function getCurrentProviderInfo() {
     try {
-        await getActiveProvider(); // Ensure cache is warm
+        const { provider, modelName } = await getClient();
 
-        let providerName = 'Gemini'; // Default
-        let modelName = 'gemini-1.5-flash';
-
-        if (activeProviderConfig) {
-            // If we saved provider in config, use it. But we didn't update getActiveProvider yet.
-            // Let's rely on checking the instance type or just fetching activeProviderConfig if we update getActiveProvider to save it. 
-            // To be safe and simple, let's just re-fetch or assume Gemini if undefined, 
-            // but actually getActiveProvider fetches the doc.
-            // Let's update getActiveProvider to save 'provider' to activeProviderConfig first.
-            if (activeProviderConfig.provider) {
-                providerName = activeProviderConfig.provider.charAt(0).toUpperCase() + activeProviderConfig.provider.slice(1);
-            }
-        }
+        // Capitalize provider name for display
+        const providerName = provider.charAt(0).toUpperCase() + provider.slice(1);
 
         return {
             name: providerName,
-            model: activeProviderConfig?.model || modelName
+            model: modelName
         };
     } catch (error) {
+        console.error('Failed to get provider info:', error);
         return { name: 'Gemini', model: 'default' };
     }
 }
 
 module.exports = {
-    getActiveProvider,
     generateResponse,
-    invalidateCache,
     getCurrentProviderInfo
 };

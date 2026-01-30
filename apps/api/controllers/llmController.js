@@ -1,6 +1,5 @@
 const { awDatabases, config, encryption } = require('../config/clients');
 const { Query, ID } = require('node-appwrite');
-const { invalidateCache } = require('../services/llm/llmService');
 
 const {
     APPWRITE_DATABASE_ID,
@@ -76,7 +75,7 @@ const getActiveConfig = async (req, res) => {
  * Sets as ACTIVE automatically.
  */
 const upsertConfig = async (req, res) => {
-    const { provider, model, apiKey } = req.body;
+    const { provider, model, apiKey, baseUrl } = req.body;
 
     if (!provider || !model) {
         return res.status(400).json({ message: 'Provider and Model are required' });
@@ -122,6 +121,12 @@ const upsertConfig = async (req, res) => {
                 updatePayload.healthStatus = 'ok';
                 updatePayload.lastError = '';
             }
+            // Always update baseUrl if provided (or strictly if present in body)
+            // But usually we just update what's changed. 
+            // Since we're upserting configurations, we update the Base URL.
+            if (provider === 'custom' || provider === 'openai') {
+                updatePayload.baseUrl = baseUrl || null;
+            }
 
             await awDatabases.updateDocument(
                 APPWRITE_DATABASE_ID,
@@ -138,6 +143,7 @@ const upsertConfig = async (req, res) => {
                     provider,
                     model,
                     encryptedApiKey: finalApiKey,
+                    baseUrl: baseUrl || null,
                     isActive: true,
                     healthStatus: 'ok',
                     lastError: ''
@@ -167,7 +173,7 @@ const upsertConfig = async (req, res) => {
         }));
 
         // 5. Invalidate Cache
-        invalidateCache();
+
 
         res.json({ message: 'Configuration saved and activated', activeId: targetDocId });
 
@@ -217,7 +223,7 @@ const activateConfig = async (req, res) => {
             { isActive: true }
         );
 
-        invalidateCache();
+
         res.json({ message: 'Switched active provider successfully' });
 
     } catch (error) {
@@ -287,7 +293,7 @@ const updateConfigKey = async (req, res) => {
             }
         );
 
-        invalidateCache();
+
         res.json({ message: 'API Key updated and health status reset' });
 
     } catch (error) {
@@ -361,7 +367,7 @@ const saveContextLimit = async (req, res) => {
         await settingsService.saveContextLimit(limit);
 
         // Invalidate LLM cache if relevant
-        invalidateCache();
+
 
         res.json({ message: 'Context limit updated successfully' });
     } catch (error) {
@@ -437,6 +443,8 @@ const saveImagePrompt = async (req, res) => {
         res.status(500).json({ message: 'Failed to save image prompt' });
     }
 };
+
+// AI Config functions removed (Unified Fleet Architecture)
 
 module.exports = {
     getAllConfigs,
