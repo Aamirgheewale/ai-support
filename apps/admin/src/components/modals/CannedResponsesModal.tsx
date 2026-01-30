@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
-import { MessageSquare, UploadCloud, Download, X, ToggleLeft, ToggleRight } from 'lucide-react'
+import { MessageSquare, UploadCloud, Download, X, ToggleLeft, ToggleRight, Loader2 } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
 import Toast from '../common/Toast'
+import Modal from '../ui/Modal'
 import * as XLSX from 'xlsx'
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000'
@@ -70,12 +71,12 @@ export default function CannedResponsesModal({ isOpen, onClose }: CannedResponse
 
     if (isOpen) {
       document.addEventListener('keydown', handleEscape)
-      document.body.style.overflow = 'hidden'
+      // document.body.style.overflow = 'hidden' // Modal handles this
     }
 
     return () => {
       document.removeEventListener('keydown', handleEscape)
-      document.body.style.overflow = 'unset'
+      // document.body.style.overflow = 'unset' // Modal handles this
     }
   }, [isOpen, showModal, onClose])
 
@@ -443,7 +444,7 @@ export default function CannedResponsesModal({ isOpen, onClose }: CannedResponse
   return (
     <>
       {toast && (
-        <div className="fixed top-4 right-4 z-[10001]">
+        <div className="fixed top-4 right-4 z-[20001]">
           <Toast
             message={toast.message}
             type={toast.type}
@@ -452,382 +453,372 @@ export default function CannedResponsesModal({ isOpen, onClose }: CannedResponse
         </div>
       )}
 
-      <div
-        className="fixed inset-0 z-[10000] overflow-y-auto"
-        onClick={onClose}
-        role="dialog"
-        aria-modal="true"
-      >
-        <div className="fixed inset-0 bg-black/50 z-[10000]" />
-
-        <div className="flex items-center justify-center min-h-screen p-4 relative z-[10002]">
-          <div
-            ref={modalRef}
-            className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-5xl overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-700">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center">
-                  <MessageSquare className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Canned Responses</h2>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Manage shortcuts & auto-replies</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleAddNew}
-                  className="px-3 py-1.5 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors"
-                  disabled={importing}
-                >
-                  Add New
-                </button>
-                <div className="relative">
-                  <button
-                    onClick={handleImportExcel}
-                    disabled={importing}
-                    className="px-3 py-1.5 text-sm font-medium text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-                    title="Import from Excel file"
-                  >
-                    <UploadCloud className="w-4 h-4" />
-                    {importing ? 'Importing...' : 'Import Excel'}
-                  </button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".xlsx,.xls"
-                    onChange={handleFileChange}
-                    className="hidden"
-                  />
-                </div>
-                <button
-                  onClick={onClose}
-                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
-                  aria-label="Close"
-                  disabled={importing}
-                >
-                  <X className="w-5 h-5 text-gray-500 dark:text-gray-400 dark:hover:text-gray-200" />
-                </button>
-              </div>
+      <Modal
+        isOpen={isOpen}
+        onClose={onClose}
+        title={
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center">
+              <MessageSquare className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
             </div>
-
-            {/* Tab Switcher */}
-            <div className="px-6 py-3 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setActiveTab('shortcuts')}
-                  className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${activeTab === 'shortcuts'
-                      ? 'bg-indigo-600 text-white dark:bg-indigo-500'
-                      : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                    }`}
-                >
-                  Agent Shortcuts
-                </button>
-                <button
-                  onClick={() => setActiveTab('auto_replies')}
-                  className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${activeTab === 'auto_replies'
-                      ? 'bg-indigo-600 text-white dark:bg-indigo-500'
-                      : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                    }`}
-                >
-                  Bot Auto-Replies
-                </button>
-              </div>
-            </div>
-
-            {/* User Guidance */}
-            <div className="px-6 py-3 bg-blue-50 dark:bg-blue-900/20 border-b border-blue-100 dark:border-blue-800">
-              <div className="flex items-center justify-between">
-                <p className="text-xs text-blue-700 dark:text-blue-300">
-                  {activeTab === 'shortcuts' ? (
-                    <><strong>Agent Shortcuts:</strong> Type <code className="bg-blue-100 dark:bg-blue-900/40 px-1 rounded">/shortcut</code> in chat to use</>
-                  ) : (
-                    <><strong>Bot Auto-Replies:</strong> Automatic responses before AI/LLM is called</>
-                  )}
-                </p>
-                <button
-                  onClick={handleDownloadSample}
-                  className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline cursor-pointer font-medium flex items-center gap-1 ml-4 whitespace-nowrap"
-                  title="Download Excel template"
-                >
-                  <Download className="w-4 h-4" />
-                  Download Sample
-                </button>
-              </div>
-            </div>
-
-            {/* Content */}
-            <div className="px-6 py-6 max-h-[60vh] overflow-y-auto">
-              {loading ? (
-                <div className="flex items-center justify-center py-12">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
-                  <span className="ml-3 text-gray-600 dark:text-gray-300">Loading...</span>
-                </div>
-              ) : (
-                <div className="bg-white dark:bg-gray-800 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
-                  <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                    <thead className="bg-gray-50 dark:bg-gray-900">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                          {activeTab === 'shortcuts' ? 'Shortcut' : 'Trigger Text'}
-                        </th>
-                        {activeTab === 'shortcuts' ? (
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                            Category
-                          </th>
-                        ) : (
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                            Match Type
-                          </th>
-                        )}
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                          Content Preview
-                        </th>
-                        {activeTab === 'auto_replies' && (
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                            Status
-                          </th>
-                        )}
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                          Actions
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                      {responses.length === 0 ? (
-                        <tr>
-                          <td colSpan={activeTab === 'auto_replies' ? 5 : 4} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
-                            No {activeTab === 'shortcuts' ? 'shortcuts' : 'auto-replies'} found. Click "Add New" to create one.
-                          </td>
-                        </tr>
-                      ) : (
-                        responses.map((response) => (
-                          <tr key={response.$id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                                {activeTab === 'shortcuts' ? `/${response.shortcut}` : response.shortcut}
-                              </span>
-                            </td>
-                            {activeTab === 'shortcuts' ? (
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                {response.category ? (
-                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300">
-                                    {response.category}
-                                  </span>
-                                ) : (
-                                  <span className="text-sm text-gray-400 dark:text-gray-500">-</span>
-                                )}
-                              </td>
-                            ) : (
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${response.match_type === 'exact' ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' :
-                                    response.match_type === 'partial' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300' :
-                                      'bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300'
-                                  }`}>
-                                  {response.match_type === 'exact' ? 'Exact Match' :
-                                    response.match_type === 'partial' ? 'Starts With' :
-                                      'Contains Keyword'}
-                                </span>
-                              </td>
-                            )}
-                            <td className="px-6 py-4">
-                              <span className="text-sm text-gray-600 dark:text-gray-300">
-                                {truncateContent(response.content)}
-                              </span>
-                            </td>
-                            {activeTab === 'auto_replies' && (
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <button
-                                  onClick={() => handleToggleActive(response)}
-                                  className="flex items-center gap-1 text-sm"
-                                  title={response.is_active ? 'Click to deactivate' : 'Click to activate'}
-                                >
-                                  {response.is_active ? (
-                                    <>
-                                      <ToggleRight className="w-5 h-5 text-green-600 dark:text-green-400" />
-                                      <span className="text-green-600 dark:text-green-400 font-medium">Active</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <ToggleLeft className="w-5 h-5 text-gray-400 dark:text-gray-500" />
-                                      <span className="text-gray-400 dark:text-gray-500">Inactive</span>
-                                    </>
-                                  )}
-                                </button>
-                              </td>
-                            )}
-                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                              <button
-                                onClick={() => handleEdit(response)}
-                                className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 mr-4"
-                              >
-                                Edit
-                              </button>
-                              <button
-                                onClick={() => handleDelete(response.$id)}
-                                className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300"
-                              >
-                                Delete
-                              </button>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Canned Responses</h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Manage shortcuts & auto-replies</p>
             </div>
           </div>
+        }
+        maxWidth="max-w-5xl"
+      >
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-900 hidden">
         </div>
-      </div>
+
+        {/* Actions Toolbar */}
+        <div className="flex items-center justify-end px-6 py-3 border-b border-gray-100 dark:border-gray-700">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleAddNew}
+              className="px-3 py-1.5 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors"
+              disabled={importing}
+            >
+              Add New
+            </button>
+            <div className="relative">
+              <button
+                onClick={handleImportExcel}
+                disabled={importing}
+                className="px-3 py-1.5 text-sm font-medium text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                title="Import from Excel file"
+              >
+                <UploadCloud className="w-4 h-4" />
+                {importing ? 'Importing...' : 'Import Excel'}
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={handleFileChange}
+                className="hidden"
+              />
+            </div>
+            {/* Close button provided by Modal */}
+          </div>
+        </div>
+
+        {/* Tab Switcher */}
+        <div className="px-6 py-3 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+          <div className="flex gap-2">
+            <button
+              onClick={() => setActiveTab('shortcuts')}
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${activeTab === 'shortcuts'
+                ? 'bg-indigo-600 text-white dark:bg-indigo-500'
+                : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+            >
+              Agent Shortcuts
+            </button>
+            <button
+              onClick={() => setActiveTab('auto_replies')}
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${activeTab === 'auto_replies'
+                ? 'bg-indigo-600 text-white dark:bg-indigo-500'
+                : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+            >
+              Bot Auto-Replies
+            </button>
+          </div>
+        </div>
+
+        {/* User Guidance */}
+        <div className="px-6 py-3 bg-blue-50 dark:bg-blue-900/20 border-b border-blue-100 dark:border-blue-800">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-blue-700 dark:text-blue-300">
+              {activeTab === 'shortcuts' ? (
+                <><strong>Agent Shortcuts:</strong> Type <code className="bg-blue-100 dark:bg-blue-900/40 px-1 rounded">/shortcut</code> in chat to use</>
+              ) : (
+                <><strong>Bot Auto-Replies:</strong> Automatic responses before AI/LLM is called</>
+              )}
+            </p>
+            <button
+              onClick={handleDownloadSample}
+              className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline cursor-pointer font-medium flex items-center gap-1 ml-4 whitespace-nowrap"
+              title="Download Excel template"
+            >
+              <Download className="w-4 h-4" />
+              Download Sample
+            </button>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="px-6 py-6 pb-20">
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
+              <span className="ml-3 text-gray-600 dark:text-gray-300">Loading...</span>
+            </div>
+          ) : (
+            <div className="bg-white dark:bg-gray-800 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <thead className="bg-gray-50 dark:bg-gray-900">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      {activeTab === 'shortcuts' ? 'Shortcut' : 'Trigger Text'}
+                    </th>
+                    {activeTab === 'shortcuts' ? (
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Category
+                      </th>
+                    ) : (
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Match Type
+                      </th>
+                    )}
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Content Preview
+                    </th>
+                    {activeTab === 'auto_replies' && (
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Status
+                      </th>
+                    )}
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                  {responses.length === 0 ? (
+                    <tr>
+                      <td colSpan={activeTab === 'auto_replies' ? 5 : 4} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                        No {activeTab === 'shortcuts' ? 'shortcuts' : 'auto-replies'} found. Click "Add New" to create one.
+                      </td>
+                    </tr>
+                  ) : (
+                    responses.map((response) => (
+                      <tr key={response.$id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                            {activeTab === 'shortcuts' ? `/${response.shortcut}` : response.shortcut}
+                          </span>
+                        </td>
+                        {activeTab === 'shortcuts' ? (
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            {response.category ? (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300">
+                                {response.category}
+                              </span>
+                            ) : (
+                              <span className="text-sm text-gray-400 dark:text-gray-500">-</span>
+                            )}
+                          </td>
+                        ) : (
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${response.match_type === 'exact' ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' :
+                              response.match_type === 'partial' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300' :
+                                'bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300'
+                              }`}>
+                              {response.match_type === 'exact' ? 'Exact Match' :
+                                response.match_type === 'partial' ? 'Starts With' :
+                                  'Contains Keyword'}
+                            </span>
+                          </td>
+                        )}
+                        <td className="px-6 py-4">
+                          <span className="text-sm text-gray-600 dark:text-gray-300">
+                            {truncateContent(response.content)}
+                          </span>
+                        </td>
+                        {activeTab === 'auto_replies' && (
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <button
+                              onClick={() => handleToggleActive(response)}
+                              className="flex items-center gap-1 text-sm"
+                              title={response.is_active ? 'Click to deactivate' : 'Click to activate'}
+                            >
+                              {response.is_active ? (
+                                <>
+                                  <ToggleRight className="w-5 h-5 text-green-600 dark:text-green-400" />
+                                  <span className="text-green-600 dark:text-green-400 font-medium">Active</span>
+                                </>
+                              ) : (
+                                <>
+                                  <ToggleLeft className="w-5 h-5 text-gray-400 dark:text-gray-500" />
+                                  <span className="text-gray-400 dark:text-gray-500">Inactive</span>
+                                </>
+                              )}
+                            </button>
+                          </td>
+                        )}
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                          <button
+                            onClick={() => handleEdit(response)}
+                            className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 mr-4"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleDelete(response.$id)}
+                            className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300"
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </Modal>
 
       {/* Add/Edit Modal */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10003]">
-          <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">
-              {editingResponse ? 'Edit' : 'Add New'} {activeTab === 'shortcuts' ? 'Shortcut' : 'Auto-Reply'}
-            </h2>
-            <form onSubmit={handleSubmit}>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    {activeTab === 'shortcuts' ? 'Shortcut' : 'Trigger Text'} *
-                  </label>
-                  {activeTab === 'shortcuts' && (
-                    <div className="flex items-center">
-                      <span className="text-gray-500 dark:text-gray-400 mr-2">/</span>
-                      <input
-                        type="text"
-                        value={formData.shortcut}
-                        onChange={handleShortcutChange}
-                        className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-blue-500 dark:focus:border-blue-400 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
-                        placeholder="greet"
-                        required
-                        disabled={saving}
-                      />
-                    </div>
-                  )}
-                  {activeTab === 'auto_replies' && (
+      <Modal
+        isOpen={showModal}
+        onClose={() => {
+          setShowModal(false)
+          resetForm()
+        }}
+        title={`${editingResponse ? 'Edit' : 'Add New'} ${activeTab === 'shortcuts' ? 'Shortcut' : 'Auto-Reply'}`}
+        maxWidth="max-w-2xl"
+      >
+        <div className="p-6">
+          <form onSubmit={handleSubmit}>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  {activeTab === 'shortcuts' ? 'Shortcut' : 'Trigger Text'} *
+                </label>
+                {activeTab === 'shortcuts' && (
+                  <div className="flex items-center">
+                    <span className="text-gray-500 dark:text-gray-400 mr-2">/</span>
                     <input
                       type="text"
                       value={formData.shortcut}
                       onChange={handleShortcutChange}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-blue-500 dark:focus:border-blue-400 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
-                      placeholder="hello"
+                      className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-blue-500 dark:focus:border-blue-400 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+                      placeholder="greet"
                       required
                       disabled={saving}
                     />
-                  )}
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    {activeTab === 'shortcuts' ? 'Lowercase, no spaces' : 'Lowercase, spaces allowed'}
-                  </p>
-                </div>
-
-                {activeTab === 'shortcuts' ? (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Category
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.category}
-                      onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-blue-500 dark:focus:border-blue-400 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
-                      placeholder="e.g., Greeting, FAQ, Troubleshooting"
-                      disabled={saving}
-                    />
-                  </div>
-                ) : (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Match Type *
-                    </label>
-                    <select
-                      value={formData.match_type}
-                      onChange={(e) => setFormData({ ...formData, match_type: e.target.value as MatchType })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-blue-500 dark:focus:border-blue-400 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                      required
-                      disabled={saving}
-                    >
-                      <option value="exact">Exact Match</option>
-                      <option value="partial">Starts With (Partial)</option>
-                      <option value="keyword">Contains Keyword</option>
-                    </select>
-                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                      How the trigger text should match user messages
-                    </p>
                   </div>
                 )}
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Content *
-                  </label>
-                  <textarea
-                    value={formData.content}
-                    onChange={(e) => {
-                      if (e.target.value.length <= 5000) {
-                        setFormData({ ...formData, content: e.target.value })
-                      }
-                    }}
-                    rows={5}
-                    maxLength={5000}
+                {activeTab === 'auto_replies' && (
+                  <input
+                    type="text"
+                    value={formData.shortcut}
+                    onChange={handleShortcutChange}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-blue-500 dark:focus:border-blue-400 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
-                    placeholder="Enter the response content..."
+                    placeholder="hello"
                     required
                     disabled={saving}
                   />
+                )}
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {activeTab === 'shortcuts' ? 'Lowercase, no spaces' : 'Lowercase, spaces allowed'}
+                </p>
+              </div>
+
+              {activeTab === 'shortcuts' ? (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Category
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.category}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-blue-500 dark:focus:border-blue-400 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+                    placeholder="e.g., Greeting, FAQ, Troubleshooting"
+                    disabled={saving}
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Match Type *
+                  </label>
+                  <select
+                    value={formData.match_type}
+                    onChange={(e) => setFormData({ ...formData, match_type: e.target.value as MatchType })}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-blue-500 dark:focus:border-blue-400 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                    required
+                    disabled={saving}
+                  >
+                    <option value="exact">Exact Match</option>
+                    <option value="partial">Starts With (Partial)</option>
+                    <option value="keyword">Contains Keyword</option>
+                  </select>
                   <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    {formData.content.length} / 5000 characters
+                    How the trigger text should match user messages
                   </p>
                 </div>
+              )}
 
-                {activeTab === 'auto_replies' && (
-                  <div className="flex items-center">
-                    <input
-                      type="checkbox"
-                      id="is_active"
-                      checked={formData.is_active}
-                      onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                      className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-800"
-                      disabled={saving}
-                    />
-                    <label htmlFor="is_active" className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                      Active (bot will use this response)
-                    </label>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex justify-end space-x-2 mt-6">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowModal(false)
-                    resetForm()
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Content *
+                </label>
+                <textarea
+                  value={formData.content}
+                  onChange={(e) => {
+                    if (e.target.value.length <= 5000) {
+                      setFormData({ ...formData, content: e.target.value })
+                    }
                   }}
+                  rows={5}
+                  maxLength={5000}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-blue-500 dark:focus:border-blue-400 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+                  placeholder="Enter the response content..."
+                  required
                   disabled={saving}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 dark:bg-indigo-500 rounded-md hover:bg-indigo-700 dark:hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {saving ? 'Saving...' : editingResponse ? 'Update' : 'Create'}
-                </button>
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {formData.content.length} / 5000 characters
+                </p>
               </div>
-            </form>
-          </div>
+
+              {activeTab === 'auto_replies' && (
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    id="is_active"
+                    checked={formData.is_active}
+                    onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+                    className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-800"
+                    disabled={saving}
+                  />
+                  <label htmlFor="is_active" className="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                    Active (bot will use this response)
+                  </label>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end space-x-2 mt-6">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowModal(false)
+                  resetForm()
+                }}
+                disabled={saving}
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 dark:bg-indigo-500 rounded-md hover:bg-indigo-700 dark:hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {saving ? 'Saving...' : editingResponse ? 'Update' : 'Create'}
+              </button>
+            </div>
+          </form>
         </div>
-      )}
+      </Modal>
     </>
   )
 }
