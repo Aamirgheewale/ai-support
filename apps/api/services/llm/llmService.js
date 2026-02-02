@@ -154,8 +154,41 @@ async function generateResponse(messages, attachmentUrl = null) {
         const { client, provider, modelName, configId } = await getClient();
         currentConfigId = configId;
 
+        // Define language protocol for multilingual support
+        const LANGUAGE_PROTOCOL = `
+[SYSTEM PROTOCOL - LANGUAGE]
+You must STRICTLY detect the language of the user's input and reply in the SAME language.
+- English -> English
+- Hindi -> Hindi
+- Kannada -> Kannada
+- Marathi -> Marathi
+- Mixed (Hinglish/Kanglish) -> Match the dominant language/script.
+`;
+
+        // Define language enforcement suffix for user messages
+        const LANGUAGE_ENFORCEMENT = `
+
+[INSTRUCTION]
+You must answer the above question in the SAME LANGUAGE as the question was asked.
+- If I asked in Kannada, you MUST reply in Kannada.
+- If I asked in Hindi, you MUST reply in Hindi.
+- Do NOT reply in English unless I asked in English.
+- Translate any technical steps or knowledge base answers into my language.
+`;
+
         // Fetch system prompt (fails safe with default)
-        const systemPrompt = await settingsService.getSystemPrompt();
+        const dbSystemPrompt = await settingsService.getSystemPrompt();
+
+        // Create hybrid system instruction
+        const finalSystemInstruction = dbSystemPrompt + "\n\n" + LANGUAGE_PROTOCOL;
+
+        // Inject language enforcement into the last user message
+        const messagesWithEnforcement = messages.map((msg, idx) => {
+            if (idx === messages.length - 1 && msg.role === 'user') {
+                return { ...msg, content: msg.content + LANGUAGE_ENFORCEMENT };
+            }
+            return msg;
+        });
 
         // TEXT-ONLY PATH (Backwards Compatible)
         if (!attachmentUrl) {
@@ -163,16 +196,16 @@ async function generateResponse(messages, attachmentUrl = null) {
                 // Gemini text-only
                 const model = client.getGenerativeModel({ model: modelName });
                 const result = await model.generateContent([
-                    { text: systemPrompt },
-                    { text: messages.map(m => `${m.role}: ${m.content}`).join('\n') }
+                    { text: finalSystemInstruction },
+                    { text: messagesWithEnforcement.map(m => `${m.role}: ${m.content}`).join('\n') }
                 ]);
                 const response = await result.response;
                 return response.text();
             } else {
                 // OpenAI/Custom text-only
                 const formattedMessages = [
-                    { role: 'system', content: systemPrompt },
-                    ...messages
+                    { role: 'system', content: finalSystemInstruction },
+                    ...messagesWithEnforcement
                 ];
                 // Check if client is OpenAI instance or GoogleGenerativeAI
                 // Logic mismatch safeguard:
@@ -186,8 +219,8 @@ async function generateResponse(messages, attachmentUrl = null) {
                     // Fallback if provider was mishandled but client is Gemini
                     const model = client.getGenerativeModel({ model: modelName });
                     const result = await model.generateContent([
-                        { text: systemPrompt },
-                        { text: messages.map(m => `${m.role}: ${m.content}`).join('\n') }
+                        { text: finalSystemInstruction },
+                        { text: messagesWithEnforcement.map(m => `${m.role}: ${m.content}`).join('\n') }
                     ]);
                     const response = await result.response;
                     return response.text();
@@ -213,16 +246,16 @@ async function generateResponse(messages, attachmentUrl = null) {
             if (provider === 'gemini') {
                 const model = client.getGenerativeModel({ model: modelName });
                 const result = await model.generateContent([
-                    { text: systemPrompt },
-                    { text: messages.map(m => `${m.role}: ${m.content}`).join('\n') }
+                    { text: finalSystemInstruction },
+                    { text: messagesWithEnforcement.map(m => `${m.role}: ${m.content}`).join('\n') }
                 ]);
                 const response = await result.response;
                 return response.text();
             } else {
                 if (client.chat && client.chat.completions) {
                     const formattedMessages = [
-                        { role: 'system', content: systemPrompt },
-                        ...messages
+                        { role: 'system', content: finalSystemInstruction },
+                        ...messagesWithEnforcement
                     ];
                     const completion = await client.chat.completions.create({
                         model: modelName,
@@ -233,8 +266,8 @@ async function generateResponse(messages, attachmentUrl = null) {
                     // Fallback Gemini
                     const model = client.getGenerativeModel({ model: modelName });
                     const result = await model.generateContent([
-                        { text: systemPrompt },
-                        { text: messages.map(m => `${m.role}: ${m.content}`).join('\n') }
+                        { text: finalSystemInstruction },
+                        { text: messagesWithEnforcement.map(m => `${m.role}: ${m.content}`).join('\n') }
                     ]);
                     const response = await result.response;
                     return response.text();
@@ -245,11 +278,11 @@ async function generateResponse(messages, attachmentUrl = null) {
         // Provider-specific vision logic
         if (provider === 'gemini') {
             // Gemini Vision Logic
-            const lastMessage = messages[messages.length - 1];
+            const lastMessage = messagesWithEnforcement[messagesWithEnforcement.length - 1];
             const userText = lastMessage?.content || '';
 
-            // Combine system prompt, image prompt, and user message
-            const combinedPrompt = `${systemPrompt}\n\n${imagePrompt}\n\nUser query: ${userText}`;
+            // Combine system prompt, image prompt, and user message (enforcement already in userText)
+            const combinedPrompt = `${finalSystemInstruction}\n\n${imagePrompt}\n\nUser query: ${userText}`;
 
             // Use Gemini's multimodal API
             const model = client.getGenerativeModel({ model: modelName });
@@ -268,10 +301,10 @@ async function generateResponse(messages, attachmentUrl = null) {
 
         } else if (provider === 'openai' || provider === 'custom') {
             // OpenAI/Custom Vision Logic
-            const lastMessage = messages[messages.length - 1];
+            const lastMessage = messagesWithEnforcement[messagesWithEnforcement.length - 1];
             const userText = lastMessage?.content || '';
 
-            // Construct vision message
+            // Construct vision message (enforcement already in userText)
             const visionMessage = {
                 role: 'user',
                 content: [
@@ -290,8 +323,8 @@ async function generateResponse(messages, attachmentUrl = null) {
 
             // Replace last message with vision message
             const visionMessages = [
-                { role: 'system', content: systemPrompt },
-                ...messages.slice(0, -1),
+                { role: 'system', content: finalSystemInstruction },
+                ...messagesWithEnforcement.slice(0, -1),
                 visionMessage
             ];
 
@@ -309,15 +342,15 @@ async function generateResponse(messages, attachmentUrl = null) {
             if (provider === 'gemini') {
                 const model = client.getGenerativeModel({ model: modelName });
                 const result = await model.generateContent([
-                    { text: systemPrompt },
-                    { text: messages.map(m => `${m.role}: ${m.content}`).join('\n') }
+                    { text: finalSystemInstruction },
+                    { text: messagesWithEnforcement.map(m => `${m.role}: ${m.content}`).join('\n') }
                 ]);
                 const response = await result.response;
                 return response.text();
             } else {
                 const formattedMessages = [
-                    { role: 'system', content: systemPrompt },
-                    ...messages
+                    { role: 'system', content: finalSystemInstruction },
+                    ...messagesWithEnforcement
                 ];
                 const completion = await client.chat.completions.create({
                     model: modelName,
