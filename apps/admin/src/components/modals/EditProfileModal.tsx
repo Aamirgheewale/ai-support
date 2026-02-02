@@ -116,6 +116,22 @@ export default function EditProfileModal({ isOpen, onClose }: EditProfileModalPr
 
         {/* Form Fields */}
         <div className="space-y-4">
+          {/* User ID (read-only) */}
+          <div>
+            <label htmlFor="userId" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              User ID
+            </label>
+            <input
+              type="text"
+              id="userId"
+              value={user?.userId || ''}
+              className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white cursor-not-allowed"
+              disabled
+              readOnly
+            />
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">User ID cannot be changed</p>
+          </div>
+
           <div>
             <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Full Name
