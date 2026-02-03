@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Canvas, Rect, Circle, FabricImage, TPointerEvent, TPointerEventInfo, FabricObject, PencilBrush } from 'fabric';
+import { MousePointer2, Pencil, Square, Circle as CircleIcon, Undo2, Redo2, Trash2, Eraser, X, Check, type Icon } from 'lucide-react';
 
 interface ImageAnnotationModalProps {
     imageUrl: string;
@@ -310,183 +311,146 @@ export default function ImageAnnotationModal({ imageUrl, onClose, onSave }: Imag
             justifyContent: 'center',
             padding: '20px'
         }}>
-            {/* Toolbar */}
-            <div style={{
-                backgroundColor: 'white',
-                padding: '15px',
-                borderRadius: '8px',
-                marginBottom: '15px',
-                display: 'flex',
-                gap: '15px',
-                alignItems: 'center',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
-            }}>
-                {/* Tool Buttons */}
-                <div style={{ display: 'flex', gap: '8px' }}>
+            {/* Modern Floating Toolbar */}
+            <div className="fixed top-8 left-1/2 -translate-x-1/2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-2xl rounded-full px-4 py-2 flex items-center gap-4 z-50 transition-all duration-300 hover:shadow-xl">
+
+                {/* Group 1: Tools */}
+                <div className="flex items-center gap-1.5">
                     <button
                         onClick={() => setCurrentTool('select')}
-                        style={{
-                            padding: '8px 12px',
-                            backgroundColor: currentTool === 'select' ? '#4CAF50' : '#f0f0f0',
-                            color: currentTool === 'select' ? 'white' : 'black',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: 'pointer'
-                        }}
+                        className={`p-2 rounded-full transition-all ${currentTool === 'select'
+                                ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400'
+                                : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'
+                            }`}
+                        title="Select"
                     >
-                        ↖️ Select
+                        <MousePointer2 size={18} />
                     </button>
                     <button
                         onClick={() => setCurrentTool('pen')}
-                        style={{
-                            padding: '8px 12px',
-                            backgroundColor: currentTool === 'pen' ? '#4CAF50' : '#f0f0f0',
-                            color: currentTool === 'pen' ? 'white' : 'black',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: 'pointer'
-                        }}
+                        className={`p-2 rounded-full transition-all ${currentTool === 'pen'
+                                ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400'
+                                : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'
+                            }`}
+                        title="Pen"
                     >
-                        ✏️ Pen
+                        <Pencil size={18} />
                     </button>
                     <button
                         onClick={() => setCurrentTool('rectangle')}
-                        style={{
-                            padding: '8px 12px',
-                            backgroundColor: currentTool === 'rectangle' ? '#4CAF50' : '#f0f0f0',
-                            color: currentTool === 'rectangle' ? 'white' : 'black',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: 'pointer'
-                        }}
+                        className={`p-2 rounded-full transition-all ${currentTool === 'rectangle'
+                                ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400'
+                                : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'
+                            }`}
+                        title="Rectangle"
                     >
-                        ⬜ Rectangle
+                        <Square size={18} />
                     </button>
                     <button
                         onClick={() => setCurrentTool('circle')}
-                        style={{
-                            padding: '8px 12px',
-                            backgroundColor: currentTool === 'circle' ? '#4CAF50' : '#f0f0f0',
-                            color: currentTool === 'circle' ? 'white' : 'black',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: 'pointer'
-                        }}
+                        className={`p-2 rounded-full transition-all ${currentTool === 'circle'
+                                ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400'
+                                : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'
+                            }`}
+                        title="Circle"
                     >
-                        ⭕ Circle
-                    </button>
-                    <button
-                        onClick={clearCanvas}
-                        style={{
-                            padding: '8px 12px',
-                            backgroundColor: '#FF9800',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: 'pointer'
-                        }}
-                    >
-                        ✨ Clear
-                    </button>
-                    <button
-                        onClick={deleteSelected}
-                        style={{
-                            padding: '8px 12px',
-                            backgroundColor: '#f44336',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: 'pointer'
-                        }}
-                    >
-                        🗑️ Delete
+                        <CircleIcon size={18} />
                     </button>
                 </div>
 
-                {/* Color Picker */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <label>Color:</label>
-                    <input
-                        type="color"
-                        value={currentColor}
-                        onChange={(e) => setCurrentColor(e.target.value)}
-                        style={{ width: '40px', height: '30px', cursor: 'pointer' }}
-                    />
+                {/* Vertical Divider */}
+                <div className="w-px h-6 bg-gray-200 dark:bg-gray-700" />
+
+                {/* Group 2: Properties (Color & Width) - Compact */}
+                <div className="flex items-center gap-3">
+                    <div className="relative group">
+                        <input
+                            type="color"
+                            value={currentColor}
+                            onChange={(e) => setCurrentColor(e.target.value)}
+                            className="w-6 h-6 rounded-full overflow-hidden border-2 border-white dark:border-gray-800 ring-1 ring-gray-200 dark:ring-gray-700 cursor-pointer shadow-sm"
+                            title="Color"
+                        />
+                    </div>
+                    <div className="flex flex-col gap-1 w-16">
+                        <input
+                            type="range"
+                            min="1"
+                            max="20"
+                            value={lineWidth}
+                            onChange={(e) => setLineWidth(Number(e.target.value))}
+                            className="h-1 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                            title={`Width: ${lineWidth}px`}
+                        />
+                    </div>
                 </div>
 
-                {/* Line Width */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <label>Width:</label>
-                    <input
-                        type="range"
-                        min="1"
-                        max="20"
-                        value={lineWidth}
-                        onChange={(e) => setLineWidth(Number(e.target.value))}
-                        style={{ width: '100px' }}
-                    />
-                    <span>{lineWidth}px</span>
-                </div>
+                {/* Vertical Divider */}
+                <div className="w-px h-6 bg-gray-200 dark:bg-gray-700" />
 
-                {/* Undo/Redo */}
-                <div style={{ display: 'flex', gap: '8px' }}>
+                {/* Group 3: History */}
+                <div className="flex items-center gap-1">
                     <button
                         onClick={undo}
                         disabled={historyIndex <= 0}
-                        style={{
-                            padding: '8px 12px',
-                            backgroundColor: historyIndex <= 0 ? '#ccc' : '#2196F3',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: historyIndex <= 0 ? 'not-allowed' : 'pointer'
-                        }}
+                        className={`p-1.5 rounded-full transition-all ${historyIndex <= 0
+                                ? 'text-gray-300 dark:text-gray-700 cursor-not-allowed'
+                                : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
+                            }`}
+                        title="Undo"
                     >
-                        ↩️ Undo
+                        <Undo2 size={18} />
                     </button>
                     <button
                         onClick={redo}
                         disabled={historyIndex >= history.length - 1}
-                        style={{
-                            padding: '8px 12px',
-                            backgroundColor: historyIndex >= history.length - 1 ? '#ccc' : '#2196F3',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: historyIndex >= history.length - 1 ? 'not-allowed' : 'pointer'
-                        }}
+                        className={`p-1.5 rounded-full transition-all ${historyIndex >= history.length - 1
+                                ? 'text-gray-300 dark:text-gray-700 cursor-not-allowed'
+                                : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
+                            }`}
+                        title="Redo"
                     >
-                        ↪️ Redo
+                        <Redo2 size={18} />
                     </button>
                 </div>
 
-                {/* Action Buttons */}
-                <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
+                {/* Vertical Divider */}
+                <div className="w-px h-6 bg-gray-200 dark:bg-gray-700" />
+
+                {/* Group 4: Actions (Clear/Delete) */}
+                <div className="flex items-center gap-1">
+                    <button
+                        onClick={clearCanvas}
+                        className="p-1.5 text-gray-500 hover:text-red-500 hover:bg-red-50 dark:text-gray-400 dark:hover:text-red-400 dark:hover:bg-red-900/20 rounded-full transition-all"
+                        title="Clear Canvas"
+                    >
+                        <Eraser size={18} />
+                    </button>
+                    <button
+                        onClick={deleteSelected}
+                        className="p-1.5 text-gray-500 hover:text-red-500 hover:bg-red-50 dark:text-gray-400 dark:hover:text-red-400 dark:hover:bg-red-900/20 rounded-full transition-all"
+                        title="Delete Selected"
+                    >
+                        <Trash2 size={18} />
+                    </button>
+                </div>
+
+                {/* Vertical Divider */}
+                <div className="w-px h-6 bg-gray-200 dark:bg-gray-700" />
+
+                {/* Group 5: Finalize */}
+                <div className="flex items-center gap-2">
                     <button
                         onClick={onClose}
-                        style={{
-                            padding: '8px 16px',
-                            backgroundColor: '#757575',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: 'pointer'
-                        }}
+                        className="px-3 py-1.5 text-sm font-medium text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
                     >
                         Cancel
                     </button>
                     <button
                         onClick={handleSave}
-                        style={{
-                            padding: '8px 16px',
-                            backgroundColor: '#4CAF50',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            fontWeight: 'bold'
-                        }}
+                        className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-full shadow-md hover:shadow-lg flex items-center gap-1.5 transition-all transform hover:scale-[1.02] active:scale-[0.98]"
                     >
+                        <Check size={14} strokeWidth={3} />
                         Attach to Reply
                     </button>
                 </div>
