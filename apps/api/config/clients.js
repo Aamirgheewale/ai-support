@@ -14,6 +14,7 @@ try {
 // Appwrite client initialization
 let awClient = null;
 let awDatabases = null;
+let awUsers = null;
 let Query = null;
 
 const APPWRITE_ENDPOINT = process.env.APPWRITE_ENDPOINT;
@@ -58,13 +59,15 @@ if (ENCRYPTION_ENABLED) {
 
 if (APPWRITE_ENDPOINT && APPWRITE_PROJECT_ID && APPWRITE_API_KEY) {
     try {
-        const { Client, Databases } = require('node-appwrite');
+        const { Client, Databases, Users } = require('node-appwrite');
         Query = require('node-appwrite').Query;
         awClient = new Client();
         awClient.setEndpoint(APPWRITE_ENDPOINT);
         awClient.setProject(APPWRITE_PROJECT_ID);
         awClient.setKey(APPWRITE_API_KEY);
+        awClient.setSelfSigned(true); // Allow self-signed certs and improve connection reliability
         awDatabases = new Databases(awClient);
+        awUsers = new Users(awClient);
         console.log('✅ Appwrite client initialized');
 
         // Log configuration status
@@ -145,7 +148,9 @@ if (awDatabases && APPWRITE_DATABASE_ID) {
 
 module.exports = {
     awClient,
+    awClient,
     awDatabases,
+    awUsers,
     Query,
     resend,
     geminiClient,
