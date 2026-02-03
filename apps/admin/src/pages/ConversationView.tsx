@@ -5,7 +5,7 @@ import { useAuth } from '../hooks/useAuth'
 import ImageAnnotationModal from '../components/ImageAnnotationModal'
 import { useAppwriteUpload } from '../hooks/useAppwriteUpload'
 import { useTyping } from '../hooks/useTyping'
-import { ChevronDown, Circle, Check, User } from 'lucide-react'
+import { ChevronDown, Circle, Check, User, Eye, Edit2, Download, X, Send } from 'lucide-react'
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000'
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_API_BASE || 'http://localhost:4000'
@@ -1357,70 +1357,37 @@ export default function ConversationView() {
                         {/* Hover Overlay for User Images */}
                         {msg.sender === 'user' && hoveredImageUrl === msg.attachmentUrl && canSendMessages && (
                           <div
-                            style={{
-                              position: 'absolute',
-                              top: 0,
-                              left: 0,
-                              right: 0,
-                              bottom: 0,
-                              backgroundColor: 'rgba(0, 0, 0, 0.6)',
-                              borderRadius: '8px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              cursor: 'pointer',
-                              zIndex: 10
-                            }}
+                            className="absolute inset-0 bg-black/40 backdrop-blur-[2px] rounded-lg flex items-center justify-center cursor-pointer opacity-0 hover:opacity-100 transition-all duration-200"
                             onClick={(e) => {
                               e.stopPropagation();
+                              // Clicking overlay defaults to View
                             }}
                           >
-                            <div style={{ display: 'flex', gap: '10px' }}>
+                            <div className="flex items-center gap-1 bg-black/70 rounded-full p-1.5 border border-white/10 shadow-lg transform translate-y-2 hover:translate-y-0 transition-transform duration-200">
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setImageToView(msg.attachmentUrl!);
                                   setShowImageViewer(true);
                                 }}
-                                style={{
-                                  padding: '10px 15px',
-                                  backgroundColor: '#2196F3',
-                                  color: 'white',
-                                  border: 'none',
-                                  borderRadius: '6px',
-                                  fontSize: '14px',
-                                  fontWeight: 'bold',
-                                  cursor: 'pointer',
-                                  boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '5px'
-                                }}
+                                className="p-2 text-white/90 hover:text-white hover:bg-white/20 rounded-full transition-colors"
+                                title="View Fullscreen"
                               >
-                                👁️ View
+                                <Eye size={18} />
                               </button>
+
+                              <div className="w-px h-5 bg-white/20 mx-0.5" />
+
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setImageToAnnotate(msg.attachmentUrl!);
                                   setShowAnnotationModal(true);
                                 }}
-                                style={{
-                                  padding: '10px 15px',
-                                  backgroundColor: '#4CAF50',
-                                  color: 'white',
-                                  border: 'none',
-                                  borderRadius: '6px',
-                                  fontSize: '14px',
-                                  fontWeight: 'bold',
-                                  cursor: 'pointer',
-                                  boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '5px'
-                                }}
+                                className="p-2 text-blue-200 hover:text-blue-400 hover:bg-blue-500/20 rounded-full transition-colors"
+                                title="Annotate & Reply"
                               >
-                                ✏️ Reply
+                                <Edit2 size={18} />
                               </button>
                             </div>
                           </div>
@@ -1474,7 +1441,7 @@ export default function ConversationView() {
             <span>🔒 Private Note (only visible to agents)</span>
           </label>
         </div>
-        <div style={{ position: 'relative', display: 'flex', gap: '10px' }}>
+        <div style={{ position: 'relative', display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
           <div style={{ position: 'relative', flex: 1 }}>
             {/* Suggestions Menu */}
             {showSuggestions && suggestions.length > 0 && (
@@ -1516,6 +1483,32 @@ export default function ConversationView() {
               </div>
             )}
 
+            {annotatedImageBlob && (
+              <div className="mb-2 p-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg flex items-center gap-3 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                <div className="relative">
+                  <img
+                    src={URL.createObjectURL(annotatedImageBlob)}
+                    alt="Annotated preview"
+                    className="w-12 h-12 object-cover rounded border border-gray-300 dark:border-gray-600 shadow-sm"
+                  />
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                    Annotated Image attached
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => setAnnotatedImageBlob(null)}
+                  className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full transition-colors"
+                  title="Remove attachment"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            )}
+
             <textarea
               ref={textareaRef}
               placeholder="Type your message... (Use / for canned responses)"
@@ -1540,16 +1533,13 @@ export default function ConversationView() {
           <button
             onClick={sendMessage}
             disabled={!canSendMessages || (isSending) || (!messageText.trim() && !annotatedImageBlob)}
-            style={{
-              padding: '10px 20px',
-              background: canSendMessages && (messageText.trim() || annotatedImageBlob) && !isSending ? '#28a745' : '#ccc',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: canSendMessages && (messageText.trim() || annotatedImageBlob) && !isSending ? 'pointer' : 'not-allowed'
-            }}
+            className={`h-11 px-6 rounded-xl font-medium text-sm flex items-center gap-2 transition-all shadow-sm ${canSendMessages && (messageText.trim() || annotatedImageBlob) && !isSending
+                ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200 dark:shadow-none hover:-translate-y-0.5'
+                : 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed'
+              }`}
           >
-            {isSending ? 'Sending...' : 'Send'}
+            <span>{isSending ? 'Sending...' : 'Send'}</span>
+            {!isSending && <Send size={16} />}
           </button>
         </div>
       </div>
@@ -1658,51 +1648,7 @@ export default function ConversationView() {
         />
       )}
 
-      {/* Annotated Image Preview (above input field) */}
-      {annotatedImageBlob && (
-        <div style={{
-          position: 'absolute',
-          bottom: '70px',
-          left: '20px',
-          backgroundColor: 'white',
-          padding: '10px',
-          borderRadius: '8px',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px',
-          zIndex: 100
-        }}>
-          <img
-            src={URL.createObjectURL(annotatedImageBlob)}
-            alt="Annotated preview"
-            style={{
-              width: '60px',
-              height: '60px',
-              objectFit: 'cover',
-              borderRadius: '4px',
-              border: '1px solid #ddd'
-            }}
-          />
-          <span style={{ fontSize: '13px', color: '#666' }}>
-            Annotated image attached
-          </span>
-          <button
-            onClick={() => setAnnotatedImageBlob(null)}
-            style={{
-              padding: '4px 8px',
-              backgroundColor: '#f44336',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '12px'
-            }}
-          >
-            ✕ Remove
-          </button>
-        </div>
-      )}
+
     </div>
   )
 }
