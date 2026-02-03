@@ -21,6 +21,7 @@ const {
 const initSocketHandlers = require('./sockets/socketHandler');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const sessionRoutes = require('./routes/sessionRoutes');
+const userRoutes = require('./routes/userRoutes');
 const ticketRoutes = require('./routes/ticketRoutes');
 const themeRoutes = require('./routes/themeRoutes');
 const cannedResponseRoutes = require('./routes/cannedResponseRoutes');
@@ -71,6 +72,7 @@ app.use(cookieParser());
 // Mount Routes
 app.use('/', authRoutes);
 app.use('/admin', dashboardRoutes);
+app.use('/me', userRoutes); // User Management (Sessions, etc)
 app.use('/api/sessions', sessionRoutes);
 app.use('/admin/sessions', sessionRoutes); // Legacy/Admin path support
 app.use('/api/tickets', ticketRoutes);
