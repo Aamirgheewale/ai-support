@@ -192,7 +192,7 @@ You must answer the above question in the SAME LANGUAGE as the question was aske
 
         // TEXT-ONLY PATH (Backwards Compatible)
         if (!attachmentUrl) {
-            if (provider === 'gemini') {
+            if (provider === 'gemini' || provider === 'google') {
                 // Gemini text-only
                 const model = client.getGenerativeModel({ model: modelName });
                 const result = await model.generateContent([
@@ -243,7 +243,7 @@ You must answer the above question in the SAME LANGUAGE as the question was aske
         } catch (imageError) {
             console.warn('⚠️ Image download failed, falling back to text-only:', imageError.message);
             // Fallback to text-only
-            if (provider === 'gemini') {
+            if (provider === 'gemini' || provider === 'google') {
                 const model = client.getGenerativeModel({ model: modelName });
                 const result = await model.generateContent([
                     { text: finalSystemInstruction },
@@ -276,7 +276,7 @@ You must answer the above question in the SAME LANGUAGE as the question was aske
         }
 
         // Provider-specific vision logic
-        if (provider === 'gemini') {
+        if (provider === 'gemini' || provider === 'google') {
             // Gemini Vision Logic
             const lastMessage = messagesWithEnforcement[messagesWithEnforcement.length - 1];
             const userText = lastMessage?.content || '';
@@ -339,7 +339,7 @@ You must answer the above question in the SAME LANGUAGE as the question was aske
         } else {
             // Unsupported provider for vision - fallback to text-only
             console.warn(`⚠️ Vision not yet supported for provider: ${provider}, using text-only`);
-            if (provider === 'gemini') {
+            if (provider === 'gemini' || provider === 'google') {
                 const model = client.getGenerativeModel({ model: modelName });
                 const result = await model.generateContent([
                     { text: finalSystemInstruction },
