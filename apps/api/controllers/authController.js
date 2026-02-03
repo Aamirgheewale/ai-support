@@ -1,5 +1,6 @@
 const {
     awDatabases,
+    awUsers,
     Query,
     encryption,
     config
@@ -461,50 +462,93 @@ const signup = async (req, res) => {
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(email)) return res.status(400).json({ error: 'Invalid email format' });
 
+        // Required imports for ID generation
+        const { ID } = require('node-appwrite');
+
         const existing = await getUserByEmail(email);
         if (existing) return res.status(409).json({ error: 'Email already registered' });
 
         let assignedRole = 'agent';
         const authHeader = req.headers.authorization;
-        const isAdmin = authHeader && authHeader.startsWith('Bearer ') &&
-            authHeader.substring(7) === ADMIN_SHARED_SECRET;
+        // const isAdmin = authHeader && authHeader.startsWith('Bearer ') &&
+        //     authHeader.substring(7) === ADMIN_SHARED_SECRET;
 
         if (role && ['admin', 'agent'].includes(role)) {
             assignedRole = role;
         }
 
-        const userId = `${(email.split('@')[0] || 'user').replace(/[^a-zA-Z0-9_-]/g, '')}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        // STEP 1: Generate Dummy Password & ID
+        // Implicit Password Flow: Users sign up without password (magic link/social later)
+        // We create a strong random password so the account exists in Auth.
+        const dummyPassword = ID.unique() + ID.unique();
+        const targetUserId = ID.unique();
 
-        const userDoc = await createUserRow({
-            userId,
-            email,
-            name: name || email,
-            roles: [assignedRole],
-            status: 'pending', // Default to pending for new signups
-            permissions: [] // Default no permissions
-        });
+        console.log(`👤 Creating Auth User for ${email}...`);
 
-        await setUserRoles(userDoc.userId || userId, [assignedRole]);
+        // STEP 2: Create Auth User using Admin API
+        let authUser;
+        try {
+            authUser = await awUsers.create(
+                targetUserId,
+                email,
+                undefined, // phone
+                dummyPassword,
+                name || email
+            );
+        } catch (authErr) {
+            // Handle "User already exists" in Auth but not in DB (edge case)
+            if (authErr.code === 409) {
+                return res.status(409).json({ error: 'Email already registered (Auth)' });
+            }
+            throw authErr;
+        }
 
-        // FIX: Invalidate or Update Cache to prevent "User not found" on immediate login
-        // because getUserByEmail(email) above might have cached 'null'
-        const newUserObj = {
-            ...userDoc,
-            roles: [assignedRole],
-            status: 'pending',
-            permissions: []
-        };
-        userCache.set(email, newUserObj);
-        userCache.set(userDoc.userId || userId, newUserObj);
+        const finalUserId = authUser.$id;
+        console.log(`✅ Auth User Created: ${finalUserId}`);
 
-        res.status(201).json({
-            userId: userDoc.userId || userId,
-            email: userDoc.email || email,
-            name: userDoc.name || name || email,
-            roles: [assignedRole],
-            accountStatus: 'pending', // Default to pending for new signups
-            permissions: []
-        });
+        // STEP 3: Create Database Document (Strict Link)
+        try {
+            const userDoc = await createUserRow({
+                userId: finalUserId,
+                email,
+                name: name || email,
+                roles: [assignedRole],
+                status: 'pending',
+                permissions: []
+            });
+
+            await setUserRoles(finalUserId, [assignedRole]);
+
+            // Cache Update
+            const newUserObj = {
+                ...userDoc,
+                roles: [assignedRole],
+                status: 'pending',
+                permissions: []
+            };
+            userCache.set(email, newUserObj);
+            userCache.set(finalUserId, newUserObj);
+
+            res.status(201).json({
+                userId: finalUserId,
+                email: email,
+                name: name || email,
+                roles: [assignedRole],
+                accountStatus: 'pending',
+                permissions: []
+            });
+
+        } catch (dbErr) {
+            console.error(`❌ DB Creation Failed for ${finalUserId}. Rolling back Auth User...`, dbErr);
+            // ROLLBACK: Delete the Auth User since DB creation failed
+            try {
+                await awUsers.delete(finalUserId);
+                console.log(`↩️ Rollback successful: Deleted Auth User ${finalUserId}`);
+            } catch (deleteErr) {
+                console.error(`💀 CRITICAL: Rollback failed for ${finalUserId}. Zombie account created.`, deleteErr);
+            }
+            throw dbErr; // Re-throw to return 500
+        }
 
     } catch (err) {
         console.error('Error in signup:', err);
@@ -667,6 +711,10 @@ const updatePrefs = async (req, res) => {
             user.$id,
             { prefs: JSON.stringify(merged) }
         );
+
+        // Invalidate cache so next fetch gets updated prefs
+        userCache.delete(user.userId);
+
         res.json({ success: true, prefs: merged });
     } catch (e) {
         res.status(500).json({ error: 'Failed' });
@@ -756,7 +804,7 @@ const updateUserProfile = async (req, res) => {
     try {
         const { userId } = req.params;
         const currentUserId = req.user.userId;
-        const { name, email } = req.body;
+        const { name, email, prefs } = req.body;
 
         if (userId !== currentUserId) {
             return res.status(403).json({ error: 'You can only update your own profile' });
@@ -776,6 +824,17 @@ const updateUserProfile = async (req, res) => {
             updateData.name = name.trim();
         }
 
+        // Add prefs support for notification settings
+        if (prefs !== undefined) {
+            // Validate that prefs is a valid JSON string or object
+            try {
+                const prefsObj = typeof prefs === 'string' ? JSON.parse(prefs) : prefs;
+                updateData.prefs = typeof prefs === 'string' ? prefs : JSON.stringify(prefs);
+            } catch (e) {
+                return res.status(400).json({ error: 'Invalid prefs format. Must be valid JSON.' });
+            }
+        }
+
         await awDatabases.updateDocument(
             APPWRITE_DATABASE_ID,
             APPWRITE_USERS_COLLECTION_ID,
@@ -783,13 +842,18 @@ const updateUserProfile = async (req, res) => {
             updateData
         );
 
+        // Invalidate cache to ensure subsequent fetches get fresh data
+        userCache.delete(userId);
+
+        // This will now fetch fresh data from DB and re-cache it
         const updatedUser = await getUserById(userId);
         const profile = {
             userId: updatedUser.userId,
             email: updatedUser.email,
             name: updatedUser.name,
             roles: Array.isArray(updatedUser.roles) ? updatedUser.roles : [],
-            createdAt: updatedUser.createdAt || updatedUser.$createdAt
+            createdAt: updatedUser.createdAt || updatedUser.$createdAt,
+            prefs: updatedUser.prefs
         };
 
         res.json({
