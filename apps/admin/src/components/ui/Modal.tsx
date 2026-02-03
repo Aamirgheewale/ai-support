@@ -8,6 +8,7 @@ interface ModalProps {
     title?: React.ReactNode;
     children: React.ReactNode;
     maxWidth?: string;
+    noPadding?: boolean;
 }
 
 export default function Modal({
@@ -15,7 +16,8 @@ export default function Modal({
     onClose,
     title,
     children,
-    maxWidth = 'max-w-2xl'
+    maxWidth = 'max-w-2xl',
+    noPadding = false
 }: ModalProps) {
     // Handle escape key
     useEffect(() => {
@@ -75,9 +77,13 @@ export default function Modal({
                         )}
 
                         {/* Scrollable Content */}
-                        <div className="px-6 py-4">
-                            {children}
-                        </div>
+                        {noPadding ? (
+                            children
+                        ) : (
+                            <div className="px-6 py-4">
+                                {children}
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
