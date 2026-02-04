@@ -535,9 +535,12 @@ module.exports = function (io) {
     });
 
     // Agent Message Handler
-    socket.on('agent_message', async (data) => {
+    socket.on('agent_message', async (data, callback) => {
       const { sessionId, text, agentId, type, attachmentUrl } = data;
-      if (!sessionId || !text) return;
+      if (!sessionId || !text) {
+        if (typeof callback === 'function') callback({ status: 'error', error: 'Missing sessionId or text' });
+        return;
+      }
 
       console.log(`💬 Agent message in ${sessionId}: ${text.substring(0, 50)}...`);
 
@@ -558,12 +561,20 @@ module.exports = function (io) {
         attachmentUrl,
         createdAt: new Date().toISOString()
       });
+
+      // 3. Acknowledgement Callback
+      if (typeof callback === 'function') {
+        callback({ status: 'ok' });
+      }
     });
 
     // Internal Note Handler
-    socket.on('internal_note', async (data) => {
+    socket.on('internal_note', async (data, callback) => {
       const { sessionId, text, agentId } = data;
-      if (!sessionId || !text) return;
+      if (!sessionId || !text) {
+        if (typeof callback === 'function') callback({ status: 'error', error: 'Missing sessionId or text' });
+        return;
+      }
 
       // 1. Save as internal
       await chatService.saveMessageToAppwrite(sessionId, 'internal', text, { agentId }, 'internal');
@@ -577,6 +588,11 @@ module.exports = function (io) {
         agentId,
         createdAt: new Date().toISOString()
       });
+
+      // 3. Acknowledgement Callback
+      if (typeof callback === 'function') {
+        callback({ status: 'ok' });
+      }
     });
 
     socket.on('disconnect', () => {
