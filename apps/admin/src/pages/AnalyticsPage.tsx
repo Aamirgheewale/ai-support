@@ -6,6 +6,7 @@ import HistogramChart from '../components/analytics/HistogramChart';
 import ResponseTimeChart from '../components/analytics/ResponseTimeChart';
 import AgentPerformanceTable from '../components/analytics/AgentPerformanceTable';
 import { Card } from '../components/ui';
+import AnalyticsSkeleton from '../components/skeletons/AnalyticsSkeleton';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
 const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET || 'dev-secret-change-me';
@@ -58,26 +59,26 @@ export default function AnalyticsPage() {
   const [toDate, setToDate] = useState('');
   const [interval, setInterval] = useState<'day' | 'week' | 'month'>('day');
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  
+
   const [overview, setOverview] = useState<OverviewMetrics | null>(null);
   const [timeSeries, setTimeSeries] = useState<TimeSeriesData[]>([]);
   const [confidenceHistogram, setConfidenceHistogram] = useState<ConfidenceHistogram | null>(null);
   const [responseTimes, setResponseTimes] = useState<ResponseTimes | null>(null);
   const [agentPerformance, setAgentPerformance] = useState<Array<{ agentId: string; sessionsHandled: number; avgResponseTimeMs: number; avgResolutionTimeMs: number; messagesHandled: number }>>([]);
   const [sessionStatuses, setSessionStatuses] = useState<Array<{ name: string; value: number }>>([]);
-  
+
   const [error, setError] = useState<string | null>(null);
 
   const fetchMetrics = async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
       const headers = {
         'Authorization': `Bearer ${ADMIN_SECRET}`,
         'Content-Type': 'application/json'
       };
-      
+
       // Build query params - only include dates if both are provided
       const dateParams = fromDate && toDate ? `from=${fromDate}&to=${toDate}` : '';
       const overviewUrl = `${API_BASE}/admin/metrics/overview${dateParams ? '?' + dateParams : ''}`;
@@ -85,7 +86,7 @@ export default function AnalyticsPage() {
       const histogramUrl = `${API_BASE}/admin/metrics/confidence-histogram${dateParams ? '?' + dateParams + '&bins=10' : '?bins=10'}`;
       const responseTimesUrl = `${API_BASE}/admin/metrics/response-times${dateParams ? '?' + dateParams + '&percentiles=50,90,99' : '?percentiles=50,90,99'}`;
       const agentPerfUrl = `${API_BASE}/admin/metrics/agent-performance${dateParams ? '?' + dateParams : ''}`;
-      
+
       // Fetch all metrics in parallel
       const [overviewRes, timeSeriesRes, histogramRes, responseTimesRes, agentPerfRes] = await Promise.all([
         fetch(overviewUrl, { headers }),
@@ -94,11 +95,11 @@ export default function AnalyticsPage() {
         fetch(responseTimesUrl, { headers }),
         fetch(agentPerfUrl, { headers })
       ]);
-      
+
       if (!overviewRes.ok || !timeSeriesRes.ok || !histogramRes.ok || !responseTimesRes.ok || !agentPerfRes.ok) {
         throw new Error('Failed to fetch metrics');
       }
-      
+
       const [overviewData, timeSeriesData, histogramData, responseTimesData, agentPerfData] = await Promise.all([
         overviewRes.json(),
         timeSeriesRes.json(),
@@ -106,13 +107,13 @@ export default function AnalyticsPage() {
         responseTimesRes.json(),
         agentPerfRes.json()
       ]);
-      
+
       setOverview(overviewData);
       setTimeSeries(Array.isArray(timeSeriesData) ? timeSeriesData : []);
       setConfidenceHistogram(Array.isArray(histogramData) ? { histogram: histogramData, totalMessages: histogramData.reduce((sum: number, bin: any) => sum + bin.count, 0) } : null);
       setResponseTimes(responseTimesData);
       setAgentPerformance(Array.isArray(agentPerfData) ? agentPerfData : []);
-      
+
       // Use actual session statuses from backend
       if (overviewData.sessionStatuses) {
         const statuses = [
@@ -137,7 +138,7 @@ export default function AnalyticsPage() {
       } else {
         setSessionStatuses([]);
       }
-      
+
       setLastUpdated(new Date());
     } catch (err: any) {
       console.error('Error fetching metrics:', err);
@@ -160,9 +161,9 @@ export default function AnalyticsPage() {
           headers: { 'Authorization': `Bearer ${ADMIN_SECRET}` }
         }
       );
-      
+
       if (!response.ok) throw new Error('Export failed');
-      
+
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -179,16 +180,7 @@ export default function AnalyticsPage() {
 
   if (loading && !overview) {
     return (
-      <div className="p-6">
-        <div className="animate-pulse space-y-4">
-          <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/4"></div>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {[1, 2, 3, 4].map(i => (
-              <div key={i} className="h-24 bg-gray-200 dark:bg-gray-700 rounded"></div>
-            ))}
-          </div>
-        </div>
-      </div>
+      <AnalyticsSkeleton />
     );
   }
 
@@ -196,7 +188,7 @@ export default function AnalyticsPage() {
     <div className="p-6 max-w-7xl mx-auto">
       <div className="mb-6">
         <h1 className="text-3xl font-bold mb-4 text-gray-900 dark:text-white">Analytics Dashboard</h1>
-        
+
         <div className="flex flex-wrap items-center gap-4 mb-4">
           <div>
             <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">
@@ -209,7 +201,7 @@ export default function AnalyticsPage() {
               className="border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
             />
           </div>
-          
+
           <div>
             <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">
               To Date {!fromDate && !toDate && <span className="text-gray-500 dark:text-gray-400 text-xs">(empty = all data)</span>}
@@ -221,7 +213,7 @@ export default function AnalyticsPage() {
               className="border border-gray-300 dark:border-gray-600 rounded px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
             />
           </div>
-          
+
           <div className="flex items-end">
             <button
               onClick={() => {
@@ -235,7 +227,7 @@ export default function AnalyticsPage() {
               Show All
             </button>
           </div>
-          
+
           <div>
             <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Interval</label>
             <select
@@ -248,7 +240,7 @@ export default function AnalyticsPage() {
               <option value="month">Month</option>
             </select>
           </div>
-          
+
           <div className="flex items-end gap-2">
             <button
               onClick={fetchMetrics}
@@ -263,7 +255,7 @@ export default function AnalyticsPage() {
               Download CSV
             </button>
           </div>
-          
+
           {lastUpdated && (
             <div className="text-sm text-gray-500 dark:text-gray-400">
               Last updated: {lastUpdated.toLocaleTimeString()}
@@ -271,7 +263,7 @@ export default function AnalyticsPage() {
             </div>
           )}
         </div>
-        
+
         {error && (
           <div className="bg-red-100 dark:bg-red-900/20 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-200 px-4 py-3 rounded mb-4">
             {error}
@@ -284,20 +276,20 @@ export default function AnalyticsPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <KpiCard title="Total Sessions" value={overview.totalSessions} />
           <KpiCard title="Total Messages" value={overview.totalMessages} />
-          <KpiCard 
-            title="Avg Response Time" 
+          <KpiCard
+            title="Avg Response Time"
             value={`${overview.avgBotResponseTimeMs || overview.avgResponseTimeMs || 0}ms`}
           />
-          <KpiCard 
-            title="Human Takeover Rate" 
+          <KpiCard
+            title="Human Takeover Rate"
             value={`${overview.humanTakeoverRate}%`}
           />
-          <KpiCard 
-            title="AI Fallback Count" 
+          <KpiCard
+            title="AI Fallback Count"
             value={overview.aiFallbackCount}
           />
-          <KpiCard 
-            title="Avg Messages/Session" 
+          <KpiCard
+            title="Avg Messages/Session"
             value={overview.avgMessagesPerSession.toFixed(2)}
           />
         </div>
@@ -370,7 +362,7 @@ export default function AnalyticsPage() {
                     return <Cell key={`cell-${index}`} fill={COLORS[originalIndex % COLORS.length]} />;
                   })}
                 </Pie>
-                <Tooltip 
+                <Tooltip
                   formatter={(value: number, name: string) => [`${value} sessions`, name]}
                   contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', backgroundColor: '#fff' }}
                 />
@@ -380,8 +372,8 @@ export default function AnalyticsPage() {
             <div className="flex flex-wrap justify-center gap-4 mt-4">
               {sessionStatuses.map((status, index) => (
                 <div key={status.name} className="flex items-center gap-2">
-                  <div 
-                    className="w-4 h-4 rounded" 
+                  <div
+                    className="w-4 h-4 rounded"
                     style={{ backgroundColor: status.value > 0 ? COLORS[index % COLORS.length] : '#e5e7eb' }}
                   />
                   <span className="text-sm text-gray-700 dark:text-gray-300">
