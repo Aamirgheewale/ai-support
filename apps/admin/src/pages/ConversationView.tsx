@@ -6,6 +6,7 @@ import ImageAnnotationModal from '../components/ImageAnnotationModal'
 import { useAppwriteUpload } from '../hooks/useAppwriteUpload'
 import { useTyping } from '../hooks/useTyping'
 import { ChevronDown, Circle, Check, User, Eye, Edit2, Download, X, Send } from 'lucide-react'
+import ChatSkeleton from '../components/skeletons/ChatSkeleton'
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000'
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_API_BASE || 'http://localhost:4000'
@@ -18,6 +19,8 @@ interface Message {
   agentId?: string
   type?: string
   attachmentUrl?: string
+  id?: string // Optional ID for tracking (optimistic vs server)
+  status?: 'sending' | 'sent' | 'error' // Optimistic UI status
 }
 
 export default function ConversationView() {
@@ -317,7 +320,28 @@ export default function ConversationView() {
       console.log('📨 Received agent_message:', data)
       if (data.sessionId === sessionId || !data.sessionId) {
         setMessages(prev => {
-          // Check if message already exists to avoid duplicates
+          // Optimistic UI Duplicate Handling:
+          // Check if we have a 'sending' message that matches this incoming message
+          const matchingOptimisticIndex = prev.findIndex(m =>
+            m.status === 'sending' &&
+            m.text === data.text &&
+            m.sender === 'agent'
+          );
+
+          if (matchingOptimisticIndex !== -1) {
+            console.log('   ✅ Matched optimistic message, updating to sent');
+            const newMessages = [...prev];
+            newMessages[matchingOptimisticIndex] = {
+              ...newMessages[matchingOptimisticIndex],
+              status: 'sent',
+              timestamp: new Date(data.ts || Date.now()).toISOString(),
+              agentId: data.agentId,
+              attachmentUrl: data.attachmentUrl
+            };
+            return newMessages;
+          }
+
+          // Check if message already exists (standard duplicate check)
           const exists = prev.some(m =>
             m.sender === 'agent' &&
             m.text === data.text &&
@@ -335,7 +359,8 @@ export default function ConversationView() {
             timestamp: new Date(data.ts || Date.now()).toISOString(),
             agentId: data.agentId,
             type: data.type,
-            attachmentUrl: data.attachmentUrl
+            attachmentUrl: data.attachmentUrl,
+            status: 'sent'
           }]
         })
       } else {
@@ -402,6 +427,25 @@ export default function ConversationView() {
       console.log('📨 Received internal_note:', data)
       if (data.sessionId === sessionId || !data.sessionId) {
         setMessages(prev => {
+          // Optimistic UI Duplicate Handling for Internal Notes
+          const matchingOptimisticIndex = prev.findIndex(m =>
+            m.status === 'sending' &&
+            m.text === data.text &&
+            m.sender === 'internal'
+          );
+
+          if (matchingOptimisticIndex !== -1) {
+            console.log('   ✅ Matched optimistic internal note, updating to sent');
+            const newMessages = [...prev];
+            newMessages[matchingOptimisticIndex] = {
+              ...newMessages[matchingOptimisticIndex],
+              status: 'sent',
+              timestamp: new Date(data.ts || Date.now()).toISOString(),
+              agentId: data.agentId
+            };
+            return newMessages;
+          }
+
           // Check if message already exists to avoid duplicates
           const exists = prev.some(m =>
             m.sender === 'internal' &&
@@ -417,7 +461,8 @@ export default function ConversationView() {
             sender: 'internal',
             text: data.text,
             timestamp: new Date(data.ts || Date.now()).toISOString(),
-            agentId: data.agentId
+            agentId: data.agentId,
+            status: 'sent'
           }]
         })
       } else {
@@ -965,70 +1010,122 @@ export default function ConversationView() {
     }
 
     if (socket) {
-      setIsSending(true);
+      // Optimistic UI: Immediately add message to UI
+      const tempId = Date.now().toString(); // Temporary ID for optimistic message
+      const isInternal = isPrivateNote;
+      const messageType = annotatedImageBlob ? 'image' : 'text';
+
+      // Create optimistic message object
+      const optimisticMessage: Message = {
+        id: tempId,
+        sender: isInternal ? 'internal' : 'agent',
+        text: messageText.trim() || (annotatedImageBlob ? 'Image' : ''),
+        timestamp: new Date().toISOString(),
+        agentId: effectiveAgentId,
+        type: messageType,
+        attachmentUrl: annotatedImageBlob ? URL.createObjectURL(annotatedImageBlob) : undefined,
+        status: 'sending'
+      };
+
+      // Add to state immediately
+      setMessages(prev => [...prev, optimisticMessage]);
+
+      // Clear input immediately
+      setMessageText('');
+      setAnnotatedImageBlob(null);
+      setIsPrivateNote(false);
+
+      // Don't block UI with isSending
+      // setIsSending(true); 
+
+      // Immediate Connection Check
+      // Only check right before emitting if needed, but we do it inside Promise now for robustness.
+      // However, failing fast here is also good UX.
+      if (!socket.connected) {
+        setMessages(prev => prev.map(m =>
+          m.id === tempId ? { ...m, status: 'error' } : m
+        ));
+        console.error('Socket disconnected, cannot send message');
+        // We return early effectively simulating a failed send
+        // Since we are inside an if(socket) block, this is extra safety.
+        return;
+      }
+
       try {
         let attachmentUrl = undefined;
-        let messageType = 'text';
 
         // If there's an annotated image, upload it first
         if (annotatedImageBlob) {
           try {
             attachmentUrl = await uploadAnnotatedImage(annotatedImageBlob);
-            messageType = 'image';
           } catch (uploadErr) {
-            alert('Failed to upload annotated image: ' + (uploadErr instanceof Error ? uploadErr.message : 'Unknown error'));
-            setIsSending(false);
+            console.error('Failed to upload image:', uploadErr);
+            // Update message status to error
+            setMessages(prev => prev.map(m =>
+              m.id === tempId ? { ...m, status: 'error' } : m
+            ));
+            alert('Failed to upload annotated image');
             return;
           }
         }
 
-        if (isPrivateNote) {
-          // Send as internal note (private, only visible to agents)
-          const payload = {
-            sessionId,
-            text: messageText.trim() || 'Annotated Image',
-            agentId: effectiveAgentId,
-            type: messageType,
-            attachmentUrl
-          };
-          socket.emit('internal_note', payload)
-          setMessages(prev => [...prev, {
-            sender: 'internal',
-            text: payload.text,
-            timestamp: new Date().toISOString(),
-            agentId: effectiveAgentId,
-            type: messageType,
-            attachmentUrl
-          }])
+        const payload = {
+          sessionId,
+          text: optimisticMessage.text,
+          agentId: effectiveAgentId,
+          type: messageType,
+          attachmentUrl
+        };
+
+        if (isInternal) {
+          await new Promise((resolve, reject) => {
+            if (!socket.connected) {
+              reject(new Error('Socket disconnected'));
+              return;
+            }
+
+            const timer = setTimeout(() => reject(new Error('Timeout')), 5000);
+            socket.emit('internal_note', payload, (response: any) => {
+              clearTimeout(timer);
+              if (response?.status === 'error') {
+                reject(new Error(response.error));
+              } else {
+                resolve(response);
+              }
+            });
+          });
         } else {
-          // Send as regular agent message (visible to user)
-          const payload = {
-            sessionId,
-            text: messageText.trim() || 'Image',
-            agentId: effectiveAgentId,
-            type: messageType,
-            attachmentUrl
-          };
-          socket.emit('agent_message', payload)
-          setMessages(prev => [...prev, {
-            sender: 'agent',
-            text: payload.text,
-            timestamp: new Date().toISOString(),
-            agentId: effectiveAgentId,
-            type: messageType,
-            attachmentUrl
-          }])
+          await new Promise((resolve, reject) => {
+            if (!socket.connected) {
+              reject(new Error('Socket disconnected'));
+              return;
+            }
+
+            const timer = setTimeout(() => reject(new Error('Timeout')), 5000);
+            socket.emit('agent_message', payload, (response: any) => {
+              clearTimeout(timer);
+              if (response?.status === 'error') {
+                reject(new Error(response.error));
+              } else {
+                resolve(response);
+              }
+            });
+          });
         }
 
-        // Success: Clear state
-        setMessageText('')
-        setAnnotatedImageBlob(null)
-        setIsPrivateNote(false) // Reset toggle after sending
+        // Update message status to sent upon successful ack
+        setMessages(prev => prev.map(m =>
+          m.id === tempId ? { ...m, status: 'sent', attachmentUrl } : m
+        ));
+
       } catch (err) {
         console.error('Error sending message:', err);
-        alert('Failed to send message: ' + (err instanceof Error ? err.message : 'Unknown error'));
-      } finally {
-        setIsSending(false);
+        // Update message status to error
+        setMessages(prev => prev.map(m =>
+          m.id === tempId ? { ...m, status: 'error' } : m
+        ));
+        // Optional: Do not alert to avoid interrupting user flow, the UI red text is enough
+        // alert('Failed to send message: ' + (err instanceof Error ? err.message : 'Unknown error'));
       }
     }
   }
@@ -1260,7 +1357,7 @@ export default function ConversationView() {
         style={{ minHeight: 0 }}
       >
         {loading ? (
-          <div className="text-gray-600 dark:text-gray-400">Loading messages...</div>
+          <ChatSkeleton />
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {/* Load older messages button */}
@@ -1402,8 +1499,10 @@ export default function ConversationView() {
                   ) : (
                     <div className="whitespace-pre-wrap break-words text-current">{msg.text}</div>
                   )}
-                  <div className="text-[11px] opacity-70 mt-1 text-current">
+                  <div className="text-[11px] opacity-70 mt-1 text-current flex items-center gap-1">
                     {new Date(msg.timestamp).toLocaleString()}
+                    {msg.status === 'sending' && <span className="text-xs opacity-70">(Sending...)</span>}
+                    {msg.status === 'error' && <span className="text-xs text-red-500 font-bold">(Failed)</span>}
                   </div>
                 </div>
               )
@@ -1533,9 +1632,9 @@ export default function ConversationView() {
           <button
             onClick={sendMessage}
             disabled={!canSendMessages || (isSending) || (!messageText.trim() && !annotatedImageBlob)}
-            className={`h-11 px-6 rounded-xl font-medium text-sm flex items-center gap-2 transition-all shadow-sm ${canSendMessages && (messageText.trim() || annotatedImageBlob) && !isSending
-                ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200 dark:shadow-none hover:-translate-y-0.5'
-                : 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed'
+            className={`h-11 px-6 rounded-xl font-medium text-sm flex items-center gap-2 transition-all shadow-sm ${canSendMessages && (messageText.trim() || annotatedImageBlob)
+              ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200 dark:shadow-none hover:-translate-y-0.5'
+              : 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed'
               }`}
           >
             <span>{isSending ? 'Sending...' : 'Send'}</span>
