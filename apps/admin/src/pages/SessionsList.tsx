@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import PaginationControls from '../components/common/PaginationControls'
 import { Card, TableContainer, Table, Thead, Th, Tbody, Tr, Td } from '../components/ui'
+import SessionsTableSkeleton from '../components/skeletons/SessionsTableSkeleton'
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000'
 const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET || 'dev-secret-change-me'
@@ -261,20 +262,20 @@ export default function SessionsList() {
     if (e) {
       e.stopPropagation()
     }
-    
+
     // Get current paginated sessions (recalculate to ensure we have latest)
     const currentPaginated = allSessions.slice(
       currentPage * displayLimit,
       (currentPage * displayLimit) + displayLimit
     )
-    
+
     if (currentPaginated.length === 0) {
       return
     }
-    
+
     // Check if all visible rows on current page are selected
     const allVisibleSelected = currentPaginated.every(s => selectedSessions.has(s.sessionId))
-    
+
     if (allVisibleSelected) {
       // Deselect all visible rows
       const newSelected = new Set(selectedSessions)
@@ -407,7 +408,7 @@ export default function SessionsList() {
       </div>
 
       {loading ? (
-        <div className="text-center py-8 text-gray-700 dark:text-gray-300">Loading...</div>
+        <SessionsTableSkeleton />
       ) : (
         <Card className="overflow-hidden">
           <TableContainer>
@@ -417,7 +418,7 @@ export default function SessionsList() {
                   <Th className="w-10" onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"
-                      checked={paginatedSessions.length > 0 && 
+                      checked={paginatedSessions.length > 0 &&
                         paginatedSessions.every(s => selectedSessions.has(s.sessionId))}
                       onChange={(e) => {
                         e.stopPropagation()
