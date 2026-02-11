@@ -20,7 +20,7 @@ interface Session {
 }
 
 export default function SessionsList() {
-  const { hasRole, hasAnyRole, token } = useAuth()
+  const { hasRole, hasAnyRole, user, token, signout } = useAuth()
   const [sessions, setSessions] = useState<Session[]>([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('')
@@ -52,12 +52,20 @@ export default function SessionsList() {
   useEffect(() => {
     // Fetch agents list for filter
     async function loadAgents() {
+      if (!token) {
+        console.warn("Skipping loadAgents - Token not ready yet")
+        return
+      }
       try {
         const res = await fetch(`${API_BASE}/admin/users/agents`, {
           headers: {
-            'Authorization': `Bearer ${token || ADMIN_SECRET}`
+            'Authorization': `Bearer ${token}`
           }
         })
+        if (res.status === 401) {
+          console.error("401 Error in loadAgents - Token might be invalid", token)
+          return
+        }
         const data = await res.json()
         if (data.agents) {
           setAgents(data.agents)
@@ -67,23 +75,28 @@ export default function SessionsList() {
       }
     }
     loadAgents()
-  }, []) // Run once on mount
+  }, [token]) // Add token to dependency array
 
   useEffect(() => {
     // Reset to first page when filters change
     setCurrentPage(0)
     // Fetch all sessions when filters change
     loadSessions(0)
-  }, [statusFilter, search, agentFilter, startDate, endDate])
+  }, [statusFilter, search, agentFilter, startDate, endDate, token])
 
   useEffect(() => {
     // Fetch all sessions on mount or when limit changes
     console.log(`🔄 Loading all sessions: limit=${limit}`)
     loadSessions(0)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [limit])
+  }, [limit, token])
 
   async function loadSessions(currentOffset: number = 0) { // Always fetch from offset 0 to get all sessions
+    console.log("Auth Debug:", { user, token }) // User requested debug log
+    if (!token) {
+      console.warn("Skipping loadSessions - Token not ready yet")
+      return
+    }
     setLoading(true)
     try {
       const params = new URLSearchParams()
@@ -98,10 +111,15 @@ export default function SessionsList() {
 
       const res = await fetch(`${API_BASE}/admin/sessions?${params}`, {
         headers: {
-          'Authorization': `Bearer ${token || ADMIN_SECRET}`
+          'Authorization': `Bearer ${token}`
         },
         credentials: 'include' // Include cookies as fallback
       })
+      if (res.status === 401) {
+        // signout() // Temporarily disabled for debugging
+        console.error("401 Error - Token might be invalid or missing", token)
+        return
+      }
       const data = await res.json()
 
       // Handle both old format (sessions) and new format (items)
