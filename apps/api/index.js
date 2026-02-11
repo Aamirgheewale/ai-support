@@ -2,6 +2,8 @@ require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const { createClient } = require('redis');
+const { createAdapter } = require('@socket.io/redis-adapter');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 
@@ -91,6 +93,25 @@ const io = new Server(server, {
   }
 });
 app.set('io', io);
+
+// Redis Adapter for Horizontal Scaling (with graceful fallback)
+if (process.env.REDIS_URL) {
+  const pubClient = createClient({ url: process.env.REDIS_URL });
+  const subClient = pubClient.duplicate();
+
+  // Prevent Redis errors from crashing the Node server
+  pubClient.on('error', (err) => console.error('🔴 Redis Pub Error:', err));
+  subClient.on('error', (err) => console.error('🔴 Redis Sub Error:', err));
+
+  Promise.all([pubClient.connect(), subClient.connect()]).then(() => {
+    io.adapter(createAdapter(pubClient, subClient));
+    console.log('✅ Redis Socket.IO Adapter connected');
+  }).catch((err) => {
+    console.error('❌ Redis Adapter connection failed, falling back to memory:', err);
+  });
+} else {
+  console.log('⚠️  No REDIS_URL found. Using standard in-memory Socket.IO (Local Mode).');
+}
 
 // Initialize Socket Handlers
 initSocketHandlers(io);
