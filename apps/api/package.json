@@ -16,6 +16,7 @@
     "@anthropic-ai/sdk": "^0.71.2",
     "@google/genai": "^1.30.0",
     "@google/generative-ai": "^0.24.1",
+    "@socket.io/redis-adapter": "^8.3.0",
     "appwrite": "^21.4.0",
     "archiver": "^7.0.1",
     "array-flatten": "^3.0.0",
@@ -31,6 +32,7 @@
     "node-appwrite": "^20.3.0",
     "node-fetch": "^2.7.0",
     "openai": "^6.15.0",
+    "redis": "^5.10.0",
     "resend": "^4.0.0",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1"
