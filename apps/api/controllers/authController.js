@@ -30,8 +30,10 @@ const userCache = new LRUCache({
 // ============================================================================
 
 async function getUserById(userId) {
+    console.log(`🔍 getUserById called with userId: "${userId}"`); // Debug log
     // Check cache first
     if (userCache.has(userId)) {
+        console.log(`✅ User found in cache: ${userId}`);
         return userCache.get(userId);
     }
 
@@ -44,6 +46,7 @@ async function getUserById(userId) {
             console.warn('⚠️  Query class not available');
             return null;
         }
+        console.log(`🔍 Querying Appwrite for userId: "${userId}"`);
         const result = await awDatabases.listDocuments(
             APPWRITE_DATABASE_ID,
             APPWRITE_USERS_COLLECTION_ID,
@@ -51,6 +54,12 @@ async function getUserById(userId) {
             1
         );
         const user = result.documents.length > 0 ? result.documents[0] : null;
+
+        if (user) {
+            console.log(`✅ User found in DB: ${userId}`);
+        } else {
+            console.log(`❌ User NOT found in DB for userId: "${userId}"`);
+        }
 
         // Cache the result (even if null, to prevent hammering for non-existent users)
         // For null results, use shorter TTL
@@ -61,6 +70,7 @@ async function getUserById(userId) {
     } catch (err) {
         // If collection doesn't exist or attribute not found, return null (migration not run yet)
         if (err.code === 404 || err.type === 'general_query_invalid' || err.message?.includes('not found')) {
+            console.log(`⚠️  Query error (likely migration not run): ${err.message}`);
             return null;
         }
         console.error('Error fetching user by ID:', err.message || err);
@@ -396,23 +406,44 @@ async function requireAuth(req, res, next) {
 function requireRole(allowedRoles) {
     const roles = Array.isArray(allowedRoles) ? allowedRoles : [allowedRoles];
     return async (req, res, next) => {
+        console.log(`🛡️ [requireRole] Checking access for user: ${req.user?.userId || 'unknown'}`);
+        console.log(`🛡️ [requireRole] Required roles:`, roles);
+        console.log(`🛡️ [requireRole] User object:`, req.user);
+
         if (!req.user || !req.user.userId) {
+            console.error('❌ [requireRole] No user in request - authentication required');
             return res.status(401).json({ error: 'Authentication required' });
         }
 
         const userId = req.user.userId;
+        console.log(`👤 [requireRole] User "${userId}" has in-memory roles:`, req.user.roles);
+
         // Check in-memory first (for dev-admin)
         if (req.user.roles && Array.isArray(req.user.roles)) {
             const hasRole = roles.some(role => req.user.roles.includes(role));
-            if (hasRole) return next();
+            if (hasRole) {
+                console.log(`✅ [requireRole] Access granted via in-memory roles for "${userId}"`);
+                return next();
+            }
+            console.log(`⚠️ [requireRole] In-memory roles check failed, trying Appwrite...`);
         }
 
         try {
+            console.log(`🔍 [requireRole] Checking Appwrite roles for "${userId}"...`);
             for (const role of roles) {
-                if (await isUserInRole(userId, role)) return next();
+                console.log(`🔍 [requireRole] Checking if user has role: "${role}"`);
+                if (await isUserInRole(userId, role)) {
+                    console.log(`✅ [requireRole] Access granted via Appwrite role "${role}" for "${userId}"`);
+                    return next();
+                }
             }
-        } catch (e) { }
+        } catch (e) {
+            console.error('❌ [requireRole] Role check error:', e);
+        }
 
+        console.error(`⛔ [requireRole] Access Denied for "${userId}"`);
+        console.error(`   User has roles: [${req.user.roles?.join(', ') || 'none'}]`);
+        console.error(`   Required one of: [${roles.join(', ')}]`);
         return res.status(403).json({ error: 'Insufficient permissions' });
     };
 }
