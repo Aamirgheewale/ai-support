@@ -32,7 +32,7 @@ router.get('/assignments', requireAdminAuth, getAssignments);
 router.post('/export', requireAdminAuth, bulkExportSessions);
 
 // GET / - List sessions
-router.get('/', requireAdminAuth, getSessions);
+router.get('/', requireAuth, requireRole(['admin', 'agent']), getSessions);
 
 // GET /agent/:agentId
 router.get('/agent/:agentId', requireAuth, requireRole(['admin', 'agent']), getAgentSessions);
