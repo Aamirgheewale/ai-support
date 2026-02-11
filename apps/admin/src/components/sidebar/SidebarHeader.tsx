@@ -121,9 +121,9 @@ export default function SidebarHeader({ isCollapsed = false }: SidebarHeaderProp
   const firstName = getFirstName(user.name, user.email)
 
   return (
-    <div className="sticky top-0 z-[60]" ref={profileMenuRef}>
+    <div className="relative top-0 z-[60]" ref={profileMenuRef}>
       {/* Header Container */}
-      <div className={`flex items-center ${isCollapsed ? 'justify-center px-2' : 'justify-between px-4'} py-3 border-b border-gray-200/80 mt-4`}>
+      <div className={`flex items-center ${isCollapsed ? 'justify-center px-2 py-2' : 'justify-between px-4 py-3'} border-b border-gray-200/80`}>
         {/* User Profile Button */}
         <button
           onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
@@ -132,7 +132,7 @@ export default function SidebarHeader({ isCollapsed = false }: SidebarHeaderProp
         >
           {/* Square Avatar with Status Indicator */}
           <div className="relative">
-            <div className={`w-16 h-14 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-sm font-semibold shadow-sm transition-transform duration-200 ${isCollapsed ? 'group-hover/item:scale-125' : ''} ml-2`}>
+            <div className={`${isCollapsed ? 'w-12 h-12' : 'w-16 h-14'} rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-sm font-semibold shadow-sm transition-transform duration-200 ${isCollapsed ? 'group-hover/item:scale-125' : ''} ${isCollapsed ? '' : 'ml-2'}`}>
               {initials}
             </div>
             {/* Status Indicator Dot - Floating half outside avatar */}
