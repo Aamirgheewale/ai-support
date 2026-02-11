@@ -26,7 +26,7 @@ interface Message {
 export default function ConversationView() {
   const { sessionId } = useParams<{ sessionId: string }>()
   const navigate = useNavigate()
-  const { hasRole, hasAnyRole, user, token } = useAuth()
+  const { hasRole, hasAnyRole, user, token, signout } = useAuth()
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(true)
   const [agentId, setAgentId] = useState('')
@@ -103,7 +103,7 @@ export default function ConversationView() {
   useEffect(() => {
     async function fetchCannedResponses() {
       try {
-        const authToken = token || localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token')
+        const authToken = token
         // IMPORTANT: Only fetch shortcuts (type=shortcut) - exclude bot auto-replies
         const response = await fetch(`${API_BASE}/api/canned-responses?type=shortcut`, {
           headers: {
@@ -111,6 +111,10 @@ export default function ConversationView() {
             'Content-Type': 'application/json'
           }
         })
+        if (response.status === 401) {
+          signout()
+          return
+        }
         if (response.ok) {
           const data = await response.json()
           // API returns { responses: [...], total: number } or { documents: [...] } or array
@@ -559,10 +563,15 @@ export default function ConversationView() {
     try {
       const res = await fetch(`${API_BASE}/admin/users/agents`, {
         headers: {
-          'Authorization': `Bearer ${token || ADMIN_SECRET}`
+          'Authorization': `Bearer ${token}`
         },
         credentials: 'include'
       })
+
+      if (res.status === 401) {
+        signout()
+        return
+      }
 
       if (!res.ok) {
         throw new Error('Failed to load agents')
@@ -649,10 +658,15 @@ export default function ConversationView() {
     try {
       const res = await fetch(`${API_BASE}/admin/sessions`, {
         headers: {
-          'Authorization': `Bearer ${token || ADMIN_SECRET}`
+          'Authorization': `Bearer ${token}`
         },
         credentials: 'include' // Include cookies as fallback
       })
+
+      if (res.status === 401) {
+        signout()
+        return
+      }
       const data = await res.json()
       // The API returns items, not sessions
       const session = (data.items || data.sessions || []).find((s: any) => s.sessionId === sessionId)
@@ -722,10 +736,15 @@ export default function ConversationView() {
 
       const res = await fetch(`${API_BASE}/admin/sessions/${sessionId}/messages?${params}`, {
         headers: {
-          'Authorization': `Bearer ${token || ADMIN_SECRET}`
+          'Authorization': `Bearer ${token}`
         },
         credentials: 'include' // Include cookies as fallback
       })
+
+      if (res.status === 401) {
+        signout()
+        return
+      }
 
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}))
