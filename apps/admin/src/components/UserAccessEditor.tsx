@@ -23,6 +23,7 @@ const AVAILABLE_PERMISSIONS = [
     { id: 'accuracy', label: 'Accuracy', description: 'Manage AI accuracy' },
     { id: 'encryption', label: 'Encryption', description: 'Manage security keys' },
     { id: 'notifications', label: 'Notifications', description: 'Receive system alerts' },
+    { id: 'agent_inbox', label: 'Agent Inbox', description: 'Access personal agent inbox' },
 ];
 
 export default function UserAccessEditor({
