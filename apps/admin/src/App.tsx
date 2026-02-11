@@ -3,7 +3,7 @@ import { AuthProvider, useAuth, ProtectedRoute } from './hooks/useAuth'
 import { NotificationProvider, useNotifications } from './context/NotificationContext'
 import { SoundProvider } from './context/SoundContext'
 import { ThemeProvider, useTheme } from './context/ThemeContext'
-import { Shirt, Sun, Moon, ChevronRight, ChevronLeft, MessageSquare, Video, Users, User, FileText, Bell, BarChart3, CheckCircle, Lock, Check, LogOut, LayoutDashboard } from 'lucide-react'
+import { Shirt, Sun, Moon, ChevronRight, ChevronLeft, MessageSquare, Video, Users, User, FileText, Bell, BarChart3, CheckCircle, Lock, Check, LogOut, LayoutDashboard, Inbox } from 'lucide-react'
 import SessionsList from './pages/SessionsList'
 import ConversationView from './pages/ConversationView'
 import Dashboard from './pages/Dashboard'
@@ -22,6 +22,7 @@ import AudioNotifications from './components/common/AudioNotifications'
 import SidebarHeader from './components/sidebar/SidebarHeader'
 import StopRingButton from './components/sidebar/StopRingButton'
 import WaitingForAccess from './pages/WaitingForAccess'
+import AgentInbox from './pages/AgentInbox'
 
 import { useState, useEffect, useRef } from 'react'
 
@@ -173,14 +174,33 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
         <SidebarHeader isCollapsed={isSidebarCollapsed} />
 
         {/* Navigation Links */}
-        <nav className={`flex-1 py-4 space-y-1 ${isSidebarCollapsed ? 'px-2 overflow-visible' : 'px-4 overflow-y-auto'}`}>
+        <nav className={`flex-1 overflow-y-auto scrollbar-hide ${isSidebarCollapsed ? 'py-2 px-2 space-y-0.5' : 'py-4 px-4 space-y-1'}`}>
 
 
+
+          {hasPermission('agent_inbox') && (
+            <Link
+              to="/agent/inbox"
+              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 py-2 relative group/item' : 'px-4 py-3'} text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/agent/inbox')
+                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
+                : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
+                } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
+              title={isSidebarCollapsed ? 'Inbox' : ''}
+            >
+              <Inbox className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
+              {!isSidebarCollapsed && <span>Inbox</span>}
+              {isSidebarCollapsed && (
+                <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+                  Inbox
+                </span>
+              )}
+            </Link>
+          )}
 
           {hasPermission('dashboard') && (
             <Link
               to="/dashboard"
-              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/dashboard')
+              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 py-2 relative group/item' : 'px-4 py-3'} text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/dashboard')
                 ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
                 : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
                 } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
@@ -199,7 +219,7 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
           {hasPermission('sessions') && (
             <Link
               to="/sessions"
-              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/sessions')
+              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 py-2 relative group/item' : 'px-4 py-3'} text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/sessions')
                 ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
                 : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
                 } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
@@ -218,7 +238,7 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
           {hasPermission('live') && (
             <Link
               to="/live"
-              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/live')
+              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 py-2 relative group/item' : 'px-4 py-3'} text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/live')
                 ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
                 : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
                 } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
@@ -234,11 +254,13 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
             </Link>
           )}
 
+
+
           {/* Users link - visible if has 'users' permission (previously admin only) */}
           {hasPermission('users') && (
             <Link
               to="/users"
-              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/users')
+              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 py-2 relative group/item' : 'px-4 py-3'} text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/users')
                 ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
                 : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
                 } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
@@ -258,7 +280,7 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
           {hasPermission('agents_online') && (
             <Link
               to="/agents-online"
-              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/agents-online')
+              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 py-2 relative group/item' : 'px-4 py-3'} text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/agents-online')
                 ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
                 : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
                 } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
@@ -286,7 +308,7 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
                     navigate('/pending-queries?status=pending');
                   }
                 }}
-                className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'justify-between px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isPendingQueriesActive
+                className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-2 py-2 relative group/item' : 'justify-between px-4 py-3'} text-sm font-medium rounded-lg transition-all duration-200 ${isPendingQueriesActive
                   ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
                   : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
                   } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
@@ -347,7 +369,7 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
           {hasPermission('notifications') && (
             <Link
               to="/notifications"
-              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'justify-between px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/notifications')
+              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 py-2 relative group/item' : 'justify-between px-4 py-3'} text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/notifications')
                 ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
                 : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
                 } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
@@ -376,7 +398,7 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
           {hasPermission('analytics') && (
             <Link
               to="/analytics"
-              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/analytics')
+              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 py-2 relative group/item' : 'px-4 py-3'} text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/analytics')
                 ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
                 : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
                 } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
@@ -396,7 +418,7 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
           {hasPermission('accuracy') && (
             <Link
               to="/accuracy"
-              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/accuracy')
+              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 py-2 relative group/item' : 'px-4 py-3'} text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/accuracy')
                 ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
                 : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
                 } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
@@ -416,7 +438,7 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
           {hasPermission('encryption') && (
             <Link
               to="/encryption"
-              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/encryption')
+              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 py-2 relative group/item' : 'px-4 py-3'} text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/encryption')
                 ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
                 : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
                 } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
@@ -620,6 +642,7 @@ function RootRedirect() {
 
   // Agents go to first allowed route
   const p = user.permissions || []
+  if (p.includes('agent_inbox')) return <Navigate to="/agent/inbox" replace />
   if (p.includes('dashboard')) return <Navigate to="/dashboard" replace />
   if (p.includes('sessions')) return <Navigate to="/sessions" replace />
   if (p.includes('live')) return <Navigate to="/live" replace />
@@ -666,6 +689,7 @@ function App() {
                     <Route path="/sessions" element={<ProtectedRoute requiredPermission="sessions"><SessionsList /></ProtectedRoute>} />
                     <Route path="/sessions/:sessionId" element={<ProtectedRoute requiredPermission="sessions"><ConversationView /></ProtectedRoute>} />
                     <Route path="/live" element={<ProtectedRoute requiredPermission="live"><LiveVisitors /></ProtectedRoute>} />
+                    <Route path="/agent/inbox" element={<ProtectedRoute requiredPermission="agent_inbox"><AgentInbox /></ProtectedRoute>} />
                     <Route path="/pending-queries" element={<ProtectedRoute requiredRole={['admin', 'agent']} requiredPermission="pending_queries"><PendingQueries /></ProtectedRoute>} />
 
                     <Route path="/analytics" element={<ProtectedRoute requiredPermission="analytics"><AnalyticsPage /></ProtectedRoute>} />
