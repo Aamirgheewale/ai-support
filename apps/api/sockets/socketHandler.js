@@ -156,6 +156,7 @@ module.exports = function (io) {
           };
           await awDatabases.createDocument(APPWRITE_DATABASE_ID, APPWRITE_NOTIFICATIONS_COLLECTION_ID || 'notifications', ID.unique(), notif);
           io.to('admin').emit('new_notification', notif);
+          io.to('admin_feed').emit('new_notification', notif); // Also emit to admin_feed for AudioNotifications
         } catch (e) { console.error('Error creating notification:', e); }
       }
     });

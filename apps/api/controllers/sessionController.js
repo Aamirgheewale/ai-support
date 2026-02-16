@@ -519,7 +519,7 @@ async function getSessionMessages(req, res) {
                 try { decrypted.metadata = JSON.parse(msg.metadata); }
                 catch { decrypted.metadata = msg.metadata; }
             }
-            
+
             // Ensure type and attachmentUrl are included (check both direct fields and metadata)
             if (!decrypted.type && decrypted.metadata && typeof decrypted.metadata === 'object' && decrypted.metadata.type) {
                 decrypted.type = decrypted.metadata.type;
@@ -527,7 +527,7 @@ async function getSessionMessages(req, res) {
             if (!decrypted.attachmentUrl && decrypted.metadata && typeof decrypted.metadata === 'object' && decrypted.metadata.attachmentUrl) {
                 decrypted.attachmentUrl = decrypted.metadata.attachmentUrl;
             }
-            
+
             return decrypted;
         });
 
@@ -572,7 +572,9 @@ async function assignSession(req, res) {
 
         if (io) {
             notifyAgentIfOnline(io, agentId, { type: 'assignment', sessionId });
-            io.to(sessionId).emit('agent_joined', { agentId, agentName });
+            io.to(sessionId).emit('agent_joined', { agentId, agentName, sessionId });
+            io.to('admin').emit('agent_joined', { agentId, agentName, sessionId }); // Broadcast to all admins for "ring until answered"
+            io.to('admin_feed').emit('agent_joined', { agentId, agentName, sessionId }); // Also emit to admin_feed for AudioNotifications
             io.to('admin_feed').emit('session_updated', { sessionId, assignedAgent: agentId });
         }
 
