@@ -14,7 +14,8 @@ interface Session {
     lastMessage: string;
     userMeta: string | any;
     assignedAgent?: string; // Backend returns assignedAgent, not assignedAgentId
-    updatedAt: string;
+    lastSeen?: string;
+    $createdAt?: string;
 }
 
 export default function AgentInbox() {
@@ -135,7 +136,7 @@ export default function AgentInbox() {
             `}
                     >
                         <MessageSquare className="w-4 h-4" />
-                        My Active
+                        My Assignment
                     </button>
                     <button
                         onClick={() => setActiveTab('unassigned')}
@@ -223,7 +224,7 @@ export default function AgentInbox() {
                                         </Td>
                                         <Td>
                                             <span className="text-gray-500 dark:text-gray-400 text-sm">
-                                                {new Date(session.updatedAt).toLocaleDateString()}
+                                                {session.lastSeen ? new Date(session.lastSeen).toLocaleString() : session.$createdAt ? new Date(session.$createdAt).toLocaleString() : '-'}
                                             </span>
                                         </Td>
                                         <Td className="text-right">

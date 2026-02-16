@@ -23,17 +23,18 @@ interface ToastMessage {
  * - session_started (Sound: Ring)
  */
 export default function AudioNotifications() {
-  const { 
-    playRing, 
-    playPop
+  const {
+    playRing,
+    playPop,
+    stopRing
   } = useSoundContext()
   const [socket, setSocket] = useState<Socket | null>(null)
   const [toasts, setToasts] = useState<ToastMessage[]>([])
-  
+
   // Use refs to store the play functions to avoid infinite re-renders
   const playRingRef = useRef(playRing)
   const playPopRef = useRef(playPop)
-  
+
   // Keep refs updated with latest functions
   useEffect(() => {
     playRingRef.current = playRing
@@ -46,34 +47,68 @@ export default function AudioNotifications() {
       withCredentials: true,
       transports: ['websocket', 'polling']
     })
-    
+
+    // Track ringing sessions and safety timeout
+    const ringingSessions = new Set<string>()
+    let ringTimeoutId: ReturnType<typeof setTimeout> | null = null
+
     sock.on('connect', () => {
       console.log('🔊 Audio notifications socket connected, socket.id:', sock.id)
-      // Join admin feed to receive global updates
+      // Join admin_feed to receive global updates
       sock.emit('join_admin_feed')
       console.log('📤 Emitted join_admin_feed')
     })
-    
+
     sock.on('error', (error: any) => {
       console.error('❌ Socket error:', error)
     })
-    
+
     sock.on('disconnect', () => {
       console.log('🔌 Audio notifications socket disconnected')
+      // Stop ringing on disconnect
+      if (ringingSessions.size > 0) {
+        stopRing()
+        ringingSessions.clear()
+        if (ringTimeoutId) {
+          clearTimeout(ringTimeoutId)
+          ringTimeoutId = null
+        }
+      }
     })
 
     // ============================================
-    // CHANNEL A: Toast Only (Temporary)
+    // CHANNEL A: Toast + Sound
     // ============================================
 
-    // 1. session_started - Ring sound + Toast
+    // 1. session_started - Toast only (NO ring sound)
     sock.on('session_started', (data: any) => {
       console.log('🔔 [CHANNEL A] session_started:', data)
       const { sessionId } = data || {}
       if (sessionId) {
-        // Attempt to play ring sound with error handling
+        // Toast notification only (ring removed)
+        const toastId = `session-${sessionId}-${Date.now()}`
+        setToasts(prev => [...prev, {
+          id: toastId,
+          message: `New chat session: ${sessionId}`,
+          type: 'info'
+        }])
+      }
+    })
+
+    // 2. new_notification - Ring sound for agent requests
+    sock.on('new_notification', (data: any) => {
+      console.log('🔔 [CHANNEL A] new_notification:', data)
+      const { type, sessionId, content } = data || {}
+
+      // Only ring for agent requests
+      if (type === 'request_agent' && sessionId) {
+        console.log('🔊 Agent requested - starting ring loop...')
+
+        // Add to ringing sessions
+        ringingSessions.add(sessionId)
+
+        // Start ringing
         try {
-          console.log('🔊 Attempting to play ring sound...')
           const playPromise = playRingRef.current()
           if (playPromise && typeof playPromise.then === 'function') {
             playPromise.catch((err: any) => {
@@ -84,23 +119,77 @@ export default function AudioNotifications() {
         } catch (err) {
           console.error('❌ Error calling playRing:', err)
         }
-        
-        const toastId = `session-${sessionId}-${Date.now()}`
+
+        // Safety timeout: stop ringing after 30 seconds
+        if (ringTimeoutId) clearTimeout(ringTimeoutId)
+        ringTimeoutId = setTimeout(() => {
+          console.log('⏰ Ring safety timeout reached (30s) - stopping ring')
+          stopRing()
+          ringingSessions.clear()
+          ringTimeoutId = null
+        }, 30000)
+
+        // Toast notification
+        const toastId = `agent-request-${sessionId}-${Date.now()}`
         setToasts(prev => [...prev, {
           id: toastId,
-          message: `New incoming chat! Session: ${sessionId}`,
+          message: `Agent requested in session: ${sessionId}`,
           type: 'info'
         }])
       }
     })
 
-    // 2. user_message_for_agent - Pop sound + Toast
+    // 3. agent_joined - Stop ringing when agent joins
+    sock.on('agent_joined', (data: any) => {
+      console.log('🔔 [CHANNEL A] agent_joined:', data)
+      const { sessionId, agentId, agentName } = data || {}
+
+      if (sessionId && ringingSessions.has(sessionId)) {
+        console.log(`✅ Agent ${agentName || agentId} joined session ${sessionId} - stopping ring`)
+
+        // Remove from ringing sessions
+        ringingSessions.delete(sessionId)
+
+        // Stop ring if no more ringing sessions
+        if (ringingSessions.size === 0) {
+          stopRing()
+          if (ringTimeoutId) {
+            clearTimeout(ringTimeoutId)
+            ringTimeoutId = null
+          }
+        }
+      }
+    })
+
+    // 4. session_updated - Stop ringing if session is assigned
+    sock.on('session_updated', (data: any) => {
+      console.log('🔔 [CHANNEL A] session_updated:', data)
+      const { sessionId, assignedAgent } = data || {}
+
+      if (sessionId && assignedAgent && ringingSessions.has(sessionId)) {
+        console.log(`✅ Session ${sessionId} assigned to ${assignedAgent} - stopping ring`)
+
+        // Remove from ringing sessions
+        ringingSessions.delete(sessionId)
+
+        // Stop ring if no more ringing sessions
+        if (ringingSessions.size === 0) {
+          stopRing()
+          if (ringTimeoutId) {
+            clearTimeout(ringTimeoutId)
+            ringTimeoutId = null
+          }
+        }
+      }
+    })
+
+    // 5. user_message_for_agent - Pop sound + Toast
     sock.on('user_message_for_agent', (data: any) => {
       const { sessionId, text } = data || {}
       if (sessionId) {
         console.log('🔔 [CHANNEL A] user_message_for_agent:', sessionId)
         playPopRef.current()
-        
+
         const toastId = `agent-message-${sessionId}-${Date.now()}`
         setToasts(prev => [...prev, {
           id: toastId,
@@ -114,10 +203,23 @@ export default function AudioNotifications() {
 
     return () => {
       console.log('🔌 Cleaning up AudioNotifications socket listeners')
+
+      // Stop ringing on cleanup
+      if (ringingSessions.size > 0) {
+        stopRing()
+        ringingSessions.clear()
+      }
+      if (ringTimeoutId) {
+        clearTimeout(ringTimeoutId)
+      }
+
       sock.off('connect')
       sock.off('error')
       sock.off('disconnect')
       sock.off('session_started')
+      sock.off('new_notification')
+      sock.off('agent_joined')
+      sock.off('session_updated')
       sock.off('user_message_for_agent')
       sock.disconnect()
     }

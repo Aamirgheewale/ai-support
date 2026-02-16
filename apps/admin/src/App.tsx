@@ -156,11 +156,11 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
   return (
     <>
       {/* Sidebar */}
-      <aside className={`fixed left-0 top-0 h-screen bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 flex flex-col z-50 hidden lg:flex transition-all duration-300 ${isSidebarCollapsed ? 'w-20 overflow-visible' : 'w-64'} group`}>
+      <aside className={`fixed left-0 top-0 h-screen bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 flex flex-col z-50 hidden lg:flex transition-all duration-300 ease-in-out ${isSidebarCollapsed ? 'w-20 overflow-visible' : 'w-64'} group`}>
         {/* Toggle Button - Centered vertically */}
         <button
           onClick={toggleSidebar}
-          className="absolute -right-3 top-1/2 -translate-y-1/2 z-10 w-6 h-6 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-full flex items-center justify-center shadow-md hover:bg-gray-50 dark:hover:bg-gray-700 hover:shadow-lg transition-all duration-200"
+          className="absolute -right-3 top-1/2 -translate-y-1/2 z-10 w-6 h-6 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-full flex items-center justify-center shadow-md hover:bg-gray-50 dark:hover:bg-gray-700 hover:shadow-lg transition-all duration-300 ease-in-out"
           aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           {isSidebarCollapsed ? (
@@ -174,23 +174,26 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
         <SidebarHeader isCollapsed={isSidebarCollapsed} />
 
         {/* Navigation Links */}
-        <nav className={`flex-1 overflow-y-auto scrollbar-hide ${isSidebarCollapsed ? 'py-2 px-2 space-y-0.5' : 'py-4 px-4 space-y-1'}`}>
+        <nav
+          className={`flex-1 w-full flex flex-col items-center scrollbar-hide ${isSidebarCollapsed ? 'py-4 gap-y-1 overflow-visible' : 'py-4 px-4 space-y-1 overflow-y-auto'}`}
+          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+        >
 
 
 
           {hasPermission('agent_inbox') && (
             <Link
               to="/agent/inbox"
-              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 py-2 relative group/item' : 'px-4 py-3'} text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/agent/inbox')
-                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
+              className={`${isSidebarCollapsed ? 'w-10 h-10 flex items-center justify-center' : 'w-full px-4 py-3 flex items-center justify-start'} text-sm font-medium rounded-lg transition-all duration-300 ease-in-out ${isActive('/agent/inbox')
+                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
                 : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
-                } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
+                } relative group/item`}
               title={isSidebarCollapsed ? 'Inbox' : ''}
             >
-              <Inbox className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
-              {!isSidebarCollapsed && <span>Inbox</span>}
+              <Inbox className="w-5 h-5" />
+              {!isSidebarCollapsed && <span className="ml-3">Inbox</span>}
               {isSidebarCollapsed && (
-                <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+                <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-300 ease-in-out pointer-events-none z-[999]">
                   Inbox
                 </span>
               )}
@@ -200,16 +203,16 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
           {hasPermission('dashboard') && (
             <Link
               to="/dashboard"
-              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 py-2 relative group/item' : 'px-4 py-3'} text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/dashboard')
-                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
+              className={`${isSidebarCollapsed ? 'w-10 h-10 flex items-center justify-center' : 'w-full px-4 py-3 flex items-center justify-start'} text-sm font-medium rounded-lg transition-all duration-300 ease-in-out ${isActive('/dashboard')
+                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
                 : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
-                } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
+                } relative group/item`}
               title={isSidebarCollapsed ? 'Dashboard' : ''}
             >
-              <LayoutDashboard className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
-              {!isSidebarCollapsed && <span>Dashboard</span>}
+              <LayoutDashboard className="w-5 h-5" />
+              {!isSidebarCollapsed && <span className="ml-3">Dashboard</span>}
               {isSidebarCollapsed && (
-                <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+                <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-300 ease-in-out pointer-events-none z-[999]">
                   Dashboard
                 </span>
               )}
@@ -219,16 +222,16 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
           {hasPermission('sessions') && (
             <Link
               to="/sessions"
-              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 py-2 relative group/item' : 'px-4 py-3'} text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/sessions')
-                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
+              className={`${isSidebarCollapsed ? 'w-10 h-10 flex items-center justify-center' : 'w-full px-4 py-3 flex items-center justify-start'} text-sm font-medium rounded-lg transition-all duration-300 ease-in-out ${isActive('/sessions')
+                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
                 : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
-                } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
+                } relative group/item`}
               title={isSidebarCollapsed ? 'Sessions' : ''}
             >
-              <MessageSquare className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
-              {!isSidebarCollapsed && <span>Sessions</span>}
+              <MessageSquare className="w-5 h-5" />
+              {!isSidebarCollapsed && <span className="ml-3">Sessions</span>}
               {isSidebarCollapsed && (
-                <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+                <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-300 ease-in-out pointer-events-none z-[999]">
                   Sessions
                 </span>
               )}
@@ -238,16 +241,16 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
           {hasPermission('live') && (
             <Link
               to="/live"
-              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 py-2 relative group/item' : 'px-4 py-3'} text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/live')
-                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
+              className={`${isSidebarCollapsed ? 'w-10 h-10 flex items-center justify-center' : 'w-full px-4 py-3 flex items-center justify-start'} text-sm font-medium rounded-lg transition-all duration-300 ease-in-out ${isActive('/live')
+                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
                 : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
-                } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
+                } relative group/item`}
               title={isSidebarCollapsed ? 'Live View' : ''}
             >
-              <Video className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
-              {!isSidebarCollapsed && <span>Live View</span>}
+              <Video className="w-5 h-5" />
+              {!isSidebarCollapsed && <span className="ml-3">Live View</span>}
               {isSidebarCollapsed && (
-                <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+                <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-300 ease-in-out pointer-events-none z-[999]">
                   Live View
                 </span>
               )}
@@ -260,16 +263,16 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
           {hasPermission('users') && (
             <Link
               to="/users"
-              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 py-2 relative group/item' : 'px-4 py-3'} text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/users')
-                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
+              className={`${isSidebarCollapsed ? 'w-10 h-10 flex items-center justify-center' : 'w-full px-4 py-3 flex items-center justify-start'} text-sm font-medium rounded-lg transition-all duration-300 ease-in-out ${isActive('/users')
+                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
                 : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
-                } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
+                } relative group/item`}
               title={isSidebarCollapsed ? 'Users' : ''}
             >
-              <Users className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
-              {!isSidebarCollapsed && <span>Users</span>}
+              <Users className="w-5 h-5" />
+              {!isSidebarCollapsed && <span className="ml-3">Users</span>}
               {isSidebarCollapsed && (
-                <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+                <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-300 ease-in-out pointer-events-none z-[999]">
                   Users
                 </span>
               )}
@@ -280,16 +283,16 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
           {hasPermission('agents_online') && (
             <Link
               to="/agents-online"
-              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 py-2 relative group/item' : 'px-4 py-3'} text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/agents-online')
-                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
+              className={`${isSidebarCollapsed ? 'w-10 h-10 flex items-center justify-center' : 'w-full px-4 py-3 flex items-center justify-start'} text-sm font-medium rounded-lg transition-all duration-300 ease-in-out ${isActive('/agents-online')
+                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
                 : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
-                } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
+                } relative group/item`}
               title={isSidebarCollapsed ? 'Agents Online' : ''}
             >
-              <Users className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
-              {!isSidebarCollapsed && <span>Agents Online</span>}
+              <Users className="w-5 h-5" />
+              {!isSidebarCollapsed && <span className="ml-3">Agents Online</span>}
               {isSidebarCollapsed && (
-                <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+                <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-300 ease-in-out pointer-events-none z-[999]">
                   Agents Online
                 </span>
               )}
@@ -308,36 +311,38 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
                     navigate('/pending-queries?status=pending');
                   }
                 }}
-                className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-2 py-2 relative group/item' : 'justify-between px-4 py-3'} text-sm font-medium rounded-lg transition-all duration-200 ${isPendingQueriesActive
-                  ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
+                className={`${isSidebarCollapsed ? 'w-10 h-10 flex items-center justify-center' : 'w-full px-4 py-3 flex items-center justify-between'} text-sm font-medium rounded-lg transition-all duration-300 ease-in-out ${isPendingQueriesActive
+                  ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
                   : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
-                  } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
-                title={!isSidebarCollapsed ? (pendingCount > 0 ? `${pendingCount} Pending Queries` : 'Pending Queries') : undefined}
+                  } relative group/item`}
+                title={isSidebarCollapsed ? (pendingCount > 0 ? `${pendingCount} Pending Queries` : 'Pending Queries') : undefined}
               >
-                <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center relative' : 'flex-1 min-w-0'}`}>
-                  <div className="relative flex-shrink-0">
-                    <FileText className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
-                    {isSidebarCollapsed && pendingCount > 0 && (
-                      <span className="absolute top-0 right-0 -translate-y-1/2 translate-x-1/2 bg-red-500 text-white rounded-full flex items-center justify-center shadow-md border-2 border-white min-w-[16px] h-4 px-1 text-[10px] font-bold leading-tight">
-                        {pendingCount > 9 ? '9+' : pendingCount}
-                      </span>
-                    )}
-                  </div>
-                  {!isSidebarCollapsed && (
-                    <div className="flex items-center flex-1 min-w-0">
+                <FileText className="w-5 h-5" />
+                {isSidebarCollapsed && pendingCount > 0 && (
+                  <span className="absolute top-0 right-0 -translate-y-1/2 translate-x-1/2 bg-red-500 text-white rounded-full flex items-center justify-center shadow-md border-2 border-white min-w-[16px] h-4 px-1 text-[10px] font-bold leading-tight">
+                    {pendingCount > 9 ? '9+' : pendingCount}
+                  </span>
+                )}
+                {!isSidebarCollapsed && (
+                  <>
+                    <span className="ml-3 flex items-center flex-1 min-w-0">
                       <span className="whitespace-nowrap">Pending Queries</span>
                       {pendingCount > 0 && (
                         <span className="ml-2 bg-red-500 text-white text-xs font-semibold rounded-full px-2 py-0.5 min-w-[20px] text-center flex-shrink-0">
                           {pendingCount}
                         </span>
                       )}
-                    </div>
-                  )}
-                </div>
-                {!isSidebarCollapsed && (
-                  <ChevronRight
-                    className={`w-4 h-4 transition-transform duration-200 flex-shrink-0 ${isPendingQueriesOpen ? 'transform rotate-90' : ''}`}
-                  />
+                    </span>
+                    <ChevronRight
+                      className={`w-4 h-4 transition-all duration-300 ease-in-out flex-shrink-0 ${isPendingQueriesOpen ? 'transform rotate-90' : ''}`}
+                    />
+                  </>
+                )}
+                {/* Tooltip when collapsed */}
+                {isSidebarCollapsed && (
+                  <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-300 ease-in-out pointer-events-none z-[999]">
+                    Pending Queries{pendingCount > 0 && ` (${pendingCount})`}
+                  </span>
                 )}
               </button>
               {isPendingQueriesOpen && !isSidebarCollapsed && (
@@ -369,26 +374,32 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
           {hasPermission('notifications') && (
             <Link
               to="/notifications"
-              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 py-2 relative group/item' : 'justify-between px-4 py-3'} text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/notifications')
-                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
+              className={`${isSidebarCollapsed ? 'w-10 h-10 flex items-center justify-center' : 'w-full px-4 py-3 flex items-center justify-between'} text-sm font-medium rounded-lg transition-all duration-300 ease-in-out ${isActive('/notifications')
+                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
                 : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
-                } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
-              title={!isSidebarCollapsed ? (unreadCount > 0 ? `${unreadCount} Unread Notifications` : 'Notifications') : undefined}
+                } relative group/item`}
+              title={isSidebarCollapsed ? (unreadCount > 0 ? `${unreadCount} Unread Notifications` : 'Notifications') : undefined}
             >
-              <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center relative' : ''}`}>
-                <div className="relative">
-                  <Bell className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
-                  {isSidebarCollapsed && unreadCount > 0 && (
-                    <span className="absolute top-0 right-0 -translate-y-1/2 translate-x-1/2 bg-blue-500 text-white rounded-full flex items-center justify-center shadow-md border-2 border-white min-w-[16px] h-4 px-1 text-[10px] font-bold leading-tight">
-                      {unreadCount > 9 ? '9+' : unreadCount}
+              <Bell className="w-5 h-5" />
+              {isSidebarCollapsed && unreadCount > 0 && (
+                <span className="absolute top-0 right-0 -translate-y-1/2 translate-x-1/2 bg-blue-500 text-white rounded-full flex items-center justify-center shadow-md border-2 border-white min-w-[16px] h-4 px-1 text-[10px] font-bold leading-tight">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+              {!isSidebarCollapsed && (
+                <>
+                  <span className="ml-3">Notifications</span>
+                  {unreadCount > 0 && (
+                    <span className="ml-auto bg-blue-500 text-white text-xs font-semibold rounded-full px-2 py-0.5 min-w-[20px] text-center">
+                      {unreadCount}
                     </span>
                   )}
-                </div>
-                {!isSidebarCollapsed && <span>Notifications</span>}
-              </div>
-              {!isSidebarCollapsed && unreadCount > 0 && (
-                <span className="ml-auto bg-blue-500 text-white text-xs font-semibold rounded-full px-2 py-0.5 min-w-[20px] text-center">
-                  {unreadCount}
+                </>
+              )}
+              {/* Tooltip when collapsed */}
+              {isSidebarCollapsed && (
+                <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-300 ease-in-out pointer-events-none z-[999]">
+                  Notifications{unreadCount > 0 && ` (${unreadCount})`}
                 </span>
               )}
             </Link>
@@ -398,16 +409,16 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
           {hasPermission('analytics') && (
             <Link
               to="/analytics"
-              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 py-2 relative group/item' : 'px-4 py-3'} text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/analytics')
-                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
+              className={`${isSidebarCollapsed ? 'w-10 h-10 flex items-center justify-center' : 'w-full px-4 py-3 flex items-center justify-start'} text-sm font-medium rounded-lg transition-all duration-300 ease-in-out ${isActive('/analytics')
+                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
                 : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
-                } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
+                } relative group/item`}
               title={isSidebarCollapsed ? 'Analytics' : ''}
             >
-              <BarChart3 className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
-              {!isSidebarCollapsed && <span>Analytics</span>}
+              <BarChart3 className="w-5 h-5" />
+              {!isSidebarCollapsed && <span className="ml-3">Analytics</span>}
               {isSidebarCollapsed && (
-                <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+                <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-300 ease-in-out pointer-events-none z-[999]">
                   Analytics
                 </span>
               )}
@@ -418,16 +429,16 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
           {hasPermission('accuracy') && (
             <Link
               to="/accuracy"
-              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 py-2 relative group/item' : 'px-4 py-3'} text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/accuracy')
-                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
+              className={`${isSidebarCollapsed ? 'w-10 h-10 flex items-center justify-center' : 'w-full px-4 py-3 flex items-center justify-start'} text-sm font-medium rounded-lg transition-all duration-300 ease-in-out ${isActive('/accuracy')
+                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
                 : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
-                } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
+                } relative group/item`}
               title={isSidebarCollapsed ? 'Accuracy' : ''}
             >
-              <CheckCircle className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
-              {!isSidebarCollapsed && <span>Accuracy</span>}
+              <CheckCircle className="w-5 h-5" />
+              {!isSidebarCollapsed && <span className="ml-3">Accuracy</span>}
               {isSidebarCollapsed && (
-                <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+                <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-300 ease-in-out pointer-events-none z-[999]">
                   Accuracy
                 </span>
               )}
@@ -438,16 +449,16 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
           {hasPermission('encryption') && (
             <Link
               to="/encryption"
-              className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-2 py-2 relative group/item' : 'px-4 py-3'} text-sm font-medium rounded-lg transition-all duration-200 ${isActive('/encryption')
-                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-l-4 border-blue-700 dark:border-blue-400'
+              className={`${isSidebarCollapsed ? 'w-10 h-10 flex items-center justify-center' : 'w-full px-4 py-3 flex items-center justify-start'} text-sm font-medium rounded-lg transition-all duration-300 ease-in-out ${isActive('/encryption')
+                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
                 : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
-                } ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
+                } relative group/item`}
               title={isSidebarCollapsed ? 'Encryption' : ''}
             >
-              <Lock className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
-              {!isSidebarCollapsed && <span>Encryption</span>}
+              <Lock className="w-5 h-5" />
+              {!isSidebarCollapsed && <span className="ml-3">Encryption</span>}
               {isSidebarCollapsed && (
-                <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+                <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-300 ease-in-out pointer-events-none z-[999]">
                   Encryption
                 </span>
               )}
@@ -457,14 +468,14 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
 
         {/* Theme Toggle - Only visible when collapsed */}
         {isSidebarCollapsed && (
-          <div className="border-t border-gray-200 dark:border-gray-800 p-4">
+          <div className="border-t border-gray-200 dark:border-gray-800 w-full flex justify-center py-4">
             <div className="relative group/item">
               <button
                 onMouseEnter={() => setIsThemePopoverOpen(true)}
                 onMouseLeave={() => setIsThemePopoverOpen(false)}
-                className="w-full flex items-center justify-center px-2 py-3 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-all duration-200 hover:scale-110"
+                className="w-10 h-10 flex items-center justify-center text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-all duration-300 ease-in-out"
               >
-                <Shirt className="w-5 h-5 transition-transform duration-200 group-hover/item:scale-125" />
+                <Shirt className="w-5 h-5" />
               </button>
 
               {/* Theme Popover - Shows on hover */}
@@ -509,17 +520,17 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
         )}
 
         {/* Logout Button - Fixed at bottom */}
-        <div className="border-t border-gray-200 dark:border-gray-800 p-4">
+        <div className="border-t border-gray-200 dark:border-gray-800 w-full flex justify-center py-4">
           <button
             onClick={handleLogout}
-            className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-2 relative group/item' : 'px-4'} py-3 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white rounded-lg transition-all duration-200 ${isSidebarCollapsed ? 'hover:scale-110' : ''}`}
+            className={`${isSidebarCollapsed ? 'w-10 h-10 flex items-center justify-center' : 'w-full px-4 py-3 flex items-center justify-start'} text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white rounded-lg transition-all duration-300 ease-in-out relative group/item`}
             title={isSidebarCollapsed ? 'Logout' : ''}
           >
-            <LogOut className={`w-5 h-5 transition-transform duration-200 ${isSidebarCollapsed ? 'group-hover/item:scale-125' : ''} ${isSidebarCollapsed ? '' : 'mr-3'}`} />
-            {!isSidebarCollapsed && <span>Logout</span>}
+            <LogOut className="w-5 h-5" />
+            {!isSidebarCollapsed && <span className="ml-3">Logout</span>}
             {/* Tooltip when collapsed */}
             {isSidebarCollapsed && (
-              <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+              <span className="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity duration-300 ease-in-out pointer-events-none z-[999]">
                 Logout
               </span>
             )}
@@ -679,7 +690,7 @@ function App() {
                 <StopRingButton />
 
                 {/* Main Content Area */}
-                <main className={`min-h-screen transition-all duration-300 text-gray-900 dark:text-white ${isSidebarCollapsed ? 'lg:ml-20' : 'lg:ml-64'}`}>
+                <main className={`min-h-screen transition-all duration-300 ease-in-out text-gray-900 dark:text-white ${isSidebarCollapsed ? 'lg:ml-20' : 'lg:ml-64'}`}>
                   <Routes>
                     <Route path="/" element={<RootRedirect />} />
                     <Route path="/auth" element={<AuthPage />} />

@@ -127,12 +127,12 @@ export default function SidebarHeader({ isCollapsed = false }: SidebarHeaderProp
         {/* User Profile Button */}
         <button
           onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
-          className={`flex items-center group ${isCollapsed ? 'justify-center group/item hover:scale-110' : 'gap-2.5'} px-2 py-1.5 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-200 relative`}
+          className={`flex items-center group ${isCollapsed ? 'justify-center group/item hover:scale-110' : 'gap-2.5'} px-2 py-1.5 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-300 ease-in-out relative`}
           title={!isCollapsed ? (unreadCount > 0 ? `${unreadCount} Unread Notifications` : `${firstName} (${userStatus})`) : undefined}
         >
           {/* Square Avatar with Status Indicator */}
           <div className="relative">
-            <div className={`${isCollapsed ? 'w-12 h-12' : 'w-16 h-14'} rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-sm font-semibold shadow-sm transition-transform duration-200 ${isCollapsed ? 'group-hover/item:scale-125' : ''} ${isCollapsed ? '' : 'ml-2'}`}>
+            <div className={`${isCollapsed ? 'w-10 h-10' : 'w-10 h-10'} rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-sm font-semibold shadow-sm transition-all duration-300 ease-in-out ${isCollapsed ? 'group-hover/item:scale-125' : ''}`}>
               {initials}
             </div>
             {/* Status Indicator Dot - Floating half outside avatar */}
@@ -142,21 +142,17 @@ export default function SidebarHeader({ isCollapsed = false }: SidebarHeaderProp
               aria-label={userStatus === 'away' ? 'Away' : 'Online'}
             />
           </div>
-          {/* First Name - Hidden when collapsed */}
-          {!isCollapsed && (
-            <>
-              <span className="text-medium font-medium text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-white">
-                {firstName}
-              </span>
-              {/* Chevron */}
-              <ChevronDown
-                className={`w-4 h-4 text-gray-400 dark:text-gray-500 group-hover:text-gray-600 dark:group-hover:text-gray-300 transition-transform duration-200 ${isProfileMenuOpen ? 'rotate-180' : ''}`}
-              />
-            </>
-          )}
+          {/* First Name - Fade with CSS */}
+          <span className={`text-medium font-medium text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-white transition-all duration-300 ease-in-out overflow-hidden whitespace-nowrap ${isCollapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'}`}>
+            {firstName}
+          </span>
+          {/* Chevron */}
+          <ChevronDown
+            className={`w-4 h-4 text-gray-400 dark:text-gray-500 group-hover:text-gray-600 dark:group-hover:text-gray-300 transition-all duration-300 ease-in-out ${isCollapsed ? 'w-0 opacity-0' : 'w-4 opacity-100'} ${isProfileMenuOpen ? 'rotate-180' : ''}`}
+          />
           {/* Enhanced tooltip when collapsed */}
           {isCollapsed && (
-            <span className="absolute left-full ml-3 px-3 py-1.5 text-xs font-medium text-white bg-gray-900 rounded-lg shadow-lg whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-all duration-200 pointer-events-none z-50 border border-gray-700">
+            <span className="absolute left-full ml-3 px-3 py-1.5 text-xs font-medium text-white bg-gray-900 rounded-lg shadow-lg whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-all duration-300 ease-in-out pointer-events-none z-50 border border-gray-700">
               <span className="font-semibold text-white">{firstName}</span>
               {unreadCount > 0 && (
                 <span className="ml-1.5 text-blue-400 font-bold">{unreadCount} unread</span>
