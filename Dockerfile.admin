@@ -45,6 +45,5 @@ RUN if [ ! -f /app/apps/admin/dist/index.html ]; then \
         ls -la /app/apps/admin/dist; \
     fi
 
-# 5. Start production preview server
-# Use shell form (no brackets) to properly expand $PORT environment variable
-CMD pnpm --filter admin preview --host 0.0.0.0 --port ${PORT:-5173}
+# 5. Start production preview server on 0.0.0.0 (public interface)
+CMD ["pnpm", "--filter", "admin", "preview", "--", "--host", "0.0.0.0", "--port", "5173"]
