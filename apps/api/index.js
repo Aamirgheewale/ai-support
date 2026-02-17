@@ -55,12 +55,20 @@ if (helmet) {
   console.log('✅ Security headers enabled (helmet)');
 }
 
+// Dynamic CORS: Read from environment variable + hardcoded defaults
+const envOrigins = process.env.CORS_ALLOWED_ORIGINS
+  ? process.env.CORS_ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
+  : [];
+
 const allowedOrigins = [
+  ...envOrigins, // Railway/production origins from env var
   'https://widget-production-8be9.up.railway.app',
   'https://admin-production-276e.up.railway.app',
   'http://localhost:5173',
   'http://localhost:5174'
 ];
+
+console.log('🌐 CORS allowed origins:', allowedOrigins);
 
 app.use(cors({
   origin: allowedOrigins,
