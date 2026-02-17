@@ -45,6 +45,6 @@ RUN if [ ! -f /app/apps/admin/dist/index.html ]; then \
         ls -la /app/apps/admin/dist; \
     fi
 
-# 5. Serve using Absolute Path
-ENV PORT=8080
-CMD ["serve", "-s", "/app/apps/admin/dist", "-l", "8080"]
+# 5. Start production preview server
+# Use shell form to properly expand $PORT environment variable
+CMD ["/bin/sh", "-c", "cd /app/apps/admin && pnpm preview --host 0.0.0.0 --port ${PORT:-5173}"]
