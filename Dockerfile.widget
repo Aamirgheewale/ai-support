@@ -52,6 +52,9 @@ RUN npm install -g pnpm
 # 2. Copy Files
 COPY . .
 
+# Set CI mode for pnpm
+ENV CI=true
+
 # 3. Install Dependencies
 RUN pnpm install --no-frozen-lockfile
 

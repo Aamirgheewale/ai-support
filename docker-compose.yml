@@ -1,0 +1,92 @@
+services:
+  # Redis Service
+  redis:
+    image: redis:alpine
+    container_name: ai-support-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # API Service (Backend)
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: ai-support-api
+    ports:
+      - "4000:4000"
+    environment:
+      - PORT=4000
+      - REDIS_URL=redis://redis:6379
+      - NODE_ENV=development
+      # Add your other environment variables here
+      - APPWRITE_ENDPOINT=https://cloud.appwrite.io/v1
+      - APPWRITE_PROJECT_ID=6964c79b00302e1fe881
+      - GEMINI_API_KEY=AIzaSyA9pgrcW6W2ZyI5FlqpW-9SrCyF5NZlxTI
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - app-network
+    volumes:
+      - ./apps/api:/app
+      - /app/node_modules
+    restart: unless-stopped
+
+  # Admin Dashboard (Frontend)
+  admin:
+    build:
+      context: .
+      dockerfile: Dockerfile.admin
+      args:
+        - VITE_API_BASE=http://localhost:4000
+        - VITE_SOCKET_URL=http://localhost:4000
+        # Add your Appwrite env vars here
+        - APPWRITE_ENDPOINT=https://cloud.appwrite.io/v1
+        - APPWRITE_PROJECT_ID=6964c79b00302e1fe881
+        - APPWRITE_BUCKET_ID=6964c83d001e58d57e61
+    container_name: ai-support-admin
+    ports:
+      - "5173:8080"
+    environment:
+      - PORT=8080
+      - VITE_API_BASE=http://localhost:4000
+      - VITE_SOCKET_URL=http://localhost:4000
+    depends_on:
+      - api
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # Widget (Frontend)
+  widget:
+    build:
+      context: .
+      dockerfile: Dockerfile.widget
+      args:
+        - VITE_API_BASE=http://localhost:4000
+        - VITE_SOCKET_URL=http://localhost:4000
+        # Add your Appwrite env vars here
+        - APPWRITE_PROJECT_ID=6964c79b00302e1fe881
+    container_name: ai-support-widget
+    ports:
+      - "5174:8080"
+    environment:
+      - PORT=8080
+      - VITE_API_BASE=http://localhost:4000
+      - VITE_SOCKET_URL=http://localhost:4000
+    depends_on:
+      - api
+    networks:
+      - app-network
+    restart: unless-stopped
+
+networks:
+  app-network:
+    driver: bridge

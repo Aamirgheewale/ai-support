@@ -237,7 +237,6 @@ function Navigation({ isSidebarCollapsed, toggleSidebar }: NavigationProps) {
               )}
             </Link>
           )}
-
           {hasPermission('live') && (
             <Link
               to="/live"
