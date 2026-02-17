@@ -27,8 +27,8 @@ COPY . .
 # Set working directory to API
 WORKDIR /app/apps/api
 
-# Expose port (Railway will use PORT env var, default to 4000)
-EXPOSE ${PORT:-4000}
+# Expose port 4000 (Railway will override with PORT env var at runtime)
+EXPOSE 4000
 
 # Start the application
 CMD ["node", "index.js"]
