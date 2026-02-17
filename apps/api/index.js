@@ -56,12 +56,10 @@ if (helmet) {
 }
 
 const allowedOrigins = [
-  'https://ai-support-admin.vercel.app',
-  'https://ai-support-widget-one.vercel.app',
+  'https://widget-production-8be9.up.railway.app',
+  'https://admin-production-276e.up.railway.app',
   'http://localhost:5173',
-  'http://localhost:5174',
-  'https://outstanding-vitality-production-c38b.up.railway.app',
-  'https://charming-nourishment-production.up.railway.app',
+  'http://localhost:5174'
 ];
 
 app.use(cors({
