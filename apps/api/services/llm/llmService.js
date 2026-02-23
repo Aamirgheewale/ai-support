@@ -169,18 +169,44 @@ You must STRICTLY detect the language of the user's input and reply in the SAME 
         const LANGUAGE_ENFORCEMENT = `
 
 [INSTRUCTION]
-You must answer the above question in the SAME LANGUAGE as the question was asked.
-- If I asked in Kannada, you MUST reply in Kannada.
-- If I asked in Hindi, you MUST reply in Hindi.
-- Do NOT reply in English unless I asked in English.
-- Translate any technical steps or knowledge base answers into my language.
+You must reply in the EXACT SAME LANGUAGE that I used in my message above.
+If I typed in English, you must reply in English. If I typed in a regional language, reply in that regional language. Do not translate unless explicitly asked.
 `;
 
         // Fetch system prompt (fails safe with default)
         const dbSystemPrompt = await settingsService.getSystemPrompt();
 
-        // Create hybrid system instruction
-        const finalSystemInstruction = dbSystemPrompt + "\n\n" + LANGUAGE_PROTOCOL;
+        // JSON output instruction — appended last so it takes highest priority
+        const JSON_INSTRUCTION = `
+[SYSTEM PROTOCOL - OUTPUT FORMAT]
+You must ALWAYS respond with a valid JSON object. Do NOT wrap the JSON in markdown code blocks (no \`\`\`json). The JSON must have exactly two keys:
+- "reply": Your actual response text to the user.
+- "suggestions": An array of exactly 2 short, highly relevant follow-up questions the user might ask next based on your reply.
+`;
+
+        // Create hybrid system instruction (DB prompt + language protocol + JSON format)
+        const finalSystemInstruction = dbSystemPrompt + "\n\n" + LANGUAGE_PROTOCOL + "\n\n" + JSON_INSTRUCTION;
+
+        // Robust helper: strip markdown code blocks then JSON.parse
+        // Returns { text, suggestions } or falls back to { text: rawText, suggestions: [] }
+        const parseLLMResponse = (rawText) => {
+            try {
+                // 1. Strip markdown code blocks (```json ... ```)
+                let cleanedText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+
+                // 2. Parse the cleaned string
+                const parsed = JSON.parse(cleanedText);
+
+                return {
+                    text: parsed.reply || rawText, // Fallback to raw if 'reply' key is missing
+                    suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions : []
+                };
+            } catch (error) {
+                console.error('Failed to parse LLM JSON. Falling back to raw text.', error);
+                // Fallback: Treat the whole raw text as the answer so the user doesn't get an error
+                return { text: rawText, suggestions: [] };
+            }
+        };
 
         // Inject language enforcement into the last user message
         const messagesWithEnforcement = messages.map((msg, idx) => {
@@ -200,7 +226,8 @@ You must answer the above question in the SAME LANGUAGE as the question was aske
                     { text: messagesWithEnforcement.map(m => `${m.role}: ${m.content}`).join('\n') }
                 ]);
                 const response = await result.response;
-                return response.text();
+                const rawText = response.text();
+                return parseLLMResponse(rawText);
             } else {
                 // OpenAI/Custom text-only
                 const formattedMessages = [
@@ -214,7 +241,8 @@ You must answer the above question in the SAME LANGUAGE as the question was aske
                         model: modelName,
                         messages: formattedMessages
                     });
-                    return completion.choices[0].message.content;
+                    const rawText = completion.choices[0].message.content;
+                    return parseLLMResponse(rawText);
                 } else if (client.getGenerativeModel) {
                     // Fallback if provider was mishandled but client is Gemini
                     const model = client.getGenerativeModel({ model: modelName });
@@ -223,7 +251,8 @@ You must answer the above question in the SAME LANGUAGE as the question was aske
                         { text: messagesWithEnforcement.map(m => `${m.role}: ${m.content}`).join('\n') }
                     ]);
                     const response = await result.response;
-                    return response.text();
+                    const rawText = response.text();
+                    return parseLLMResponse(rawText);
                 } else {
                     throw new Error('Invalid client initialized for provider: ' + provider);
                 }
@@ -250,7 +279,8 @@ You must answer the above question in the SAME LANGUAGE as the question was aske
                     { text: messagesWithEnforcement.map(m => `${m.role}: ${m.content}`).join('\n') }
                 ]);
                 const response = await result.response;
-                return response.text();
+                const rawText = response.text();
+                return parseLLMResponse(rawText);
             } else {
                 if (client.chat && client.chat.completions) {
                     const formattedMessages = [
@@ -261,7 +291,8 @@ You must answer the above question in the SAME LANGUAGE as the question was aske
                         model: modelName,
                         messages: formattedMessages
                     });
-                    return completion.choices[0].message.content;
+                    const rawText = completion.choices[0].message.content;
+                    return parseLLMResponse(rawText);
                 } else {
                     // Fallback Gemini
                     const model = client.getGenerativeModel({ model: modelName });
@@ -270,7 +301,8 @@ You must answer the above question in the SAME LANGUAGE as the question was aske
                         { text: messagesWithEnforcement.map(m => `${m.role}: ${m.content}`).join('\n') }
                     ]);
                     const response = await result.response;
-                    return response.text();
+                    const rawText = response.text();
+                    return parseLLMResponse(rawText);
                 }
             }
         }
@@ -297,7 +329,8 @@ You must answer the above question in the SAME LANGUAGE as the question was aske
             ]);
 
             const response = await result.response;
-            return response.text();
+            const rawText = response.text();
+            return parseLLMResponse(rawText);
 
         } else if (provider === 'openai' || provider === 'custom') {
             // OpenAI/Custom Vision Logic
@@ -334,7 +367,8 @@ You must answer the above question in the SAME LANGUAGE as the question was aske
                 model: modelName,
             });
 
-            return completion.choices[0].message.content;
+            const rawText = completion.choices[0].message.content;
+            return parseLLMResponse(rawText);
 
         } else {
             // Unsupported provider for vision - fallback to text-only
@@ -346,7 +380,8 @@ You must answer the above question in the SAME LANGUAGE as the question was aske
                     { text: messagesWithEnforcement.map(m => `${m.role}: ${m.content}`).join('\n') }
                 ]);
                 const response = await result.response;
-                return response.text();
+                const rawText = response.text();
+                return parseLLMResponse(rawText);
             } else {
                 const formattedMessages = [
                     { role: 'system', content: finalSystemInstruction },
@@ -356,7 +391,8 @@ You must answer the above question in the SAME LANGUAGE as the question was aske
                     model: modelName,
                     messages: formattedMessages
                 });
-                return completion.choices[0].message.content;
+                const rawText = completion.choices[0].message.content;
+                return parseLLMResponse(rawText);
             }
         }
 
