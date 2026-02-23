@@ -80,7 +80,7 @@ export default function EmbedWidget({
   };
 
   const [sessionId, setSessionId] = useState<string | null>(getStoredSessionId());
-  const [messages, setMessages] = useState<Array<{ sender: string; text: string; ts?: number; type?: string; attachmentUrl?: string; options?: Array<{ text: string; value: string }> }>>([]);
+  const [messages, setMessages] = useState<Array<{ sender: string; text: string; ts?: number; type?: string; attachmentUrl?: string; options?: Array<{ text: string; value: string }>; suggestions?: string[] }>>([]);
   const [text, setText] = useState('');
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
@@ -112,6 +112,7 @@ export default function EmbedWidget({
   const agentWaitTimerIntervalRef = useRef<number | null>(null); // Interval for countdown timer
   const fileInputRef = useRef<HTMLInputElement>(null);
   const attachButtonRef = useRef<HTMLButtonElement>(null); // Ref for paperclip button position
+  const chatInputRef = useRef<HTMLInputElement>(null); // Ref for focusing the chat text input
 
   const { uploadFile } = useAttachmentUpload();
 
@@ -773,7 +774,8 @@ export default function EmbedWidget({
           ts: Date.now(),
           type: m.type,
           attachmentUrl: m.attachmentUrl,
-          options: m.options
+          options: m.options,
+          suggestions: Array.isArray(m.suggestions) && m.suggestions.length > 0 ? m.suggestions : undefined
         }];
       });
 
@@ -2062,6 +2064,198 @@ export default function EmbedWidget({
                 })}
               </div>
             )}
+
+            {/* ── "No, that's all" follow-up pill (shown after "This was helpful") ── */}
+            {m.sender === 'bot' &&
+              m.type === 'helpful_ack' &&
+              i === messages.length - 1 &&
+              !conversationConcluded && (
+                <div style={{
+                  marginTop: '10px',
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: '8px',
+                  maxWidth: '100%'
+                }}>
+                  <button
+                    onClick={() => {
+                      // Locally append farewell message and end the conversation — no socket
+                      setMessages(prev => [
+                        ...prev,
+                        {
+                          sender: 'bot',
+                          text: "You're welcome! Have a great day. You can close this chat window.",
+                          ts: Date.now()
+                        }
+                      ]);
+                      setConversationConcluded(true);
+                    }}
+                    style={{
+                      padding: '6px 14px',
+                      background: 'transparent',
+                      border: '1px solid rgba(255, 255, 255, 0.45)',
+                      borderRadius: '999px',
+                      color: 'rgba(255, 255, 255, 0.9)',
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      whiteSpace: 'nowrap'
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.background = 'rgba(255,255,255,0.12)';
+                      e.currentTarget.style.borderColor = 'rgba(255,255,255,0.75)';
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.background = 'transparent';
+                      e.currentTarget.style.borderColor = 'rgba(255,255,255,0.45)';
+                    }}
+                  >
+                    👋 No, that's all
+                  </button>
+                </div>
+              )}
+
+            {/* ── Quick Reply Suggestion Pills ─────────────────────────── */}
+            {m.sender === 'bot' &&
+              i === messages.length - 1 &&
+              !conversationConcluded &&
+              m.suggestions && m.suggestions.length > 0 && (
+                <div style={{
+                  marginTop: '10px',
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: '8px',
+                  maxWidth: '100%'
+                }}>
+                  {/* Dynamic suggestions from LLM */}
+                  {m.suggestions.map((suggestion, sIdx) => (
+                    <button
+                      key={`suggestion-${sIdx}`}
+                      onClick={() => {
+                        const socket = socketRef.current;
+                        if (!socket || !sessionId || conversationConcluded) return;
+                        // Append as user message and send
+                        setMessages(prev => [...prev, { sender: 'user', text: suggestion, ts: Date.now() }]);
+                        socket.emit('user_message', { sessionId, text: suggestion });
+                        startTypingIndicator();
+                      }}
+                      style={{
+                        padding: '6px 14px',
+                        background: 'transparent',
+                        border: '1px solid rgba(255, 255, 255, 0.45)',
+                        borderRadius: '999px',
+                        color: 'rgba(255, 255, 255, 0.9)',
+                        fontSize: '13px',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                        whiteSpace: 'nowrap'
+                      }}
+                      onMouseEnter={e => {
+                        e.currentTarget.style.background = 'rgba(255,255,255,0.12)';
+                        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.75)';
+                      }}
+                      onMouseLeave={e => {
+                        e.currentTarget.style.background = 'transparent';
+                        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.45)';
+                      }}
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+
+                  {/* Static: Ask something else — unlocks + focuses the input */}
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+
+                      // 1. Clear options/suggestions from the last message so the input unlocks
+                      setMessages(prev => {
+                        const newMessages = [...prev];
+                        const lastIndex = newMessages.length - 1;
+                        if (lastIndex >= 0) {
+                          newMessages[lastIndex] = {
+                            ...newMessages[lastIndex],
+                            options: undefined,
+                            suggestions: undefined,
+                            // Neutralise type so the disabled guard on conclusion_question is lifted
+                            type: newMessages[lastIndex].type === 'conclusion_question'
+                              ? 'standard'
+                              : newMessages[lastIndex].type
+                          };
+                        }
+                        return newMessages;
+                      });
+
+                      // 2. Wait one render cycle for the input to re-enable, then focus
+                      setTimeout(() => {
+                        chatInputRef.current?.focus();
+                      }, 50);
+                    }}
+                    style={{
+                      padding: '6px 14px',
+                      background: 'transparent',
+                      border: '1px solid rgba(255, 255, 255, 0.45)',
+                      borderRadius: '999px',
+                      color: 'rgba(255, 255, 255, 0.9)',
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      whiteSpace: 'nowrap'
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.background = 'rgba(255,255,255,0.12)';
+                      e.currentTarget.style.borderColor = 'rgba(255,255,255,0.75)';
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.background = 'transparent';
+                      e.currentTarget.style.borderColor = 'rgba(255,255,255,0.45)';
+                    }}
+                  >
+                    ✏️ Ask something else
+                  </button>
+
+                  {/* Static: This was helpful — clears suggestions, adds ack message with "No, that's all" option */}
+                  <button
+                    onClick={() => {
+                      // Remove suggestions from this message so pills disappear, then append ack
+                      setMessages(prev => {
+                        const updated = [...prev];
+                        if (updated[i]) updated[i] = { ...updated[i], suggestions: undefined };
+                        return [
+                          ...updated,
+                          {
+                            sender: 'bot',
+                            text: "I am glad I could help! Do you want to know anything else?",
+                            ts: Date.now(),
+                            type: 'helpful_ack'   // marker so we can render the "No" pill below
+                          }
+                        ];
+                      });
+                    }}
+                    style={{
+                      padding: '6px 14px',
+                      background: 'transparent',
+                      border: '1px solid rgba(255, 255, 255, 0.45)',
+                      borderRadius: '999px',
+                      color: 'rgba(255, 255, 255, 0.9)',
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      whiteSpace: 'nowrap'
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.background = 'rgba(255,255,255,0.12)';
+                      e.currentTarget.style.borderColor = 'rgba(255,255,255,0.75)';
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.background = 'transparent';
+                      e.currentTarget.style.borderColor = 'rgba(255,255,255,0.45)';
+                    }}
+                  >
+                    👍 This was helpful
+                  </button>
+                </div>
+              )}
           </div>
         ))}
         {isChatMode && streamingText && !messages.some(msg => msg.sender === 'bot' && msg.text === streamingText) && (
@@ -2451,6 +2645,7 @@ export default function EmbedWidget({
           </div>
 
           <input
+            ref={chatInputRef}
             value={text}
             onChange={e => {
               setText(e.target.value);
