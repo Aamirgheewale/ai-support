@@ -463,9 +463,13 @@ module.exports = function (io) {
         const startTime = Date.now();
 
         // Vision Support: Pass attachmentUrl if present
-        const responseText = attachmentUrl
+        // generateResponse now returns { text, suggestions } — destructure here
+        const llmResult = attachmentUrl
           ? await generateResponse(messages, attachmentUrl)
           : await generateResponse(messages);
+
+        const responseText = llmResult.text;
+        const suggestions = llmResult.suggestions || [];
 
         const latency = Date.now() - startTime;
 
@@ -490,7 +494,8 @@ module.exports = function (io) {
 
         io.to(sessionId).emit('bot_message', {
           text: responseText,
-          confidence: confidence
+          confidence: confidence,
+          suggestions: suggestions  // Dynamic quick-reply suggestions from LLM
         });
       } catch (e) {
         console.error('LLM Generation error:', e);
